@@ -1,0 +1,816 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+import { Eye, Edit2, Columns, Save, AlertCircle, RefreshCw, FileText, Paperclip, Undo2, Redo2 } from 'lucide-react';
+import { GitConflictError } from '../services/github';
+import type { VaultFile } from '../services/github';
+import { cn } from '../utils/cn';
+import { saveEditorState, restoreEditorState } from '../utils/editorState';
+
+interface EditorProps {
+  filePath: string;
+  initialContent: string;
+  initialSha: string | null;
+  files: VaultFile[];
+  onSave: (content: string, sha: string | null) => Promise<{ sha: string }>;
+  onOpenNote: (fileName: string) => void;
+  vaultId: string;
+  vaultImages: Record<string, string>;
+  onFetchBinaryFile: (path: string, sha: string) => Promise<void>;
+  onUploadAttachment: (file: File, folderPath?: string) => Promise<{ path: string; name: string }>;
+}
+
+export const Editor: React.FC<EditorProps> = ({
+  filePath,
+  initialContent,
+  initialSha,
+  files,
+  onSave,
+  onOpenNote,
+  vaultId,
+  vaultImages,
+  onFetchBinaryFile,
+  onUploadAttachment,
+}) => {
+  const [content, setContent] = useState(initialContent);
+  const [sha, setSha] = useState(initialSha);
+  const [savedContent, setSavedContent] = useState(initialContent);
+  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>(() => {
+    return typeof window !== 'undefined' && window.innerWidth < 768 ? 'edit' : 'split';
+  });
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Undo / Redo history state stack
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  const pushEditorState = useCallback((val: string) => {
+    setHistory(prev => {
+      const currentHistory = prev.slice(0, historyIndex + 1);
+      if (currentHistory.length > 0 && currentHistory[currentHistory.length - 1] === val) {
+        return prev;
+      }
+      const nextHistory = [...currentHistory, val];
+      if (nextHistory.length > 50) nextHistory.shift();
+      setHistoryIndex(nextHistory.length - 1);
+      return nextHistory;
+    });
+  }, [historyIndex]);
+
+  const undo = useCallback(() => {
+    if (historyIndex > 0) {
+      const prevIndex = historyIndex - 1;
+      const prevText = history[prevIndex];
+      setHistoryIndex(prevIndex);
+      setContent(prevText);
+    }
+  }, [history, historyIndex]);
+
+  const redo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const nextIndex = historyIndex + 1;
+      const nextText = history[nextIndex];
+      setHistoryIndex(nextIndex);
+      setContent(nextText);
+    }
+  }, [history, historyIndex]);
+
+  // Seed initial content into history stack when note is loaded
+  useEffect(() => {
+    if (initialContent) {
+      Promise.resolve().then(() => {
+        setHistory([initialContent]);
+        setHistoryIndex(0);
+      });
+    }
+  }, [filePath, initialContent]);
+
+  // Background Scraper scanning note text for local vault attachments (images and other files)
+  useEffect(() => {
+    const attachments: string[] = [];
+    const obsRegex = /!\[\[([^\]]+)\]\]/g;
+    const mdRegex = /!\[[^\]]*\]\(([^)]+)\)/g;
+    let match;
+    while ((match = obsRegex.exec(content)) !== null) {
+      attachments.push(match[1].split('|')[0].trim());
+    }
+    while ((match = mdRegex.exec(content)) !== null) {
+      attachments.push(match[1].trim());
+    }
+
+    attachments.forEach(attachmentName => {
+      const matchedFile = files.find(f => f.name.toLowerCase() === attachmentName.toLowerCase() || f.path.toLowerCase().endsWith(attachmentName.toLowerCase()));
+      if (matchedFile && matchedFile.sha && !vaultImages[matchedFile.path]) {
+        onFetchBinaryFile(matchedFile.path, matchedFile.sha);
+      }
+    });
+  }, [content, files, vaultImages, onFetchBinaryFile]);
+
+  // Autocomplete suggestions states
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionQuery, setSuggestionQuery] = useState('');
+  const [suggestionPosition, setSuggestionPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [caretIndex, setCaretIndex] = useState(0);
+
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Track original content to see if there are unsaved changes
+  const originalContent = useRef(initialContent);
+
+  // Robust refs to prevent stale closures and unsafe unmount state sets
+  const contentRef = useRef(content);
+  const shaRef = useRef(sha);
+  const onSaveRef = useRef(onSave);
+  const isMounted = useRef(true);
+
+  // Render-phase prop synchronization
+  // Add this effect to handle file switching
+  // Render-phase prop synchronization (Strictly tied to filePath)
+  // 1. Render-phase prop synchronization for STATE
+  const [prevFilePath, setPrevFilePath] = useState(filePath);
+
+  if (filePath !== prevFilePath) {
+    setPrevFilePath(filePath);
+    setContent(initialContent);
+    setSha(initialSha);
+    setSavedContent(initialContent);
+    setSaveStatus('idle');
+    setErrorMessage('');
+    // Removed the ref update from here
+  }
+
+  // 2. Commit-phase synchronization for REFS
+  useEffect(() => {
+    originalContent.current = initialContent;
+  }, [filePath, initialContent]);
+
+  // Filter notes suggestions in real-time
+  const filteredSuggestions = files
+    .filter(f => {
+      const lowerPath = f.path.toLowerCase();
+      // Exclude files from .obsidian folder
+      if (lowerPath.includes('.obsidian/') || lowerPath.startsWith('.obsidian/')) {
+        return false;
+      }
+      // Exclude files created by this application for validation (.gitkeep, .vault-compat.json)
+      const name = f.name.toLowerCase();
+      if (name === '.gitkeep' || name === '.vault-compat.json') {
+        return false;
+      }
+      // Whitelist allowed extensions for note linking (notes + attachments)
+      const allowed = ['.md', '.txt', '.canvas', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf'];
+      return allowed.some(ext => lowerPath.endsWith(ext));
+    })
+    .map(f => f.path)
+    .filter(path => path.toLowerCase().includes(suggestionQuery.toLowerCase()));
+
+  const calculateCaretPosition = (textarea: HTMLTextAreaElement, caretIdx: number) => {
+    const mirror = document.createElement('div');
+    const style = window.getComputedStyle(textarea);
+
+    // Exact matching copy style
+    mirror.style.position = 'absolute';
+    mirror.style.visibility = 'hidden';
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.wordBreak = 'break-word';
+    mirror.style.fontFamily = style.fontFamily;
+    mirror.style.fontSize = style.fontSize;
+    mirror.style.lineHeight = style.lineHeight;
+    mirror.style.padding = style.padding;
+    mirror.style.border = style.border;
+    mirror.style.boxSizing = style.boxSizing;
+    mirror.style.width = `${textarea.clientWidth}px`;
+    mirror.style.height = `${textarea.clientHeight}px`;
+    mirror.style.overflow = 'hidden';
+
+    const textBefore = textarea.value.substring(0, caretIdx);
+    mirror.textContent = textBefore;
+
+    const marker = document.createElement('span');
+    marker.textContent = '|';
+    mirror.appendChild(marker);
+
+    document.body.appendChild(mirror);
+
+    // Add offset limits to avoid clipping near borders
+    const relativeTop = marker.offsetTop - textarea.scrollTop + 22;
+    const relativeLeft = Math.min(marker.offsetLeft, textarea.clientWidth - 250);
+
+    setSuggestionPosition({
+      top: relativeTop,
+      left: relativeLeft
+    });
+
+    document.body.removeChild(mirror);
+  };
+
+  const insertSuggestion = (noteName: string) => {
+    if (!textareaRef.current) return;
+
+    const cleanNoteName = noteName.replace(/\.md$/, '');
+    const textarea = textareaRef.current;
+
+    const startText = content.substring(0, caretIndex);
+    const endText = content.substring(textarea.selectionStart);
+
+    const insertedLink = `[[${cleanNoteName}]]`;
+    const newContent = startText + insertedLink + endText;
+
+    setContent(newContent);
+    pushEditorState(newContent);
+    setShowSuggestions(false);
+
+    // Re-focus and shift caret location past brackets
+    setTimeout(() => {
+      textarea.focus();
+      const newPos = caretIndex + insertedLink.length;
+      textarea.setSelectionRange(newPos, newPos);
+    }, 50);
+  };
+
+  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showSuggestions && filteredSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSuggestionIndex(prev => (prev + 1) % filteredSuggestions.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSuggestionIndex(prev => (prev - 1 + filteredSuggestions.length) % filteredSuggestions.length);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        insertSuggestion(filteredSuggestions[suggestionIndex]);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowSuggestions(false);
+      }
+    }
+  };
+
+  // Refs migrated to top of component to prevent Temporal Dead Zone (TDZ) issues during render-phase synchronization
+
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
+
+  useEffect(() => {
+    shaRef.current = sha;
+  }, [sha]);
+
+  useEffect(() => {
+    originalContent.current = initialContent;
+  }, [initialContent]);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  // Unified save orchestration
+  const performAutoSave = useCallback(async () => {
+    const currentVal = contentRef.current;
+    const currentSha = shaRef.current;
+    const origVal = originalContent.current;
+
+    if (currentVal === origVal) return;
+
+    // Save cursor position before saving
+    if (textareaRef.current) {
+      saveEditorState(vaultId, filePath, {
+        cursorPos: textareaRef.current.selectionStart,
+        scrollPos: textareaRef.current.scrollTop,
+      });
+    }
+
+    if (isMounted.current) {
+      setSaveStatus('saving');
+      setErrorMessage('');
+    }
+
+    try {
+      const result = await onSaveRef.current(currentVal, currentSha);
+      if (isMounted.current) {
+        setSha(result.sha);
+        originalContent.current = currentVal;
+        setSavedContent(currentVal);
+        setSaveStatus('saved');
+        setTimeout(() => {
+          if (isMounted.current) setSaveStatus('idle');
+        }, 3000);
+      }
+    } catch (error: unknown) {
+      if (isMounted.current) {
+        setSaveStatus('error');
+        if (error instanceof GitConflictError) {
+          setErrorMessage(error.message);
+        } else {
+          const errMsg = error instanceof Error ? error.message : 'Failed to save note to GitHub.';
+          setErrorMessage(errMsg);
+        }
+      }
+    }
+  }, [vaultId, filePath]);
+
+  // Debounced auto-save effect for editor content while typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      performAutoSave();
+      pushEditorState(contentRef.current);
+    }, 3000); // 3 second debounce while typing
+
+    return () => clearTimeout(timer);
+  }, [content, performAutoSave, pushEditorState]);
+
+  // Window defocus (click-away) & unmount listener
+  useEffect(() => {
+    const currentTextarea = textareaRef.current;
+
+    const handleWindowBlur = () => {
+      // Save cursor position on blur
+      if (currentTextarea) {
+        saveEditorState(vaultId, filePath, {
+          cursorPos: currentTextarea.selectionStart,
+          scrollPos: currentTextarea.scrollTop,
+        });
+      }
+      performAutoSave();
+      pushEditorState(contentRef.current);
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+    return () => {
+      window.removeEventListener('blur', handleWindowBlur);
+      if (currentTextarea) {
+        saveEditorState(vaultId, filePath, {
+          cursorPos: currentTextarea.selectionStart,
+          scrollPos: currentTextarea.scrollTop,
+        });
+      }
+      performAutoSave(); // Final save on unmount!
+      pushEditorState(contentRef.current);
+    };
+  }, [vaultId, filePath, performAutoSave, pushEditorState]);
+
+  useEffect(() => {
+    // Restore cursor position after content is loaded
+    const timer = setTimeout(() => {
+      const savedState = restoreEditorState(vaultId, filePath);
+      if (textareaRef.current && savedState.cursorPos !== undefined) {
+        textareaRef.current.setSelectionRange(savedState.cursorPos, savedState.cursorPos);
+        textareaRef.current.focus();
+      }
+      if (textareaRef.current && savedState.scrollPos !== undefined) {
+        textareaRef.current.scrollTop = savedState.scrollPos;
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [filePath, vaultId]);
+
+  // Configure marked with custom options
+  useEffect(() => {
+    marked.setOptions({
+      breaks: true,
+      gfm: true,
+    });
+  }, []);
+
+  // Custom renderer or post-processor for graphviewlinks [[Note Name]] and vault images
+  const renderMarkdown = (text: string): string => {
+    try {
+      // 1. Parse Wiki-embedded images: ![[Cute Image.png]] or ![[Cute Image.png|300]]
+      const wikiImageRegex = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+      text = text.replace(wikiImageRegex, (_, target, width) => {
+        const targetClean = target.trim();
+        const style = width ? `width: ${width.trim()}px; max-width: 100%;` : `max-width: 100%;`;
+        return `<img src="${targetClean}" alt="${targetClean}" style="${style} border-radius: 8px;" />`;
+      });
+
+      // 2. Compile standard Markdown to HTML
+      let html = marked.parse(text) as string;
+
+      // 3. Resolve local vault image paths to base64 Data URLs, or custom attachment cards for non-images
+      html = html.replace(/<img src="([^"]+)"([^>]*)>/g, (_match, src, rest) => {
+        const altMatch = rest.match(/alt="([^"]+)"/);
+        const alt = altMatch ? altMatch[1] : '';
+        
+        const srcClean = src.trim();
+        const extIndex = srcClean.lastIndexOf('.');
+        const ext = extIndex !== -1 ? srcClean.substring(extIndex).toLowerCase() : '';
+        const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+        
+        if (imageExtensions.includes(ext) || srcClean.startsWith('data:image/')) {
+          const cached = vaultImages[srcClean] || Object.entries(vaultImages).find(([k]) => k.endsWith(srcClean))?.[1];
+          return `<img src="${cached || srcClean}"${rest}>`;
+        } else {
+          // Render a custom embed card instead of image!
+          const filename = alt || srcClean.split('/').pop() || srcClean;
+          const displayExt = ext ? ext.substring(1).toUpperCase() : 'FILE';
+          return `
+            <div class="attachment-embed-card border border-border bg-muted/30 rounded-xl p-3 my-2 flex items-center gap-3 animate-fade-in" data-attachment="${srcClean}">
+              <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <span class="text-xs font-bold text-foreground truncate block">${filename}</span>
+                <span class="text-[0.6rem] text-muted-foreground uppercase font-semibold block">${displayExt} Attachment</span>
+              </div>
+              <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${srcClean}" title="Download attachment">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+              </button>
+            </div>
+          `;
+        }
+      });
+
+      // 4. Parse Graphview-links: [[Another Note]] or [[Another Note|Display Name]]
+      // Matches [[Name]] or [[Name|Label]]
+      const graphviewLinkRegex = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+      html = html.replace(graphviewLinkRegex, (_, target, label) => {
+        const targetClean = target.trim();
+        const displayLabel = label ? label.trim() : targetClean;
+        // Output a custom visual anchor with data-note attribute for runtime capture
+        return `<a class="graphview-link" data-note="${targetClean}" title="Open note: ${targetClean}">${displayLabel}</a>`;
+      });
+
+      // 5. Bulletproof sanitize through DOMPurify to eliminate any script injection vectors
+      return DOMPurify.sanitize(html, {
+        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title'], // Allow our custom graphview-link attributes
+      });
+    } catch {
+      return `<p class="text-destructive font-medium">Error parsing Markdown content.</p>`;
+    }
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setContent(value);
+
+    const selectionStart = e.target.selectionStart;
+    const textBeforeCaret = value.substring(0, selectionStart);
+
+    // Find last double bracket index
+    const lastBracketIndex = textBeforeCaret.lastIndexOf('[[');
+
+    if (lastBracketIndex !== -1 && lastBracketIndex >= textBeforeCaret.lastIndexOf(']]')) {
+      const query = textBeforeCaret.substring(lastBracketIndex + 2);
+
+      // Make sure the query is on the current typing line
+      if (!query.includes('\n')) {
+        setShowSuggestions(true);
+        setSuggestionQuery(query);
+        setCaretIndex(lastBracketIndex);
+        setSuggestionIndex(0);
+
+        calculateCaretPosition(e.target, lastBracketIndex);
+        return;
+      }
+    }
+
+    setShowSuggestions(false);
+  };
+
+  const handleSave = () => {
+    performAutoSave();
+  };
+
+  const handleAutoSave = () => {
+    performAutoSave();
+  };
+
+  // Capture clicks inside the preview panel to handle custom interactive graphview-links and downloads
+  const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    // Check if clicked element or parent has graphview-link class
+    const graphviewLink = target.closest('.graphview-link');
+    if (graphviewLink) {
+      const noteName = graphviewLink.getAttribute('data-note');
+      if (noteName) {
+        // Appends .md extension if missing to facilitate correct lookups
+        const fullFileName = noteName.endsWith('.md') ? noteName : `${noteName}.md`;
+        onOpenNote(fullFileName);
+      }
+      return;
+    }
+
+    // Capture clicks on the download button in attachment cards
+    const downloadBtn = target.closest('.download-attachment-btn');
+    if (downloadBtn) {
+      const filePath = downloadBtn.getAttribute('data-path');
+      if (filePath) {
+        const matched = files.find(f => f.name.toLowerCase() === filePath.toLowerCase() || f.path.toLowerCase().endsWith(filePath.toLowerCase()));
+        const fullPath = matched ? matched.path : filePath;
+        const base64Data = vaultImages[fullPath] || Object.entries(vaultImages).find(([k]) => k.endsWith(filePath))?.[1];
+        if (base64Data) {
+          const link = document.createElement('a');
+          link.href = base64Data;
+          link.download = filePath.split('/').pop() || filePath;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } else {
+          setErrorMessage(`Attachment is still loading from GitHub or not found in vault. Path: ${filePath}`);
+          setSaveStatus('error');
+        }
+      }
+    }
+  };
+
+  const hasUnsavedChanges = content !== savedContent;
+
+  return (
+    <div className="flex flex-col md:flex-row w-full h-full bg-background relative select-none animate-fade-in">
+
+      {/* Editor Pane */}
+      <div
+        className={cn(
+          "flex-col min-w-0 border-b md:border-b-0 md:border-r border-border bg-background transition-all duration-300 relative",
+          viewMode === 'preview' ? "hidden w-0 h-0" : "flex flex-1",
+          viewMode === 'edit' ? "w-full h-full" : "w-full md:w-1/2 h-[45%] md:h-full"
+        )}
+      >
+        <div className="h-10 bg-card border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
+          <span>Editor: {filePath.split('/').pop()}</span>
+          <div className="flex gap-2">
+            {hasUnsavedChanges && (
+              <span className="text-amber-500 flex items-center gap-1.5 normal-case font-semibold animate-pulse-soft">
+                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
+                Unsaved Edits
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 w-full h-[calc(100%-40px)] relative select-text">
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={handleTextareaChange}
+            onKeyDown={handleTextareaKeyDown}
+            onBlur={handleAutoSave}
+            placeholder="Start writing notes in Markdown... Use [[GraphviewLinks]] to connect notes!"
+            className="w-full h-full border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] p-6 pb-32 resize-none outline-none focus:ring-0 select-text overflow-y-auto"
+          />
+
+          {/* Autocomplete suggestions overlay box */}
+          {showSuggestions && (
+            <>
+              {/* Click-away backdrop overlay */}
+              <div
+                className="fixed inset-0 z-30 bg-transparent cursor-default"
+                onClick={() => {
+                  setShowSuggestions(false);
+                  setSuggestionQuery('');
+                }}
+              />
+
+              {/* Premium Glassmorphic Popover suggestions box */}
+              <div
+                style={{
+                  top: `${suggestionPosition.top}px`,
+                  left: `${suggestionPosition.left}px`
+                }}
+                className="absolute w-[240px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5 z-40 animate-in fade-in zoom-in-95 duration-100 max-h-[180px] overflow-y-auto select-none"
+              >
+                <div className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-2 py-1 select-none border-b border-border/40 pb-1 mb-1 flex justify-between items-center">
+                  <span>GraphviewLink Suggestions</span>
+                  <span className="text-[0.55rem] lowercase tracking-normal font-semibold font-sans text-muted-foreground/55">enter to link</span>
+                </div>
+
+                {filteredSuggestions.map((path, idx) => {
+                  const isSelected = suggestionIndex === idx;
+                  const name = path.split('/').pop()?.replace(/\.md$/, '') || '';
+                  const dir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : null;
+                  return (
+                    <button
+                      key={path}
+                      type="button"
+                      onClick={() => insertSuggestion(path)}
+                      onMouseEnter={() => setSuggestionIndex(idx)}
+                      className={cn(
+                        "w-full text-left px-2.5 py-2 rounded-lg text-xs transition-premium cursor-pointer truncate font-semibold flex items-center justify-between border border-transparent",
+                        isSelected
+                          ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent"
+                          : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground"
+                      )}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <FileText className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{name}</span>
+                      </span>
+                      {dir && (
+                        <span className="text-[0.55rem] font-semibold font-sans text-muted-foreground/45 shrink-0 select-none ml-2">
+                          {dir}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+
+                {filteredSuggestions.length === 0 && (
+                  <span className="text-[0.65rem] text-muted-foreground/50 italic p-2.5 text-center select-none">
+                    No matching notes. Continue typing to create.
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Preview Pane */}
+      <div
+        className={cn(
+          "flex-col min-w-0 bg-background transition-all duration-300",
+          viewMode === 'edit' ? "hidden w-0 h-0" : "flex flex-1",
+          viewMode === 'preview' ? "w-full h-full" : "w-full md:w-1/2 h-[55%] md:h-full"
+        )}
+      >
+        <div className="h-10 bg-card border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
+          <span>Preview</span>
+          <span className="text-[0.65rem] text-muted-foreground/60 tracking-normal font-semibold normal-case">
+            DOMPurify Sanitized
+          </span>
+        </div>
+        <div
+          className="flex-1 p-6 pb-32 sm:p-8 sm:pb-32 overflow-y-auto bg-background"
+          onClick={handlePreviewClick}
+        >
+          <div
+            className="markdown-preview"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+          />
+        </div>
+      </div>
+
+      {/* Floating Panel Controls */}
+      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 sm:bottom-6 sm:right-6 flex items-center gap-1.5 z-50 bg-card/60 backdrop-blur-xl border border-border px-3 py-2 rounded-full shadow-2xl animate-fade-in select-none max-w-[calc(100%-2rem)] overflow-x-auto flex-nowrap no-scrollbar">
+        <button
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.onchange = async (e) => {
+              const file = (e.target as HTMLInputElement).files?.[0];
+              if (file) {
+                setIsUploading(true);
+                try {
+                  const result = await onUploadAttachment(file);
+                  if (result && result.name) {
+                    const textarea = textareaRef.current;
+                    if (textarea) {
+                      const startPos = textarea.selectionStart;
+                      const endPos = textarea.selectionEnd;
+                      const textToInsert = `![[${result.name}]]`;
+                      const newContent = content.substring(0, startPos) + textToInsert + content.substring(endPos);
+                      setContent(newContent);
+                      pushEditorState(newContent);
+                      
+                      // Move cursor past the inserted link
+                      setTimeout(() => {
+                        textarea.focus();
+                        const newCursorPos = startPos + textToInsert.length;
+                        textarea.setSelectionRange(newCursorPos, newCursorPos);
+                      }, 50);
+                    }
+                  }
+                } catch (err) {
+                  console.error("Failed to upload and link attachment:", err);
+                } finally {
+                  setIsUploading(false);
+                }
+              }
+            };
+            input.click();
+          }}
+          disabled={isUploading}
+          className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer shrink-0 disabled:opacity-50 disabled:pointer-events-none"
+          title="Upload & Insert Attachment"
+        >
+          {isUploading ? (
+            <RefreshCw size={14.5} className="animate-spin text-emerald-500" />
+          ) : (
+            <Paperclip size={14.5} className="text-emerald-500" />
+          )}
+        </button>
+
+        <div className="w-[1px] h-6 bg-border mx-1 shrink-0" />
+
+        <button
+          onClick={undo}
+          disabled={historyIndex <= 0}
+          className={cn(
+            "w-8 h-8 rounded-full flex items-center justify-center transition-all shrink-0",
+            historyIndex > 0
+              ? "text-muted-foreground hover:bg-border/60 hover:text-foreground cursor-pointer"
+              : "text-muted-foreground/30 pointer-events-none"
+          )}
+          title="Undo"
+        >
+          <Undo2 size={14.5} />
+        </button>
+
+        <button
+          onClick={redo}
+          disabled={historyIndex >= history.length - 1}
+          className={cn(
+            "w-8 h-8 rounded-full flex items-center justify-center transition-all shrink-0",
+            historyIndex < history.length - 1
+              ? "text-muted-foreground hover:bg-border/60 hover:text-foreground cursor-pointer"
+              : "text-muted-foreground/30 pointer-events-none"
+          )}
+          title="Redo"
+        >
+          <Redo2 size={14.5} />
+        </button>
+
+        <div className="w-[1px] h-6 bg-border mx-1 shrink-0" />
+
+        <button
+          onClick={() => setViewMode('edit')}
+          className={cn(
+            "w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer shrink-0",
+            viewMode === 'edit' && "bg-primary/10 text-accent border border-primary/20"
+          )}
+          title="Editor Only"
+        >
+          <Edit2 size={14.5} />
+        </button>
+        <button
+          onClick={() => setViewMode('preview')}
+          className={cn(
+            "w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer shrink-0",
+            viewMode === 'preview' && "bg-primary/10 text-accent border border-primary/20"
+          )}
+          title="Preview Only"
+        >
+          <Eye size={14.5} />
+        </button>
+        <button
+          onClick={() => setViewMode('split')}
+          className={cn(
+            "w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer hidden md:flex shrink-0",
+            viewMode === 'split' && "bg-primary/10 text-accent border border-primary/20"
+          )}
+          title="Split View"
+        >
+          <Columns size={14.5} />
+        </button>
+
+        <div className="w-[1px] h-6 bg-border mx-1 shrink-0" />
+
+        <button
+          onClick={handleSave}
+          disabled={saveStatus === 'saving'}
+          title="Save Changes"
+          className={cn(
+            "flex items-center justify-center gap-1.5 h-8 w-8 md:w-auto px-0 md:px-4 rounded-full font-semibold text-xs transition-all duration-200 transform cursor-pointer shrink-0",
+            hasUnsavedChanges
+              ? "bg-gradient-to-r from-primary to-accent text-white shadow-md shadow-primary/20 hover:-translate-y-0.5"
+              : "bg-muted border border-border text-foreground hover:bg-border/60"
+          )}
+        >
+          {saveStatus === 'saving' ? (
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Save className="w-3.5 h-3.5" />
+          )}
+          <span className="hidden md:inline">
+            {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : 'Save'}
+          </span>
+        </button>
+      </div>
+
+      {/* Error modal/alert banner */}
+      {saveStatus === 'error' && (
+        <div className="bg-card/75 backdrop-blur-xl border border-border rounded-xl p-5 shadow-2xl flex gap-3 max-w-[480px] absolute top-6 left-1/2 -translate-x-1/2 z-50 border-l-4 border-l-destructive animate-fade-in select-none">
+          <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+          <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+            <span className="fontWeight-700 text-sm text-foreground">Save Failed</span>
+            <span className="text-xs text-muted-foreground leading-relaxed break-words">{errorMessage}</span>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => setSaveStatus('idle')}
+                className="bg-muted hover:bg-border/60 border border-border text-foreground text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer transition-all"
+              >
+                Dismiss
+              </button>
+              <button
+                onClick={handleSave}
+                className="bg-primary hover:bg-primary/90 text-white text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer transition-all hover:shadow-md hover:shadow-primary/10"
+              >
+                Retry Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

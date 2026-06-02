@@ -1,0 +1,2545 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings } from 'lucide-react';
+import {
+  validateRepository, checkVaultCompatibility, initializeVault,
+  fetchRepositoryTree, fetchFileContent, commitFileContent, deleteFile, syncVault,
+  commitAttachment, fetchBinaryFileContent
+} from './services/github';
+import type { VaultFile } from './services/github';
+import {
+  saveTokenSecurely, retrieveTokenSecurely, purgeCredentials, STORAGE_KEYS,
+  encryptToken, decryptToken
+} from './utils/crypto';
+import type { StorageMode } from './utils/crypto';
+import { Editor } from './components/Editor';
+import { GraphView } from './components/GraphView';
+import { CanvasView } from './components/CanvasView';
+import { offlineStorage } from './services/offlineStorage';
+
+// Split modular components
+import { AuthScreen } from './components/AuthScreen';
+import { LockScreen } from './components/LockScreen';
+import { InitVaultScreen } from './components/InitVaultScreen';
+import { Sidebar } from './components/Sidebar';
+import { cn } from './utils/cn';
+
+export interface StarfishSettings {
+  attachmentsFolder: string;
+  maxAttachmentSize: number; // MB
+  graphNodeGravity: number;
+  graphRepulsionStrength: number;
+  graphSpringLength: number;
+}
+
+const DEFAULT_SETTINGS: StarfishSettings = {
+  attachmentsFolder: 'attachments',
+  maxAttachmentSize: 5, // MB
+  graphNodeGravity: 0.02,
+  graphRepulsionStrength: 180,
+  graphSpringLength: 120
+};
+
+export default function App() {
+  // Connection and Authentication State
+  const [isOffline, setIsOffline] = useState<boolean>(() => {
+    return localStorage.getItem('starfishnotes-is-offline') === 'true';
+  });
+  const [authMode, setAuthMode] = useState<'github' | 'local'>(() => {
+    return localStorage.getItem('starfishnotes-is-offline') === 'true' ? 'local' : 'github';
+  });
+  const [isPersistentStorage, setIsPersistentStorage] = useState(false);
+
+  useEffect(() => {
+    if (navigator.storage && navigator.storage.persisted) {
+      navigator.storage.persisted().then(persisted => {
+        setIsPersistentStorage(persisted);
+      });
+    }
+  }, []);
+
+  const requestPersistentStorage = async (): Promise<boolean> => {
+    if (navigator.storage && navigator.storage.persist) {
+      try {
+        const persisted = await navigator.storage.persist();
+        setIsPersistentStorage(persisted);
+        return persisted;
+      } catch (e) {
+        console.error('Failed to request persistent storage:', e);
+        return false;
+      }
+    }
+    return false;
+  };
+  const [githubToken, setGithubToken] = useState('');
+  const [repoName, setRepoName] = useState('');
+  const [branchName, setBranchName] = useState('main');
+  const [storageMode, setStorageMode] = useState<StorageMode>('session');
+  const [masterPassphrase, setMasterPassphrase] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  // Lockscreen (for encrypted storage upon fresh session)
+  const [showLockScreen, setShowLockScreen] = useState(false);
+  const [unlockPassphrase, setUnlockPassphrase] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+
+  // Global settings modal state
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Keep track of ghost note paths that failed to be created to prevent infinite request loops
+  const failedGhostNotesRef = React.useRef<Set<string>>(new Set());
+
+  // Global premium toast error notification system (replaces blocking alerts)
+  const [globalError, setGlobalError] = useState('');
+
+  // Settings State & Storage sync
+  const [settings, setSettings] = useState<StarfishSettings>(() => {
+    try {
+      const saved = localStorage.getItem('starfishnotes-settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          attachmentsFolder: parsed.attachmentsFolder ?? 'attachments',
+          maxAttachmentSize: Math.min(parsed.maxAttachmentSize ?? 5, 25),
+          graphNodeGravity: parsed.graphNodeGravity ?? 0.02,
+          graphRepulsionStrength: parsed.graphRepulsionStrength ?? 180,
+          graphSpringLength: parsed.graphSpringLength ?? 120
+        };
+      }
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+    }
+    return DEFAULT_SETTINGS;
+  });
+
+  const updateSettings = useCallback((newSettings: Partial<StarfishSettings>) => {
+    setSettings(prev => {
+      const updated = { ...prev, ...newSettings };
+      if (updated.maxAttachmentSize > 25) {
+        updated.maxAttachmentSize = 25;
+      }
+      localStorage.setItem('starfishnotes-settings', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  // Vault Compatibility State
+  const [isVaultChecked, setIsVaultChecked] = useState(false);
+  const [isVaultCompatible, setIsVaultCompatible] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [isRepoEmpty, setIsRepoEmpty] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Sidebar Resizing & Collapse States
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('starfishnotes-sidebar-width');
+    return saved ? parseInt(saved, 10) : 260;
+  });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    const saved = localStorage.getItem('starfishnotes-sidebar-collapsed');
+    return saved === 'true';
+  });
+  const [isResizingSidebar, setIsResizingSidebar] = useState<boolean>(false);
+
+  const handleSetSidebarWidth = (w: number) => {
+    setSidebarWidth(w);
+    localStorage.setItem('starfishnotes-sidebar-width', w.toString());
+  };
+
+  const handleSetSidebarCollapsed = (collapsed: boolean) => {
+    setIsSidebarCollapsed(collapsed);
+    localStorage.setItem('starfishnotes-sidebar-collapsed', collapsed.toString());
+  };
+
+  // Folder, Move, and Copy States
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [parentFolderPathForNewFolder, setParentFolderPathForNewFolder] = useState<string | null>(null);
+  const [newFolderName, setNewFolderName] = useState('');
+
+  const [pendingMoveCopyFile, setPendingMoveCopyFile] = useState<VaultFile | null>(null);
+  const [moveCopyAction, setMoveCopyAction] = useState<'move' | 'copy'>('copy');
+  const [moveCopyNameInput, setMoveCopyNameInput] = useState('');
+  const [moveCopyFolderSelect, setMoveCopyFolderSelect] = useState('/');
+  const [isMoveCopyFolderDropdownOpen, setIsMoveCopyFolderDropdownOpen] = useState(false);
+  const [moveCopyFolderSearch, setMoveCopyFolderSearch] = useState('');
+  const [pendingDeleteFolder, setPendingDeleteFolder] = useState<string | null>(null);
+
+  // File system State
+  const [files, setFiles] = useState<VaultFile[]>([]);
+  const [fileContents, setFileContents] = useState<Record<string, string>>({}); // path -> text
+  const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
+  const [isLoadingTree, setIsLoadingTree] = useState(false);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [vaultImages, setVaultImages] = useState<Record<string, string>>({});
+
+  // View state switcher: 'workspace' | 'graph'
+  const [viewTab, setViewTab] = useState<'workspace' | 'graph'>('workspace');
+
+  // Modal States
+  const [pendingDeleteFile, setPendingDeleteFile] = useState<{ path: string, sha: string } | null>(null);
+  const [pendingRenameFile, setPendingRenameFile] = useState<{ path: string, name: string, sha: string } | null>(null);
+  const [renameInputValue, setRenameInputValue] = useState('');
+  const [renameError, setRenameError] = useState('');
+
+  // Stable handlers declared before checkSession mount hook to prevent Temporal Dead Zone (TDZ)
+
+  const refreshFilesOffline = useCallback(async () => {
+    setIsLoadingTree(true);
+    try {
+      const offlineFiles = await offlineStorage.getFilesList();
+      
+      const mappedFiles: VaultFile[] = offlineFiles.map(f => ({
+        path: f.path,
+        name: f.name,
+        type: 'blob',
+        sha: f.sha,
+        size: f.size
+      }));
+
+      setFiles(mappedFiles);
+
+      if (mappedFiles.length > 0 && !activeFilePath) {
+        const defaultNote = mappedFiles.find(f => f.name === 'Welcome.md') || mappedFiles[0];
+        setActiveFilePath(defaultNote.path);
+      }
+    } catch (e) {
+      console.error('Failed to load local offline files tree:', e);
+    } finally {
+      setIsLoadingTree(false);
+    }
+  }, [activeFilePath]);
+
+  const loadFileContentOffline = useCallback(async (path: string, providedKey?: string) => {
+    if (fileContents[path] !== undefined) return;
+    setIsLoadingFile(true);
+    try {
+      const file = await offlineStorage.getFile(path);
+      if (file) {
+        let text = file.content;
+        const mode = storageMode;
+        if (mode === 'encrypted' || mode === 'keychain') {
+          const decryptionKey = providedKey || masterPassphrase;
+          if (decryptionKey) {
+            text = await decryptToken(file.content, decryptionKey);
+          }
+        }
+        setFileContents(prev => ({
+          ...prev,
+          [path]: text
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to load offline file content:', e);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  }, [fileContents, storageMode, masterPassphrase]);
+
+  const preloadFileContentOffline = useCallback(async (path: string, providedKey?: string) => {
+    if (!path || fileContents[path] !== undefined) return;
+    try {
+      const file = await offlineStorage.getFile(path);
+      if (file) {
+        let text = file.content;
+        const mode = storageMode;
+        if (mode === 'encrypted' || mode === 'keychain') {
+          const decryptionKey = providedKey || masterPassphrase;
+          if (decryptionKey) {
+            text = await decryptToken(file.content, decryptionKey);
+          }
+        }
+        setFileContents(prev => ({
+          ...prev,
+          [path]: text
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to preload offline file content:', e);
+    }
+  }, [fileContents, storageMode, masterPassphrase]);
+
+  const loadBinaryFileOffline = useCallback(async (path: string, providedKey?: string) => {
+    if (!path || vaultImages[path]) return;
+    try {
+      const file = await offlineStorage.getFile(path);
+      if (file) {
+        let base64 = file.content;
+        const mode = storageMode;
+        if (mode === 'encrypted' || mode === 'keychain') {
+          const decryptionKey = providedKey || masterPassphrase;
+          if (decryptionKey) {
+            base64 = await decryptToken(file.content, decryptionKey);
+          }
+        }
+        
+        const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
+        let mime = 'application/octet-stream';
+        if (ext === '.png') mime = 'image/png';
+        else if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
+        else if (ext === '.webp') mime = 'image/webp';
+        else if (ext === '.gif') mime = 'image/gif';
+        else if (ext === '.svg') mime = 'image/svg+xml';
+        else if (ext === '.pdf') mime = 'application/pdf';
+
+        const dataUrl = `data:${mime};base64,${base64}`;
+        setVaultImages(prev => ({
+          ...prev,
+          [path]: dataUrl
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to load binary offline file:', e);
+    }
+  }, [vaultImages, storageMode, masterPassphrase]);
+
+  const uploadAttachmentOffline = async (file: File, folderPath?: string, shouldNavigate: boolean = true): Promise<{ path: string; name: string }> => {
+    const maxOfflineSize = 10 * 1024 * 1024;
+    if (file.size > maxOfflineSize) {
+      const errorMsg = 'Attachment exceeds the strict 10MB size limit for offline vault uploads.';
+      setGlobalError(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    const finalFolder = folderPath !== undefined ? folderPath : settings.attachmentsFolder;
+    const parentPath = finalFolder && finalFolder !== '/'
+      ? (finalFolder.endsWith('/') ? finalFolder : `${finalFolder}/`)
+      : '';
+    
+    const finalPath = `${parentPath}${file.name}`;
+
+    let finalPathResolved = finalPath;
+    let counter = 1;
+    const dotIndex = file.name.lastIndexOf('.');
+    const baseName = dotIndex !== -1 ? file.name.substring(0, dotIndex) : file.name;
+    const ext = dotIndex !== -1 ? file.name.substring(dotIndex) : '';
+    
+    while (files.some(f => f.path === finalPathResolved)) {
+      finalPathResolved = `${parentPath}${baseName} ${counter}${ext}`;
+      counter++;
+    }
+
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const res = reader.result as string;
+          resolve(res.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      let savedContent = base64;
+      const mode = storageMode;
+      if (mode === 'encrypted' || mode === 'keychain') {
+        if (masterPassphrase) {
+          savedContent = await encryptToken(base64, masterPassphrase);
+        }
+      }
+
+      const sha = 'offline-sha-' + Date.now();
+      await offlineStorage.saveFile({
+        path: finalPathResolved,
+        name: finalPathResolved.split('/').pop() || file.name,
+        type: 'blob',
+        content: savedContent,
+        size: file.size,
+        sha
+      });
+
+      const mime = file.type || 'application/octet-stream';
+      const dataUrl = `data:${mime};base64,${base64}`;
+      setVaultImages(prev => ({
+        ...prev,
+        [finalPathResolved]: dataUrl
+      }));
+
+      const newFile: VaultFile = {
+        path: finalPathResolved,
+        name: finalPathResolved.split('/').pop() || file.name,
+        type: 'blob',
+        sha,
+        size: file.size
+      };
+
+      setFiles(prev => [newFile, ...prev]);
+      if (shouldNavigate) {
+        setActiveFilePath(finalPathResolved);
+      }
+      return { path: finalPathResolved, name: newFile.name };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to upload attachment offline.';
+      setGlobalError(msg);
+      throw e;
+    }
+  };
+
+  const handleSaveFileOffline = async (path: string, content: string) => {
+    let savedContent = content;
+    const mode = storageMode;
+    if (mode === 'encrypted' || mode === 'keychain') {
+      if (masterPassphrase) {
+        savedContent = await encryptToken(content, masterPassphrase);
+      }
+    }
+
+    const sha = 'offline-sha-' + Date.now();
+    await offlineStorage.saveFile({
+      path,
+      name: path.split('/').pop() || path,
+      type: 'text',
+      content: savedContent,
+      size: content.length,
+      sha
+    });
+
+    setFileContents(prev => ({
+      ...prev,
+      [path]: content
+    }));
+
+    setFiles(prev => prev.map(f => {
+      if (f.path === path) {
+        return { ...f, sha };
+      }
+      return f;
+    }));
+
+    return { sha };
+  };
+
+  const createNewFileOffline = async (extension: '.md' | '.txt' | '.canvas', folderPath?: string) => {
+    if (isLoadingFile) return;
+
+    const isText = extension === '.md' || extension === '.txt';
+    const baseName = extension === '.canvas' ? 'Untitled Board' : 'Untitled Note';
+
+    const parentPath = folderPath && folderPath !== '/'
+      ? (folderPath.endsWith('/') ? folderPath : `${folderPath}/`)
+      : '';
+
+    let finalPath = `${parentPath}${baseName}${extension}`;
+    let counter = 1;
+
+    while (files.some(f => f.path === finalPath)) {
+      finalPath = `${parentPath}${baseName} ${counter}${extension}`;
+      counter++;
+    }
+
+    setIsLoadingFile(true);
+    try {
+      const cleanFileName = finalPath.split('/').pop() || finalPath;
+      const initialText = isText
+        ? `# ${cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '')}\n\nStart typing here...`
+        : JSON.stringify({ nodes: [], edges: [] }, null, 2);
+
+      let savedContent = initialText;
+      const mode = storageMode;
+      if (mode === 'encrypted' || mode === 'keychain') {
+        if (masterPassphrase) {
+          savedContent = await encryptToken(initialText, masterPassphrase);
+        }
+      }
+
+      const sha = 'offline-sha-' + Date.now();
+      await offlineStorage.saveFile({
+        path: finalPath,
+        name: cleanFileName,
+        type: 'text',
+        content: savedContent,
+        size: initialText.length,
+        sha
+      });
+
+      const newFile: VaultFile = {
+        path: finalPath,
+        name: cleanFileName,
+        type: 'blob',
+        sha,
+        size: initialText.length
+      };
+
+      setFiles(prev => [newFile, ...prev]);
+      setFileContents(prev => ({ ...prev, [finalPath]: initialText }));
+      setActiveFilePath(finalPath);
+      setViewTab('workspace');
+    } catch (e) {
+      console.error('Failed to create file offline:', e);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
+
+  const handleConfirmDeleteOffline = async () => {
+    if (!pendingDeleteFile) return;
+    const { path } = pendingDeleteFile;
+    setPendingDeleteFile(null);
+    setIsLoadingFile(true);
+    try {
+      await offlineStorage.deleteFile(path);
+      setFiles(prev => prev.filter(f => f.path !== path));
+      setFileContents(prev => {
+        const updated = { ...prev };
+        delete updated[path];
+        return updated;
+      });
+      if (activeFilePath === path) {
+        setActiveFilePath(null);
+      }
+    } catch (e) {
+      console.error('Failed to delete file offline:', e);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
+
+  const handleConnectOffline = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsConnecting(true);
+    setAuthError('');
+
+    try {
+      let activeKey = '';
+      if (storageMode === 'encrypted') {
+        if (!masterPassphrase) {
+          throw new Error('An encryption passphrase is required for Encrypted Storage mode.');
+        }
+        activeKey = masterPassphrase;
+      } else if (storageMode === 'keychain') {
+        const id = masterPassphrase || 'vault_local';
+        if (!('PasswordCredential' in window)) {
+          throw new Error('OS Protected Storage is not supported by this browser.');
+        }
+        let seed = '';
+        try {
+          const credential = await navigator.credentials.get({
+            password: true,
+            unmediated: false
+          } as unknown as CredentialRequestOptions);
+          if (credential) {
+            seed = (credential as unknown as { password?: string }).password || '';
+          }
+        } catch (err) {
+          console.warn('Silent credentials fetch failed', err);
+        }
+
+        if (!seed) {
+          const hasVerification = await offlineStorage.getMeta('vault_verification');
+          if (hasVerification) {
+            const credential = await navigator.credentials.get({
+              password: true,
+              mediation: 'required'
+            } as unknown as CredentialRequestOptions);
+            if (credential) {
+              seed = (credential as unknown as { password?: string }).password || '';
+            }
+            if (!seed) {
+              throw new Error('Keychain retrieval failed or cancelled. Authentication is required to unlock.');
+            }
+          } else {
+            const randomBytes = window.crypto.getRandomValues(new Uint8Array(32));
+            seed = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+            const PasswordCred = (window as unknown as { PasswordCredential: new (options: { id: string; password: string; name: string }) => Credential }).PasswordCredential;
+            const credential = new PasswordCred({
+              id,
+              password: seed,
+              name: 'StarfishNotes Local Offline Vault'
+            });
+            await navigator.credentials.store(credential);
+          }
+        }
+        activeKey = seed;
+      }
+
+      const verification = await offlineStorage.getMeta('vault_verification');
+      if (verification) {
+        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+          try {
+            const dec = await decryptToken(verification, activeKey);
+            if (dec !== 'Welcome') {
+              throw new Error('Invalid passphrase');
+            }
+          } catch {
+            throw new Error('Incorrect passphrase or keychain seed. Vault verification failed.');
+          }
+        }
+      } else {
+        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+          const enc = await encryptToken('Welcome', activeKey);
+          await offlineStorage.saveMeta('vault_verification', enc);
+        }
+        const offlineFiles = await offlineStorage.getFilesList();
+        if (offlineFiles.length === 0) {
+          const welcomeContent = `# Welcome to your Local Offline Vault! 🚀\n\nThis is your secure, private note-taking space stored entirely inside your browser.\n\n### Offline Vault Details\n- **IndexedDB Storage**: Your notes are kept locally on this device, bypassing any cloud servers.\n- **Zero Account Required**: Use all features—including infinite canvases and graph visualization—with full privacy.\n- **Storage Protection**: Encrypted using AES-GCM or native OS keychain as configured.\n\n### Warning Alert\nClearing your browser's site data, cookies, or database cache will permanently erase your offline notes. Make sure to **Secure Storage** using the button on the login screen to request browser protection.\n`;
+          
+          let welcomeContentToSave = welcomeContent;
+          if (storageMode === 'encrypted' || storageMode === 'keychain') {
+            welcomeContentToSave = await encryptToken(welcomeContent, activeKey);
+          }
+
+          await offlineStorage.saveFile({
+            path: 'Welcome.md',
+            name: 'Welcome.md',
+            type: 'text',
+            content: welcomeContentToSave,
+            size: welcomeContent.length,
+            sha: 'offline-init-sha'
+          });
+        }
+      }
+
+      localStorage.setItem('starfishnotes-is-offline', 'true');
+      localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, storageMode);
+      setIsOffline(true);
+      setIsAuthenticated(true);
+      setRepoName('Local Vault');
+      setBranchName('offline');
+      
+      await refreshFilesOffline();
+
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to unlock offline vault.';
+      setAuthError(msg);
+      setIsAuthenticated(false);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const refreshFiles = useCallback(async (
+    token: string = githubToken,
+    repo: string = repoName,
+    branch: string = branchName
+  ) => {
+    if (isOffline) {
+      await refreshFilesOffline();
+      return;
+    }
+    setIsLoadingTree(true);
+    try {
+      const tree = await fetchRepositoryTree(token, repo, branch);
+      setFiles(tree);
+
+      if (tree.length > 0 && !activeFilePath) {
+        const defaultNote = tree.find(f => f.name === 'Welcome.md') || tree[0];
+        setActiveFilePath(defaultNote.path);
+      }
+
+      syncVault(token, repo, branch, tree).then(() => {
+        console.log("Vault sync complete!");
+        // Optional: Trigger a state update here to tell the UI the sync is done
+      }).catch(console.error);
+    } catch {
+      // Tree retrieval failed
+    } finally {
+      setIsLoadingTree(false);
+    }
+  }, [githubToken, repoName, branchName, activeFilePath, isOffline, refreshFilesOffline]);
+
+  const checkAndLoadVault = useCallback(async (token: string, repo: string, branch: string) => {
+    try {
+      const compat = await checkVaultCompatibility(token, repo, branch);
+      setIsVaultChecked(true);
+
+      if (compat.exists && compat.compatible) {
+        setIsVaultCompatible(true);
+        await refreshFiles(token, repo, branch);
+      } else {
+        setIsVaultCompatible(false);
+      }
+    } catch {
+      setIsVaultCompatible(false);
+    }
+  }, [refreshFiles]);
+
+  const autoConnect = useCallback(async (token: string, repo: string, branch: string) => {
+    setIsConnecting(true);
+    setAuthError('');
+    try {
+      const result = await validateRepository(token, repo, branch);
+      setIsAuthenticated(true);
+      if (result.isEmpty) {
+        setIsRepoEmpty(true);
+        setIsVaultChecked(true);
+        setIsVaultCompatible(false);
+      } else {
+        setIsRepoEmpty(false);
+        await checkAndLoadVault(token, repo, branch);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Auto-connect failed. Please re-enter connection details.';
+      setAuthError(msg);
+      setIsAuthenticated(false);
+      purgeCredentials();
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [checkAndLoadVault]);
+
+  const loadFileContent = useCallback(async (path: string, sha: string) => {
+    if (isOffline) {
+      await loadFileContentOffline(path);
+      return;
+    }
+    if (fileContents[path] !== undefined) return;
+
+    setIsLoadingFile(true);
+    try {
+      const content = await fetchFileContent(githubToken, repoName, path, sha);
+      setFileContents(prev => ({
+        ...prev,
+        [path]: content,
+      }));
+    } catch {
+      // Failed loading file content
+    } finally {
+      setIsLoadingFile(false);
+    }
+  }, [fileContents, githubToken, repoName, isOffline, loadFileContentOffline]);
+
+  const preloadFileContent = useCallback(async (path: string, sha: string) => {
+    if (isOffline) {
+      await preloadFileContentOffline(path);
+      return;
+    }
+    if (!path || fileContents[path] !== undefined) return;
+    try {
+      const content = await fetchFileContent(githubToken, repoName, path, sha);
+      setFileContents(prev => ({
+        ...prev,
+        [path]: content,
+      }));
+    } catch (e) {
+      console.error('Failed to preload file content:', e);
+    }
+  }, [fileContents, githubToken, repoName, isOffline, preloadFileContentOffline]);
+
+  const loadBinaryFile = useCallback(async (path: string, sha: string) => {
+    if (isOffline) {
+      await loadBinaryFileOffline(path);
+      return;
+    }
+    if (!path || !sha || vaultImages[path]) return;
+    try {
+      const base64 = await fetchBinaryFileContent(githubToken, repoName, sha);
+      const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
+      let mime = 'application/octet-stream';
+      if (ext === '.png') mime = 'image/png';
+      else if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
+      else if (ext === '.webp') mime = 'image/webp';
+      else if (ext === '.gif') mime = 'image/gif';
+      else if (ext === '.svg') mime = 'image/svg+xml';
+      else if (ext === '.pdf') mime = 'application/pdf';
+
+      const dataUrl = `data:${mime};base64,${base64}`;
+      setVaultImages(prev => ({
+        ...prev,
+        [path]: dataUrl
+      }));
+    } catch (e) {
+      console.error('Failed to load binary file:', e);
+    }
+  }, [vaultImages, githubToken, repoName, isOffline, loadBinaryFileOffline]);
+
+  const uploadAttachment = async (file: File, folderPath?: string, shouldNavigate: boolean = true): Promise<{ path: string; name: string }> => {
+    if (isOffline) {
+      return uploadAttachmentOffline(file, folderPath, shouldNavigate);
+    }
+    const maxSizeInBytes = settings.maxAttachmentSize * 1024 * 1024;
+    if (file.size > maxSizeInBytes) {
+      const errorMsg = `Attachment exceeds the ${settings.maxAttachmentSize}MB size limit set in settings.`;
+      setGlobalError(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    const finalFolder = folderPath !== undefined ? folderPath : settings.attachmentsFolder;
+    const parentPath = finalFolder && finalFolder !== '/'
+      ? (finalFolder.endsWith('/') ? finalFolder : `${finalFolder}/`)
+      : '';
+    
+    const finalPath = `${parentPath}${file.name}`;
+
+    // Resolve name collision locally
+    let finalPathResolved = finalPath;
+    let counter = 1;
+    const dotIndex = file.name.lastIndexOf('.');
+    const baseName = dotIndex !== -1 ? file.name.substring(0, dotIndex) : file.name;
+    const ext = dotIndex !== -1 ? file.name.substring(dotIndex) : '';
+    
+    while (files.some(f => f.path === finalPathResolved)) {
+      finalPathResolved = `${parentPath}${baseName} ${counter}${ext}`;
+      counter++;
+    }
+
+    try {
+      // Read file as base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const res = reader.result as string;
+          resolve(res.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const commitResult = await commitAttachment(
+        githubToken,
+        repoName,
+        branchName,
+        finalPathResolved,
+        base64,
+        null,
+        `upload attachment ${finalPathResolved}`
+      );
+
+      const mime = file.type || 'application/octet-stream';
+      const dataUrl = `data:${mime};base64,${base64}`;
+      setVaultImages(prev => ({
+        ...prev,
+        [finalPathResolved]: dataUrl
+      }));
+
+      const newFile: VaultFile = {
+        path: finalPathResolved,
+        name: finalPathResolved.split('/').pop() || file.name,
+        type: 'blob',
+        sha: commitResult.sha,
+        size: file.size
+      };
+
+      setFiles(prev => [newFile, ...prev]);
+      if (shouldNavigate) {
+        setActiveFilePath(finalPathResolved);
+      }
+      return { path: finalPathResolved, name: newFile.name };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to upload attachment.';
+      setGlobalError(msg);
+      throw e;
+    }
+  };
+
+  // 1. Session Restoration on Mount
+  useEffect(() => {
+    const checkSession = async () => {
+      const offlineFlag = localStorage.getItem('starfishnotes-is-offline') === 'true';
+      const mode = (localStorage.getItem(STORAGE_KEYS.STORAGE_MODE) || 'memory') as StorageMode;
+      setStorageMode(mode);
+
+      if (offlineFlag) {
+        setIsOffline(true);
+        setAuthMode('local');
+        setRepoName('Local Vault');
+        setBranchName('offline');
+
+        if (mode === 'encrypted' || mode === 'keychain') {
+          setShowLockScreen(true);
+        } else {
+          setIsAuthenticated(true);
+          setTimeout(() => {
+            refreshFilesOffline();
+          }, 0);
+        }
+        return;
+      }
+
+      const cachedRepo = localStorage.getItem(STORAGE_KEYS.REPO_NAME) || '';
+      const cachedBranch = localStorage.getItem(STORAGE_KEYS.BRANCH_NAME) || 'main';
+
+      setStorageMode(mode);
+
+      if (cachedRepo) {
+        setRepoName(cachedRepo);
+        setBranchName(cachedBranch);
+      }
+
+      // Check if sessionStorage contains a cached decrypted token (surviving page reload F5!)
+      const token = await retrieveTokenSecurely();
+      if (token) {
+        setGithubToken(token);
+        setIsAuthenticated(true);
+        // Direct auto-connect since token is readily decrypted in session memory
+        autoConnect(token, cachedRepo, cachedBranch);
+      } else if (mode === 'encrypted' && localStorage.getItem(STORAGE_KEYS.ENCRYPTED_PAT)) {
+        // Encrypted token exists in localStorage, but decryption key is missing in sessionStorage
+        // Prompt user to enter passphrase to unlock the app!
+        setShowLockScreen(true);
+      } else if (mode === 'keychain') {
+        // Native keychain mode stored, but silent retrieval failed on page load.
+        // Show Lock Screen to prompt user interaction under user gesture!
+        setShowLockScreen(true);
+      }
+    };
+    checkSession();
+  }, [autoConnect, refreshFilesOffline]);
+
+  // autoConnect function declaration migrated to stable top position
+
+  // 2. Initializing connection via Manual Submit
+  const handleConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!githubToken.trim() || !repoName.trim() || !branchName.trim()) {
+      setAuthError('All connection parameters are required.');
+      return;
+    }
+
+    if (storageMode === 'encrypted' && !masterPassphrase) {
+      setAuthError('An encryption passphrase is required for Encrypted Storage mode.');
+      return;
+    }
+
+    setIsConnecting(true);
+    setAuthError('');
+
+    try {
+      // A. Verify credentials against GitHub API
+      const result = await validateRepository(githubToken.trim(), repoName.trim(), branchName.trim());
+
+      // B. Save credentials securely to tiered storage
+      await saveTokenSecurely(githubToken.trim(), storageMode, masterPassphrase, repoName.trim());
+      localStorage.setItem(STORAGE_KEYS.REPO_NAME, repoName.trim());
+      localStorage.setItem(STORAGE_KEYS.BRANCH_NAME, branchName.trim());
+
+      setIsAuthenticated(true);
+
+      // C. Perform vault integrity checking
+      if (result.isEmpty) {
+        setIsRepoEmpty(true);
+        setIsVaultChecked(true);
+        setIsVaultCompatible(false);
+      } else {
+        setIsRepoEmpty(false);
+        await checkAndLoadVault(githubToken.trim(), repoName.trim(), branchName.trim());
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Verification failed. Please review your token and repository parameters.';
+      setAuthError(msg);
+      setIsAuthenticated(false);
+      purgeCredentials();
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  // 3. Unlock screen for returning encrypted sessions
+  const handleUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const mode = (localStorage.getItem(STORAGE_KEYS.STORAGE_MODE) || 'memory') as StorageMode;
+
+    if (mode === 'encrypted' && !unlockPassphrase) {
+      setUnlockError('Passphrase required.');
+      return;
+    }
+
+    setIsConnecting(true);
+    setUnlockError('');
+
+    try {
+      if (isOffline) {
+        let activeKey = '';
+        if (mode === 'encrypted') {
+          activeKey = unlockPassphrase;
+        } else if (mode === 'keychain') {
+          if (!('PasswordCredential' in window)) {
+            throw new Error('OS Protected Storage not supported.');
+          }
+          const credential = await navigator.credentials.get({
+            password: true,
+            mediation: 'required'
+          } as unknown as CredentialRequestOptions);
+          if (credential) {
+            activeKey = (credential as unknown as { password?: string }).password || '';
+          }
+          if (!activeKey) {
+            throw new Error('Keychain verification failed.');
+          }
+        }
+
+        const verification = await offlineStorage.getMeta('vault_verification');
+        if (verification) {
+          try {
+            const dec = await decryptToken(verification, activeKey);
+            if (dec !== 'Welcome') {
+              throw new Error('Invalid passphrase');
+            }
+          } catch {
+            throw new Error('Incorrect master lock passphrase.');
+          }
+        }
+
+        setMasterPassphrase(activeKey);
+        setIsAuthenticated(true);
+        setShowLockScreen(false);
+        await refreshFilesOffline();
+      } else {
+        const decrypted = await retrieveTokenSecurely(unlockPassphrase);
+        if (decrypted) {
+          setGithubToken(decrypted);
+          setIsAuthenticated(true);
+          setShowLockScreen(false);
+          await autoConnect(decrypted, repoName, branchName);
+        } else {
+          if (mode === 'keychain') {
+            setUnlockError('Verification failed or cancelled.');
+          } else {
+            setUnlockError('Incorrect passphrase.');
+          }
+        }
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : (mode === 'keychain' ? 'Failed to unlock with Passkey.' : 'Failed to decrypt token. Check passphrase.');
+      setUnlockError(msg);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  // 4. Log out manager
+  const handleLogout = () => {
+    purgeCredentials();
+    localStorage.removeItem('starfishnotes-is-offline');
+    setIsOffline(false);
+    setAuthMode('github');
+    setIsAuthenticated(false);
+    setShowLockScreen(false);
+    setGithubToken('');
+    setMasterPassphrase('');
+    setFiles([]);
+    setFileContents({});
+    setActiveFilePath(null);
+    setIsVaultChecked(false);
+  };
+
+  // checkAndLoadVault function migrated to stable top position
+
+  const handleInitializeVault = async () => {
+    setIsInitializing(true);
+    try {
+      await initializeVault(githubToken, repoName, branchName);
+
+      // Create initial Welcome note in vault
+      const welcomeContent = `# Welcome to StarfishNotes! 🚀\n\nThis is your secure, serverless note-taking space linked to GitHub.\n\n### App Features\n- **Vault Syncing:** All edits are committed directly to your GitHub repository.\n- **Graph View:** Click the **Link Map** tab to visualize connected notes.\n- **Infinite Canvas:** Create canvas boards (\`.canvas\` files) to map notes visually!\n\n### How to Link Notes\nType double brackets like this: [[Welcome]] to link back to this note! Open the split preview to see active graphview-links in action.\n`;
+
+      await commitFileContent(githubToken, repoName, branchName, 'Welcome.md', welcomeContent, null, 'chore: create initial Welcome.md note');
+
+      setIsVaultCompatible(true);
+      await refreshFiles(githubToken, repoName, branchName);
+      setActiveFilePath('Welcome.md');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to initialize vault metadata.';
+      setAuthError(msg);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  // refreshFiles function migrated to stable top position
+
+  // preloadFilesBackground function migrated to stable top position
+
+  // loadFileContent function migrated to stable top position
+
+  const handleSaveFile = async (path: string, content: string, fileSha: string | null) => {
+    if (isOffline) {
+      return handleSaveFileOffline(path, content);
+    }
+    const result = await commitFileContent(githubToken, repoName, branchName, path, content, fileSha);
+
+    // Update in-memory file structure
+    setFileContents(prev => ({
+      ...prev,
+      [path]: content,
+    }));
+
+    setFiles(prev => prev.map(f => {
+      if (f.path === path) {
+        return { ...f, sha: result.sha };
+      }
+      return f;
+    }));
+
+    return result;
+  };
+
+  // Create empty file
+  const createNewFile = async (extension: '.md' | '.txt' | '.canvas', folderPath?: string) => {
+    if (isOffline) {
+      await createNewFileOffline(extension, folderPath);
+      return;
+    }
+    if (isLoadingFile) return;
+
+    const isText = extension === '.md' || extension === '.txt';
+    const baseName = extension === '.canvas' ? 'Untitled Board' : 'Untitled Note';
+
+    // Resolve parent directory path
+    const parentPath = folderPath && folderPath !== '/'
+      ? (folderPath.endsWith('/') ? folderPath : `${folderPath}/`)
+      : '';
+
+    let finalPath = `${parentPath}${baseName}${extension}`;
+    let counter = 1;
+
+    // Resolve name collision locally
+    while (files.some(f => f.path === finalPath)) {
+      finalPath = `${parentPath}${baseName} ${counter}${extension}`;
+      counter++;
+    }
+
+    setIsLoadingFile(true);
+    try {
+      const cleanFileName = finalPath.split('/').pop() || finalPath;
+      const initialText = isText
+        ? `# ${cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '')}\n\nStart typing here...`
+        : JSON.stringify({ nodes: [], edges: [] }, null, 2);
+
+      const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`);
+
+      const newFile: VaultFile = {
+        path: finalPath,
+        name: cleanFileName,
+        type: 'blob',
+        sha: result.sha,
+      };
+
+      setFiles(prev => [newFile, ...prev]);
+      setFileContents(prev => ({ ...prev, [finalPath]: initialText }));
+      setActiveFilePath(finalPath);
+      setViewTab('workspace'); // Toggle workspace active
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to create new file on GitHub.';
+      setAuthError(msg);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (isOffline) {
+      await handleConfirmDeleteOffline();
+      return;
+    }
+    if (!pendingDeleteFile) return;
+    const { path, sha } = pendingDeleteFile;
+    setPendingDeleteFile(null); // Close modal
+    setIsLoadingFile(true);
+    try {
+      await deleteFile(githubToken, repoName, branchName, path, sha);
+
+      setFiles(prev => prev.filter(f => f.path !== path));
+
+      // Clear contents cache
+      setFileContents(prev => {
+        const updated = { ...prev };
+        delete updated[path];
+        return updated;
+      });
+
+      if (activeFilePath === path) {
+        setActiveFilePath(null);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to delete file.';
+      setAuthError(msg);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
+
+  const handleRenameFile = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!pendingRenameFile) return;
+    const { path: oldPath, sha: oldSha } = pendingRenameFile;
+    const cleanNewName = renameInputValue.trim();
+    if (!cleanNewName) {
+      setRenameError('Note name cannot be empty.');
+      return;
+    }
+
+    if (/[/\\:*?"<>|]/.test(cleanNewName)) {
+      setRenameError('Note name contains invalid characters.');
+      return;
+    }
+
+    const extension = oldPath.substring(oldPath.lastIndexOf('.'));
+    const newPath = oldPath.includes('/')
+      ? oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + cleanNewName + extension
+      : cleanNewName + extension;
+
+    if (newPath === oldPath) {
+      setPendingRenameFile(null);
+      return;
+    }
+
+    if (files.some(f => f.path === newPath)) {
+      setRenameError(`A note named "${cleanNewName}${extension}" already exists.`);
+      return;
+    }
+
+    setIsLoadingFile(true);
+    setPendingRenameFile(null); // Close modal
+    try {
+      // 1. Get current content
+      let content = fileContents[oldPath];
+      if (content === undefined) {
+        if (isOffline) {
+          const file = await offlineStorage.getFile(oldPath);
+          if (file) {
+            content = file.content;
+            if (storageMode === 'encrypted' || storageMode === 'keychain') {
+              if (masterPassphrase) {
+                content = await decryptToken(file.content, masterPassphrase);
+              }
+            }
+          } else {
+            content = "";
+          }
+        } else {
+          content = await fetchFileContent(githubToken, repoName, oldPath, oldSha);
+        }
+      }
+
+      // 2. Commit to new path & 3. Delete old path
+      let sha = '';
+      if (isOffline) {
+        sha = 'offline-sha-' + Date.now();
+        let savedContent = content;
+        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+          if (masterPassphrase) {
+            savedContent = await encryptToken(content, masterPassphrase);
+          }
+        }
+        const isBinary = [
+          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
+        ].some(ext => oldPath.toLowerCase().endsWith(ext));
+        
+        await offlineStorage.saveFile({
+          path: newPath,
+          name: cleanNewName + extension,
+          type: isBinary ? 'blob' : 'text',
+          content: savedContent,
+          size: content.length,
+          sha
+        });
+        await offlineStorage.deleteFile(oldPath);
+      } else {
+        const commitMessage = `rename note "${oldPath}" to "${newPath}" via StarfishNotes`;
+        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+        sha = result.sha;
+        await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
+      }
+
+      // 4. Update states
+      const newFile: VaultFile = {
+        path: newPath,
+        name: cleanNewName + extension,
+        type: 'blob',
+        sha,
+      };
+
+      setFiles(prev => [newFile, ...prev.filter(f => f.path !== oldPath)]);
+      setFileContents(prev => {
+        const updated = { ...prev };
+        updated[newPath] = content;
+        delete updated[oldPath];
+        return updated;
+      });
+
+      if (activeFilePath === oldPath) {
+        setActiveFilePath(newPath);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to rename note.';
+      setAuthError(msg);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
+
+  const handleCreateFolder = async (folderPath: string) => {
+    try {
+      setIsLoadingTree(true);
+      const targetPath = `${folderPath}/.gitkeep`;
+      if (isOffline) {
+        const sha = 'offline-sha-' + Date.now();
+        let content = '';
+        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+          if (masterPassphrase) {
+            content = await encryptToken('', masterPassphrase);
+          }
+        }
+        await offlineStorage.saveFile({
+          path: targetPath,
+          name: '.gitkeep',
+          type: 'text',
+          content,
+          size: 0,
+          sha
+        });
+        await refreshFilesOffline();
+      } else {
+        const commitMessage = `create folder placeholder at "${targetPath}" via StarfishNotes`;
+        await commitFileContent(githubToken, repoName, branchName, targetPath, "", null, commitMessage);
+        await refreshFiles();
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to create folder.';
+      setAuthError(msg);
+    } finally {
+      setIsLoadingTree(false);
+    }
+  };
+
+  const handleCopyFile = async (oldPath: string, newPath: string) => {
+    try {
+      setIsLoadingFile(true);
+      let content = fileContents[oldPath];
+      if (content === undefined) {
+        const matching = files.find(f => f.path === oldPath);
+        if (matching) {
+          if (isOffline) {
+            const file = await offlineStorage.getFile(oldPath);
+            if (file) {
+              content = file.content;
+              if (storageMode === 'encrypted' || storageMode === 'keychain') {
+                if (masterPassphrase) {
+                  content = await decryptToken(file.content, masterPassphrase);
+                }
+              }
+            } else {
+              content = "";
+            }
+          } else {
+            const contentStr = await fetchFileContent(githubToken, repoName, oldPath, matching.sha);
+            content = contentStr;
+          }
+        } else {
+          content = "";
+        }
+      }
+
+      let sha = '';
+      if (isOffline) {
+        sha = 'offline-sha-' + Date.now();
+        let savedContent = content;
+        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+          if (masterPassphrase) {
+            savedContent = await encryptToken(content, masterPassphrase);
+          }
+        }
+        const isBinary = [
+          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
+        ].some(ext => oldPath.toLowerCase().endsWith(ext));
+
+        await offlineStorage.saveFile({
+          path: newPath,
+          name: newPath.split('/').pop() || '',
+          type: isBinary ? 'blob' : 'text',
+          content: savedContent,
+          size: content.length,
+          sha
+        });
+      } else {
+        const commitMessage = `copy note "${oldPath}" to "${newPath}" via StarfishNotes`;
+        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+        sha = result.sha;
+      }
+
+      const newFile: VaultFile = {
+        path: newPath,
+        name: newPath.split('/').pop() || '',
+        type: 'blob',
+        sha
+      };
+
+      setFiles(prev => [newFile, ...prev]);
+      setFileContents(prev => ({
+        ...prev,
+        [newPath]: content
+      }));
+      setActiveFilePath(newPath);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to copy note.';
+      setAuthError(msg);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
+
+  const handleMoveFile = async (oldPath: string, newPath: string, oldSha: string) => {
+    try {
+      setIsLoadingFile(true);
+      let content = fileContents[oldPath];
+      if (content === undefined) {
+        const matching = files.find(f => f.path === oldPath);
+        if (matching) {
+          if (isOffline) {
+            const file = await offlineStorage.getFile(oldPath);
+            if (file) {
+              content = file.content;
+              if (storageMode === 'encrypted' || storageMode === 'keychain') {
+                if (masterPassphrase) {
+                  content = await decryptToken(file.content, masterPassphrase);
+                }
+              }
+            } else {
+              content = "";
+            }
+          } else {
+            const contentStr = await fetchFileContent(githubToken, repoName, oldPath, matching.sha);
+            content = contentStr;
+          }
+        } else {
+          content = "";
+        }
+      }
+
+      let sha = '';
+      if (isOffline) {
+        sha = 'offline-sha-' + Date.now();
+        let savedContent = content;
+        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+          if (masterPassphrase) {
+            savedContent = await encryptToken(content, masterPassphrase);
+          }
+        }
+        const isBinary = [
+          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
+        ].some(ext => oldPath.toLowerCase().endsWith(ext));
+
+        await offlineStorage.saveFile({
+          path: newPath,
+          name: newPath.split('/').pop() || '',
+          type: isBinary ? 'blob' : 'text',
+          content: savedContent,
+          size: content.length,
+          sha
+        });
+        await offlineStorage.deleteFile(oldPath);
+      } else {
+        const commitMessage = `move note "${oldPath}" to "${newPath}" via StarfishNotes`;
+        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+        sha = result.sha;
+        await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
+      }
+
+      const newFile: VaultFile = {
+        path: newPath,
+        name: newPath.split('/').pop() || '',
+        type: 'blob',
+        sha
+      };
+
+      setFiles(prev => [newFile, ...prev.filter(f => f.path !== oldPath)]);
+      setFileContents(prev => {
+        const updated = { ...prev };
+        updated[newPath] = content;
+        delete updated[oldPath];
+        return updated;
+      });
+
+      if (activeFilePath === oldPath) {
+        setActiveFilePath(newPath);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to move note.';
+      setAuthError(msg);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
+
+  const handleConfirmDeleteFolder = async (folderPath: string) => {
+    try {
+      setIsLoadingTree(true);
+      const prefix = `${folderPath}/`;
+      const filesToDelete = files.filter(f => f.path === folderPath || f.path.startsWith(prefix));
+
+      for (const file of filesToDelete) {
+        if (isOffline) {
+          await offlineStorage.deleteFile(file.path);
+        } else {
+          await deleteFile(githubToken, repoName, branchName, file.path, file.sha);
+        }
+      }
+
+      setFiles(prev => prev.filter(f => f.path !== folderPath && !f.path.startsWith(prefix)));
+      setFileContents(prev => {
+        const updated = { ...prev };
+        for (const key of Object.keys(updated)) {
+          if (key === folderPath || key.startsWith(prefix)) {
+            delete updated[key];
+          }
+        }
+        return updated;
+      });
+
+      if (activeFilePath && (activeFilePath === folderPath || activeFilePath.startsWith(prefix))) {
+        setActiveFilePath(null);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to delete folder.';
+      setAuthError(msg);
+    } finally {
+      setIsLoadingTree(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeFilePath) {
+      const matchingFile = files.find(f => f.path === activeFilePath);
+      if (matchingFile) {
+        const isBinary = [
+          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
+        ].some(ext => matchingFile.path.toLowerCase().endsWith(ext));
+
+        if (isBinary) {
+          Promise.resolve().then(() => {
+            loadBinaryFile(matchingFile.path, matchingFile.sha);
+          });
+        } else {
+          Promise.resolve().then(() => {
+            loadFileContent(matchingFile.path, matchingFile.sha);
+          });
+        }
+      } else {
+        const isGhostMd = activeFilePath.endsWith('.md') || activeFilePath.endsWith('.txt');
+        if (isGhostMd && !isLoadingFile && !failedGhostNotesRef.current.has(activeFilePath)) {
+          // Wrap in microtask to defer setState and avoid cascading renders lint warning
+          Promise.resolve().then(() => {
+            setIsLoadingFile(true);
+            const cleanFileName = activeFilePath.split('/').pop() || activeFilePath;
+            const noteTitle = cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '');
+            const initialText = `# ${noteTitle}\n\nCreated from Link Map. Start typing here...`;
+
+            if (isOffline) {
+              const sha = 'offline-sha-' + Date.now();
+              (async () => {
+                let savedContent = initialText;
+                if (storageMode === 'encrypted' || storageMode === 'keychain') {
+                  if (masterPassphrase) {
+                    savedContent = await encryptToken(initialText, masterPassphrase);
+                  }
+                }
+                await offlineStorage.saveFile({
+                  path: activeFilePath,
+                  name: cleanFileName,
+                  type: 'text',
+                  content: savedContent,
+                  size: initialText.length,
+                  sha
+                });
+                const newFile: VaultFile = {
+                  path: activeFilePath,
+                  name: cleanFileName,
+                  type: 'blob',
+                  sha,
+                  size: initialText.length
+                };
+                setFiles(prev => [newFile, ...prev]);
+                setFileContents(prev => ({ ...prev, [activeFilePath]: initialText }));
+                setIsLoadingFile(false);
+              })().catch((e) => {
+                console.error(e);
+                setIsLoadingFile(false);
+              });
+            } else {
+              commitFileContent(githubToken, repoName, branchName, activeFilePath, initialText, null, `create ghost note "${activeFilePath}" via StarfishNotes`)
+                .then((result) => {
+                  const newFile: VaultFile = {
+                    path: activeFilePath,
+                    name: cleanFileName,
+                    type: 'blob',
+                    sha: result.sha,
+                  };
+                  setFiles(prev => [newFile, ...prev]);
+                  setFileContents(prev => ({ ...prev, [activeFilePath]: initialText }));
+                  setIsLoadingFile(false);
+                })
+                .catch((e: unknown) => {
+                  const msg = e instanceof Error ? e.message : 'Failed to create ghost note on GitHub.';
+                  console.error(msg);
+                  failedGhostNotesRef.current.add(activeFilePath);
+                  setIsLoadingFile(false);
+                });
+            }
+          });
+        }
+      }
+    }
+  }, [activeFilePath, files, loadFileContent, loadBinaryFile, githubToken, repoName, branchName, isLoadingFile, isOffline, storageMode, masterPassphrase]);
+
+  // Sidebar note rendering filters
+  const filteredFiles = files.filter(
+    f => f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      f.path.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const activeFile = files.find(f => f.path === activeFilePath);
+
+  // ----------------------------------------------------
+  // UNLOCK SCREEN RENDER (MODULARIZED)
+  // ----------------------------------------------------
+  if (showLockScreen) {
+    return (
+      <LockScreen
+        unlockPassphrase={unlockPassphrase}
+        setUnlockPassphrase={setUnlockPassphrase}
+        unlockError={unlockError}
+        isConnecting={isConnecting}
+        handleUnlock={handleUnlock}
+        handleLogout={handleLogout}
+        storageMode={storageMode}
+      />
+    );
+  }
+
+  // ----------------------------------------------------
+  // ONBOARDING/LOGIN VIEW RENDER (MODULARIZED)
+  // ----------------------------------------------------
+  if (!isAuthenticated) {
+    return (
+      <AuthScreen
+        githubToken={githubToken}
+        setGithubToken={setGithubToken}
+        repoName={repoName}
+        setRepoName={setRepoName}
+        branchName={branchName}
+        setBranchName={setBranchName}
+        storageMode={storageMode}
+        setStorageMode={setStorageMode}
+        masterPassphrase={masterPassphrase}
+        setMasterPassphrase={setMasterPassphrase}
+        authError={authError}
+        isConnecting={isConnecting}
+        handleConnect={handleConnect}
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        isPersistentStorage={isPersistentStorage}
+        requestPersistentStorage={requestPersistentStorage}
+        handleConnectOffline={handleConnectOffline}
+      />
+    );
+  }
+
+  // ----------------------------------------------------
+  // UNINITIALIZED VAULT VIEW RENDER (MODULARIZED)
+  // ----------------------------------------------------
+  if (!isOffline && isVaultChecked && !isVaultCompatible) {
+    return (
+      <InitVaultScreen
+        repoName={repoName}
+        branchName={branchName}
+        isRepoEmpty={isRepoEmpty}
+        isInitializing={isInitializing}
+        handleInitializeVault={handleInitializeVault}
+        handleLogout={handleLogout}
+      />
+    );
+  }
+
+  // ----------------------------------------------------
+  // MAIN WORKSPACE INTERFACE RENDER
+  // ----------------------------------------------------
+  return (
+    <div className="flex h-screen w-screen bg-background relative overflow-hidden select-none animate-fade-in">
+      {globalError && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[2000] bg-[#1e1515] border border-destructive/40 text-destructive text-xs font-semibold px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 animate-fade-in select-text">
+          <span>{globalError}</span>
+          <button
+            type="button"
+            onClick={() => setGlobalError('')}
+            className="text-muted-foreground hover:text-foreground text-[0.7rem] ml-2 select-none cursor-pointer border border-transparent hover:bg-white/[0.04] w-5 h-5 flex items-center justify-center rounded-full"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* 1. Left Side Navigation Drawer */}
+      <Sidebar
+        isMobileSidebarOpen={isMobileSidebarOpen}
+        setIsMobileSidebarOpen={setIsMobileSidebarOpen}
+        handleLogout={handleLogout}
+        createNewFile={createNewFile}
+        onUploadAttachment={uploadAttachment}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        files={files}
+        filteredFiles={filteredFiles}
+        isLoadingTree={isLoadingTree}
+        onOpenSettings={() => setShowSettingsModal(true)}
+        activeFilePath={activeFilePath}
+        setActiveFilePath={setActiveFilePath}
+        setViewTab={setViewTab}
+        onDeleteClick={(path, sha) => setPendingDeleteFile({ path, sha })}
+        onRenameClick={(path, name, sha) => {
+          setPendingRenameFile({ path, name, sha });
+          const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+          setRenameInputValue(cleanName);
+          setRenameError('');
+        }}
+        repoName={repoName}
+        branchName={branchName}
+
+        // Resize and collapse control props
+        sidebarWidth={sidebarWidth}
+        setSidebarWidth={handleSetSidebarWidth}
+        isSidebarCollapsed={isSidebarCollapsed}
+        setIsSidebarCollapsed={handleSetSidebarCollapsed}
+        isResizingSidebar={isResizingSidebar}
+        setIsResizingSidebar={setIsResizingSidebar}
+
+        // Folder/Relocation props
+        onCreateFolderClick={(parentPath) => {
+          setParentFolderPathForNewFolder(parentPath);
+          setShowCreateFolderModal(true);
+        }}
+        onDeleteFolderClick={(folderPath) => {
+          setPendingDeleteFolder(folderPath);
+        }}
+        onCopyClick={async (path, name) => {
+          setIsLoadingTree(true);
+          try {
+            await refreshFiles();
+          } finally {
+            setIsLoadingTree(false);
+          }
+          const matched = files.find(f => f.path === path);
+          if (matched) {
+            setPendingMoveCopyFile(matched);
+            setMoveCopyAction('copy');
+            const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+            setMoveCopyNameInput(`${cleanName} - Copy`);
+            const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
+            setMoveCopyFolderSelect(parentDir);
+          }
+        }}
+        onMoveClick={async (path, name) => {
+          setIsLoadingTree(true);
+          try {
+            await refreshFiles();
+          } finally {
+            setIsLoadingTree(false);
+          }
+          const matched = files.find(f => f.path === path);
+          if (matched) {
+            setPendingMoveCopyFile(matched);
+            setMoveCopyAction('move');
+            const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+            setMoveCopyNameInput(cleanName);
+            const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
+            setMoveCopyFolderSelect(parentDir);
+          }
+        }}
+      />
+
+      {/* 2. Main Workspace & Views */}
+      <main className="flex-1 h-full flex flex-col overflow-hidden relative">
+        {/* Workspace Nav Tabs Header */}
+        <header className="h-[60px] bg-card border-b border-border flex items-center justify-between px-6 z-[5] shrink-0">
+          <div className="flex items-center gap-3 font-heading font-semibold text-[0.975rem] max-w-[45%] truncate text-foreground">
+            <button
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="md:hidden w-8 h-8 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer"
+              title="Open Sidebar"
+            >
+              <Menu size={15} />
+            </button>
+            {isSidebarCollapsed && (
+              <button
+                onClick={() => handleSetSidebarCollapsed(false)}
+                className="hidden md:flex w-8 h-8 items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer mr-1"
+                title="Expand Sidebar"
+              >
+                <PanelLeft size={15} />
+              </button>
+            )}
+            <Compass className="w-[18px] h-[18px] text-primary shrink-0 hidden md:block" />
+            <span className="truncate">
+              {activeFile ? activeFile.name.replace(/\.md$/, '').replace(/\.canvas$/, '') : 'No active file'}
+            </span>
+          </div>
+
+          {/* Tab switches */}
+          <div className="flex items-center gap-1.5 bg-muted/40 p-1.5 rounded-2xl border border-border">
+            <button
+              onClick={() => setViewTab('workspace')}
+              className={cn(
+                "h-8 px-4 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer",
+                viewTab === 'workspace'
+                  ? "bg-card text-foreground shadow-xs border border-border/80"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Edit3 size={13.5} />
+              <span className="hidden sm:inline">Workspace View</span>
+            </button>
+            <button
+              onClick={() => setViewTab('graph')}
+              className={cn(
+                "h-8 px-4 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer",
+                viewTab === 'graph'
+                  ? "bg-card text-foreground shadow-xs border border-border/80"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Network size={13.5} />
+              <span className="hidden sm:inline">Link Map (Graph)</span>
+            </button>
+
+            <div className="w-[1px] h-4.5 bg-border mx-1" />
+
+            <button
+              onClick={() => refreshFiles()}
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-card border border-transparent hover:border-border transition-all cursor-pointer"
+              title="Refresh Tree"
+            >
+              <RefreshCw size={13.5} />
+            </button>
+          </div>
+        </header>
+
+        {/* Primary Content Paneling */}
+        <div className="flex-1 w-full relative overflow-hidden bg-background">
+          {viewTab === 'graph' ? (
+            <GraphView
+              files={files}
+              fileContents={fileContents}
+              onOpenNote={(path) => {
+                setActiveFilePath(path);
+                setViewTab('workspace'); // Open inside editor tab
+              }}
+              activeFilePath={activeFilePath || undefined}
+              nodeGravity={settings.graphNodeGravity}
+              repulsionStrength={settings.graphRepulsionStrength}
+              springLength={settings.graphSpringLength}
+            />
+          ) : isLoadingFile ? (
+            <div className="flex flex-col gap-3.5 items-center justify-center h-full w-full text-muted-foreground text-sm">
+              <RefreshCw className="w-6 h-6 animate-spin text-primary" />
+              <span>Fetching file content from GitHub...</span>
+            </div>
+          ) : activeFilePath && activeFilePath.endsWith('.canvas') && fileContents[activeFilePath] !== undefined ? (
+            <CanvasView
+              key={activeFilePath}
+              filePath={activeFilePath}
+              initialContent={fileContents[activeFilePath]}
+              initialSha={activeFile?.sha || null}
+              files={files}
+              fileContents={fileContents}
+              onSave={(content, sha) => handleSaveFile(activeFilePath, content, sha)}
+              onOpenNote={(path) => {
+                setActiveFilePath(path);
+                setViewTab('workspace');
+              }}
+              vaultId={repoName}
+              onLoadFileContent={preloadFileContent}
+              vaultImages={vaultImages}
+              onFetchBinaryFile={loadBinaryFile}
+              onUploadAttachment={(file) => uploadAttachment(file, undefined, false)}
+            />
+          ) : activeFilePath && (activeFilePath.endsWith('.md') || activeFilePath.endsWith('.txt')) && fileContents[activeFilePath] !== undefined ? (
+            <Editor
+              key={activeFilePath}
+              filePath={activeFilePath}
+              initialContent={fileContents[activeFilePath]}
+              initialSha={activeFile?.sha || null}
+              files={files}
+              onSave={(content, sha) => handleSaveFile(activeFilePath, content, sha)}
+              onOpenNote={(path) => {
+                setActiveFilePath(path);
+                setViewTab('workspace');
+              }}
+              vaultId={repoName}
+              vaultImages={vaultImages}
+              onFetchBinaryFile={loadBinaryFile}
+              onUploadAttachment={(file, folderPath) => uploadAttachment(file, folderPath, false)}
+            />
+          ) : activeFilePath && (
+            activeFilePath.toLowerCase().endsWith('.png') ||
+            activeFilePath.toLowerCase().endsWith('.jpg') ||
+            activeFilePath.toLowerCase().endsWith('.jpeg') ||
+            activeFilePath.toLowerCase().endsWith('.gif') ||
+            activeFilePath.toLowerCase().endsWith('.webp') ||
+            activeFilePath.toLowerCase().endsWith('.svg') ||
+            activeFilePath.toLowerCase().endsWith('.pdf')
+          ) ? (
+            <div className="flex-1 w-full h-full flex flex-col bg-background select-text overflow-y-auto items-center p-8">
+              <div className="max-w-3xl w-full bg-card/40 border border-border rounded-2xl p-6 shadow-xl flex flex-col gap-6 items-center">
+                <div className="w-full flex items-center justify-between border-b border-border/80 pb-4">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-foreground">
+                      {activeFilePath.split('/').pop()}
+                    </span>
+                    <span className="text-[0.7rem] text-muted-foreground mt-0.5">
+                      Path: {activeFilePath}
+                    </span>
+                  </div>
+                  {activeFile && activeFile.size && (
+                    <span className="text-[0.7rem] font-semibold bg-muted text-muted-foreground px-2 py-1 rounded-md">
+                      {(activeFile.size / 1024).toFixed(1)} KB
+                    </span>
+                  )}
+                </div>
+
+                <div className="w-full flex items-center justify-center min-h-[300px] border border-dashed border-border/80 rounded-xl bg-background/50 overflow-hidden relative p-4">
+                  {vaultImages[activeFilePath] ? (
+                    activeFilePath.toLowerCase().endsWith('.pdf') ? (
+                      <embed
+                        src={vaultImages[activeFilePath]}
+                        type="application/pdf"
+                        className="w-full h-[500px] rounded-lg"
+                      />
+                    ) : (
+                      <img
+                        src={vaultImages[activeFilePath]}
+                        alt={activeFilePath.split('/').pop()}
+                        className="max-h-[500px] max-w-full object-contain rounded-lg shadow-lg select-none animate-fade-in"
+                      />
+                    )
+                  ) : (
+                    <div className="flex flex-col gap-2 items-center justify-center text-muted-foreground text-xs">
+                      <RefreshCw className="w-5 h-5 animate-spin text-primary" />
+                      <span>Loading attachment...</span>
+                      {activeFile && (
+                        <button
+                          onClick={() => loadBinaryFile(activeFilePath, activeFile.sha)}
+                          className="mt-2 text-primary font-semibold hover:underline"
+                        >
+                          Click to retry loading
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full w-full p-10 text-center text-muted-foreground bg-background">
+              <Folder className="w-10 h-10 text-muted-foreground/30 mb-3 animate-float" />
+              <span className="font-semibold text-sm text-foreground/80">No Note Selected</span>
+              <span className="text-xs text-muted-foreground/75 mt-1 max-w-[280px] leading-relaxed">
+                Select an existing file in the sidebar or click "New Note" to begin journaling.
+              </span>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* 3. Premium Glassmorphic Confirmation Dialogs */}
+      {/* Delete Confirmation Modal */}
+      {pendingDeleteFile && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-destructive/15 flex items-center justify-center text-destructive shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-heading font-bold text-base text-foreground">
+                  Delete Note
+                </h3>
+                <span className="text-[0.7rem] text-muted-foreground font-medium">
+                  This action is permanent and cannot be undone.
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-foreground/80 leading-relaxed font-medium bg-white/[0.02] border border-border/50 rounded-xl p-3">
+              Are you sure you want to delete <span className="text-destructive font-semibold">"{pendingDeleteFile.path.split('/').pop()}"</span> from your vault?
+            </p>
+
+            <div className="flex gap-2.5 mt-2">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteFile(null)}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="flex-1 h-10 rounded-xl bg-destructive hover:bg-destructive/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-destructive/20"
+              >
+                Delete Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Prompt Modal */}
+      {pendingRenameFile && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <form
+            onSubmit={handleRenameFile}
+            className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary shrink-0">
+                <Edit3 className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-heading font-bold text-base text-foreground">
+                  Rename Note
+                </h3>
+                <span className="text-[0.7rem] text-muted-foreground font-medium">
+                  Change the name of your file in the repository.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                New Filename
+              </span>
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={renameInputValue}
+                  onChange={(e) => {
+                    setRenameInputValue(e.target.value);
+                    setRenameError('');
+                  }}
+                  placeholder="Enter name..."
+                  autoFocus
+                  className="w-full bg-muted/50 border border-border text-foreground pl-4 pr-16 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200"
+                />
+                <span className="absolute right-4 text-xs font-bold text-muted-foreground uppercase select-none pointer-events-none">
+                  {pendingRenameFile.path.substring(pendingRenameFile.path.lastIndexOf('.'))}
+                </span>
+              </div>
+              {renameError && (
+                <span className="text-[0.7rem] text-destructive font-medium px-1 mt-0.5">
+                  {renameError}
+                </span>
+              )}
+            </div>
+
+            <div className="flex gap-2.5 mt-2">
+              <button
+                type="button"
+                onClick={() => setPendingRenameFile(null)}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 h-10 rounded-xl bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-primary/20"
+              >
+                Rename
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {/* Create Folder Modal */}
+      {showCreateFolderModal && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!newFolderName.trim()) return;
+              const targetPath = parentFolderPathForNewFolder && parentFolderPathForNewFolder !== '/'
+                ? `${parentFolderPathForNewFolder}/${newFolderName.trim()}`
+                : newFolderName.trim();
+              handleCreateFolder(targetPath);
+              setShowCreateFolderModal(false);
+              setNewFolderName('');
+            }}
+            className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary shrink-0">
+                <FolderPlus className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-heading font-bold text-base text-foreground">
+                  Create Folder
+                </h3>
+                <span className="text-[0.7rem] text-muted-foreground font-medium">
+                  {parentFolderPathForNewFolder && parentFolderPathForNewFolder !== '/'
+                    ? `Creating inside: ${parentFolderPathForNewFolder}`
+                    : 'Creating at vault root'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                Folder Name
+              </span>
+              <input
+                type="text"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="Enter folder name..."
+                autoFocus
+                required
+                className="w-full bg-muted/50 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200"
+              />
+            </div>
+
+            <div className="flex gap-2.5 mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateFolderModal(false);
+                  setNewFolderName('');
+                }}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!newFolderName.trim()}
+                className="flex-1 h-10 rounded-xl bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-primary/20 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                Create Folder
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Move/Copy Selection Modal */}
+      {pendingMoveCopyFile && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!moveCopyNameInput.trim()) return;
+              const ext = pendingMoveCopyFile.path.substring(pendingMoveCopyFile.path.lastIndexOf('.'));
+              const cleanName = moveCopyNameInput.trim() + ext;
+              const targetPath = moveCopyFolderSelect && moveCopyFolderSelect !== '/'
+                ? `${moveCopyFolderSelect}/${cleanName}`
+                : cleanName;
+
+              if (moveCopyAction === 'copy') {
+                handleCopyFile(pendingMoveCopyFile.path, targetPath);
+              } else {
+                handleMoveFile(pendingMoveCopyFile.path, targetPath, pendingMoveCopyFile.sha);
+              }
+              setPendingMoveCopyFile(null);
+            }}
+            className="w-full max-w-md bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary shrink-0">
+                {moveCopyAction === 'copy' ? <Copy className="w-5 h-5" /> : <ArrowRight className="w-5 h-5" />}
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-heading font-bold text-base text-foreground">
+                  {moveCopyAction === 'copy' ? 'Copy Note' : 'Move Note'}
+                </h3>
+                <span className="text-[0.7rem] text-muted-foreground font-medium">
+                  Specify a new folder location and note name.
+                </span>
+              </div>
+            </div>
+
+            {/* File name input */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                Note Name
+              </span>
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={moveCopyNameInput}
+                  onChange={(e) => setMoveCopyNameInput(e.target.value)}
+                  placeholder="Enter name..."
+                  required
+                  className="w-full bg-muted/50 border border-border text-foreground pl-4 pr-16 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200"
+                />
+                <span className="absolute right-4 text-xs font-bold text-muted-foreground uppercase select-none pointer-events-none">
+                  {pendingMoveCopyFile.path.substring(pendingMoveCopyFile.path.lastIndexOf('.'))}
+                </span>
+              </div>
+            </div>
+
+            {/* Destination folder custom dropdown popover */}
+            <div className="flex flex-col gap-1.5 relative select-none">
+              <span className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                Destination Folder
+              </span>
+
+              <div className="relative">
+                {isMoveCopyFolderDropdownOpen && (
+                  <div
+                    className="fixed inset-0 z-10 bg-transparent cursor-default"
+                    onClick={() => {
+                      setIsMoveCopyFolderDropdownOpen(false);
+                      setMoveCopyFolderSearch('');
+                    }}
+                  />
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsMoveCopyFolderDropdownOpen(!isMoveCopyFolderDropdownOpen)}
+                  className="w-full bg-muted/50 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200 cursor-pointer flex items-center justify-between text-left relative z-20"
+                >
+                  <span className="truncate flex items-center gap-2">
+                    {moveCopyFolderSelect === '/' ? (
+                      <>
+                        <Compass className="w-3.5 h-3.5 text-accent" />
+                        <span>Vault Root ( / )</span>
+                      </>
+                    ) : (
+                      <>
+                        <Folder className="w-3.5 h-3.5 text-primary" />
+                        <span>{moveCopyFolderSelect}</span>
+                      </>
+                    )}
+                  </span>
+                  <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform shrink-0 ml-2", isMoveCopyFolderDropdownOpen && "transform rotate-180")} />
+                </button>
+
+                {isMoveCopyFolderDropdownOpen && (
+                  <div className="absolute top-full left-0 w-full mt-1.5 bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 z-30 animate-in fade-in zoom-in-95 duration-100">
+
+                    {/* Inline Filter Search Input */}
+                    <div className="relative flex items-center px-1 py-1 border-b border-border/40 pb-1.5">
+                      <Compass className="absolute left-2.5 w-3.5 h-3.5 text-muted-foreground/60" />
+                      <input
+                        type="text"
+                        value={moveCopyFolderSearch}
+                        onChange={(e) => setMoveCopyFolderSearch(e.target.value)}
+                        placeholder="Search folders..."
+                        className="w-full bg-muted/30 border border-border/40 text-foreground pl-7 pr-3 py-1.5 rounded-lg text-xs focus:outline-none focus:border-primary/60 transition-all duration-150"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+
+                    <div className="max-h-[160px] overflow-y-auto flex flex-col gap-0.5 mt-1 pr-0.5">
+                      {/* Root Option */}
+                      {('/'.toLowerCase().includes(moveCopyFolderSearch.toLowerCase()) || 'vault root'.includes(moveCopyFolderSearch.toLowerCase())) && (
+                        <button
+                          key="root-opt"
+                          type="button"
+                          onClick={() => {
+                            setMoveCopyFolderSelect('/');
+                            setIsMoveCopyFolderDropdownOpen(false);
+                            setMoveCopyFolderSearch('');
+                          }}
+                          className={cn(
+                            "w-full text-left px-3 py-2 rounded-lg text-xs transition-premium cursor-pointer truncate font-semibold border border-transparent flex items-center justify-between",
+                            moveCopyFolderSelect === '/'
+                              ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent"
+                              : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                          )}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Compass className="w-3.5 h-3.5 shrink-0" />
+                            <span>Vault Root ( / )</span>
+                          </span>
+                          {moveCopyFolderSelect === '/' && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-soft shrink-0 ml-2" />
+                          )}
+                        </button>
+                      )}
+
+                      {/* All Other Folders */}
+                      {Array.from(new Set(
+                        files
+                          .map(f => f.path.substring(0, f.path.lastIndexOf('/')))
+                          .filter(folder => folder !== '')
+                      ))
+                        .sort()
+                        .filter(folder => folder.toLowerCase().includes(moveCopyFolderSearch.toLowerCase()))
+                        .map(folder => {
+                          const isSelected = moveCopyFolderSelect === folder;
+                          const depth = folder.split('/').length;
+                          return (
+                            <button
+                              key={folder}
+                              type="button"
+                              onClick={() => {
+                                setMoveCopyFolderSelect(folder);
+                                setIsMoveCopyFolderDropdownOpen(false);
+                                setMoveCopyFolderSearch('');
+                              }}
+                              style={{ paddingLeft: `${depth * 8 + 8}px` }}
+                              className={cn(
+                                "w-full text-left pr-3 py-2 rounded-lg text-xs transition-premium cursor-pointer truncate font-semibold border border-transparent flex items-center justify-between",
+                                isSelected
+                                  ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent"
+                                  : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                              )}
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                <Folder className="w-3.5 h-3.5 text-primary/70 shrink-0" />
+                                <span className="truncate">{folder}</span>
+                              </span>
+                              {isSelected && (
+                                <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-soft shrink-0 ml-2" />
+                              )}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 mt-4">
+              <button
+                type="button"
+                onClick={() => setPendingMoveCopyFile(null)}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 h-10 rounded-xl bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-primary/20"
+              >
+                Confirm {moveCopyAction === 'copy' ? 'Copy' : 'Move'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Delete Folder Modal */}
+      {pendingDeleteFolder && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-destructive/15 flex items-center justify-center text-destructive shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-heading font-bold text-base text-foreground">
+                  Delete Folder
+                </h3>
+                <span className="text-[0.7rem] text-muted-foreground font-medium">
+                  This will delete the folder and all its contents!
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-foreground/80 leading-relaxed font-medium bg-white/[0.02] border border-border/50 rounded-xl p-3">
+              Are you sure you want to delete <span className="text-destructive font-semibold">"{pendingDeleteFolder}"</span> and all notes/subfolders inside it? This action is permanent and cannot be undone.
+            </p>
+
+            <div className="flex gap-2.5 mt-2">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteFolder(null)}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleConfirmDeleteFolder(pendingDeleteFolder);
+                  setPendingDeleteFolder(null);
+                }}
+                className="flex-1 h-10 rounded-xl bg-destructive hover:bg-destructive/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-destructive/20"
+              >
+                Delete Folder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-lg bg-card/95 backdrop-blur-2xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-5 animate-in fade-in zoom-in-95 duration-200 text-foreground">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-border/60 pb-3 select-none">
+              <div className="flex items-center gap-2">
+                <Settings size={18} className="text-primary animate-spin-slow" />
+                <h3 className="font-heading font-bold text-lg">Starfish Settings</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSettingsModal(false)}
+                className="text-muted-foreground hover:text-foreground p-1 hover:bg-white/[0.04] rounded-lg cursor-pointer transition-all border border-transparent"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="flex flex-col gap-5 max-h-[420px] overflow-y-auto pr-1 no-scrollbar select-text">
+              
+              {/* Category 1: Attachment Storage */}
+              <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl">
+                <h4 className="text-[0.72rem] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5 select-none">
+                  <Folder size={11.5} />
+                  Attachment Settings
+                </h4>
+                
+                {/* Folder Path */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-wider">
+                    Attachments Folder
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.attachmentsFolder}
+                    onChange={(e) => updateSettings({ attachmentsFolder: e.target.value })}
+                    placeholder="attachments"
+                    className="w-full bg-muted/40 border border-border text-foreground px-3 py-2 rounded-xl text-xs focus:outline-none focus:border-primary transition-all duration-200"
+                  />
+                  <span className="text-[0.62rem] text-muted-foreground/60 leading-normal">
+                    Target folder path inside repository where files uploaded via Editor paperclip will be stored.
+                  </span>
+                </div>
+
+                {/* File size ceiling */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-wider">
+                      Max Upload Size Limit
+                    </label>
+                    <span className="text-[0.75rem] font-bold text-accent">
+                      {settings.maxAttachmentSize} MB
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="25"
+                    value={settings.maxAttachmentSize}
+                    onChange={(e) => updateSettings({ maxAttachmentSize: parseInt(e.target.value, 10) })}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-primary animate-pulse-soft"
+                  />
+                  <span className="text-[0.62rem] text-muted-foreground/60 leading-normal">
+                    Ceiling upload capability to prevent huge payloads (max 25MB).
+                  </span>
+                </div>
+              </div>
+
+              {/* Category 2: Link Map Graph settings */}
+              <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl">
+                <h4 className="text-[0.72rem] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5 select-none">
+                  <Network size={11.5} />
+                  Graph Physics Tuning
+                </h4>
+
+                {/* Node Gravity */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-wider">
+                      Center Gravity (Force)
+                    </label>
+                    <span className="text-[0.75rem] font-bold text-accent">
+                      {settings.graphNodeGravity.toFixed(3)}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.001"
+                    max="0.100"
+                    step="0.001"
+                    value={settings.graphNodeGravity}
+                    onChange={(e) => updateSettings({ graphNodeGravity: parseFloat(e.target.value) })}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+
+                {/* Repulsion */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-wider">
+                      Node Repulsion (Charge)
+                    </label>
+                    <span className="text-[0.75rem] font-bold text-accent">
+                      {settings.graphRepulsionStrength}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="50"
+                    max="500"
+                    value={settings.graphRepulsionStrength}
+                    onChange={(e) => updateSettings({ graphRepulsionStrength: parseInt(e.target.value, 10) })}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+
+                {/* Spring Length */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-wider">
+                      Spring Link Length
+                    </label>
+                    <span className="text-[0.75rem] font-bold text-accent">
+                      {settings.graphSpringLength}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="40"
+                    max="300"
+                    value={settings.graphSpringLength}
+                    onChange={(e) => updateSettings({ graphSpringLength: parseInt(e.target.value, 10) })}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Category 3: Repo Connections & Authentication */}
+              <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl">
+                <h4 className="text-[0.72rem] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5 select-none">
+                  <Compass size={11.5} />
+                  Repository Settings
+                </h4>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col min-w-0 flex-1 pr-4">
+                    <span className="text-[0.72rem] font-bold text-foreground truncate block" title={repoName}>
+                      {repoName}
+                    </span>
+                    <span className="text-[0.62rem] text-muted-foreground mt-0.5 block font-semibold">
+                      Branch: {branchName}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSettingsModal(false);
+                      handleLogout();
+                    }}
+                    className="bg-destructive/15 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer shrink-0"
+                  >
+                    Logout & Purge
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end gap-2 border-t border-border/60 pt-3 select-none">
+              <button
+                type="button"
+                onClick={() => setShowSettingsModal(false)}
+                className="bg-primary hover:bg-primary/90 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all cursor-pointer shadow-md shadow-primary/10"
+              >
+                Close Settings
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

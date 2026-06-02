@@ -1,0 +1,381 @@
+@import url('https://fonts.googleapis.com/css2?family=Pacifico&family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+/* StarfishNotes - Design System & Modern Styling Core (Tailwind v4) */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: 'Outfit', 'Inter', sans-serif;
+  --font-sans: 'Inter', sans-serif;
+  --font-brand: 'Pacifico', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Theme variables bound to OKLCH custom variables matching the premium look */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  /* HSL-aligned Premium Dark Theme (Deep Obsidian Cosmic) */
+  --background: oklch(0.08 0.015 260);
+  /* Deep space navy/black */
+  --foreground: oklch(0.96 0.01 260);
+  --card: oklch(0.12 0.02 260);
+  /* Translucent cards */
+  --card-foreground: oklch(0.96 0.01 260);
+  --popover: oklch(0.12 0.02 260);
+  --popover-foreground: oklch(0.96 0.01 260);
+
+  /* Primary Violet accents */
+  --primary: oklch(0.60 0.18 280);
+  /* Bright violet */
+  --primary-foreground: oklch(0.99 0.01 260);
+
+  /* Secondary Cyan elements */
+  --secondary: oklch(0.68 0.16 200);
+  /* Cyan */
+  --secondary-foreground: oklch(0.08 0.02 260);
+
+  --muted: oklch(0.18 0.02 260);
+  --muted-foreground: oklch(0.70 0.02 260);
+
+  --accent: oklch(0.78 0.12 300);
+  /* Purple accent */
+  --accent-foreground: oklch(0.08 0.02 260);
+
+  --destructive: oklch(0.58 0.22 25);
+
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.04);
+  --ring: oklch(0.60 0.18 280 / 40%);
+
+  --radius: 0.75rem;
+}
+
+/* Light Theme overrides for accessibility */
+.light-theme {
+  --background: oklch(0.98 0.005 260);
+  --foreground: oklch(0.12 0.01 260);
+  --card: oklch(1.0 0 0);
+  --card-foreground: oklch(0.12 0.01 260);
+  --popover: oklch(1.0 0 0);
+  --popover-foreground: oklch(0.12 0.01 260);
+
+  --primary: oklch(0.55 0.16 280);
+  --primary-foreground: oklch(0.99 0.01 260);
+
+  --secondary: oklch(0.62 0.14 200);
+  --secondary-foreground: oklch(0.12 0.01 260);
+
+  --muted: oklch(0.94 0.005 260);
+  --muted-foreground: oklch(0.48 0.01 260);
+
+  --accent: oklch(0.55 0.16 280);
+  --accent-foreground: oklch(1.0 0 0);
+
+  --border: rgba(0, 0, 0, 0.08);
+  --input: rgba(0, 0, 0, 0.02);
+  --ring: oklch(0.55 0.16 280 / 30%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50 box-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased h-screen w-screen overflow-hidden select-none;
+  }
+
+  /* Custom thin premium scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-md hover:bg-primary/40 transition-colors duration-300;
+  }
+}
+
+/* ----------------------------------------------------
+   ANIMATION KEYFRAMES & UTILITIES
+   ---------------------------------------------------- */
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-soft {
+
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.015);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 4s ease-in-out infinite;
+  }
+
+  .animate-ripple {
+    animation: ripple 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  .animate-pulse-soft {
+    animation: pulse-soft 3s ease-in-out infinite;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.25s ease-out forwards;
+  }
+
+  .transition-premium {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Soft glowing states for premium UI wow factors */
+  .glow-primary {
+    filter: drop-shadow(0 0 10px var(--primary));
+  }
+
+  .glow-secondary {
+    filter: drop-shadow(0 0 10px var(--secondary));
+  }
+}
+
+/* ----------------------------------------------------
+   OBSIDIAN-STYLE HIGH-FIDELITY MARKDOWN PREVIEW
+   ---------------------------------------------------- */
+.markdown-preview {
+  @apply text-foreground/90 text-[0.975rem] leading-[1.75] max-w-[760px] mx-auto select-text;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4 {
+  @apply font-heading text-foreground font-semibold mt-7 mb-3 tracking-tight;
+}
+
+.markdown-preview h1 {
+  @apply text-2xl pb-2 border-b border-border/60;
+}
+
+.markdown-preview h2 {
+  @apply text-xl;
+}
+
+.markdown-preview h3 {
+  @apply text-lg;
+}
+
+.markdown-preview h4 {
+  @apply text-[1.05rem];
+}
+
+.markdown-preview p {
+  @apply mb-4;
+}
+
+.markdown-preview a {
+  @apply text-secondary font-medium no-underline border-b border-transparent hover:border-secondary transition-colors duration-200;
+}
+
+/* Graphview Links (Obsidian [[internal-links]]) styling */
+.markdown-preview .wiki-link {
+  @apply text-accent font-medium no-underline border-b border-dashed border-primary/60 cursor-pointer px-1 rounded-sm bg-accent/5 hover:bg-primary/15 hover:text-foreground transition-all duration-200;
+}
+
+.markdown-preview code {
+  @apply font-mono text-[0.875em] px-1.5 py-0.5 bg-muted border border-border/80 rounded-md text-accent select-all;
+}
+
+.markdown-preview pre {
+  @apply mb-5 bg-muted border border-border rounded-xl p-4 overflow-x-auto;
+}
+
+.markdown-preview pre code {
+  @apply bg-transparent border-none p-0 text-foreground text-[0.85em] leading-normal;
+}
+
+.markdown-preview blockquote {
+  @apply my-5 py-2 pl-4 border-l-4 border-primary bg-muted/40 rounded-r-lg text-muted-foreground italic;
+}
+
+.markdown-preview ul {
+  @apply list-disc pl-6 mb-4;
+}
+
+.markdown-preview ol {
+  @apply list-decimal pl-6 mb-4;
+}
+
+.markdown-preview li {
+  @apply mb-1.5;
+}
+
+.markdown-preview table {
+  @apply w-full border-collapse mb-5 text-[0.95em];
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  @apply p-2.5 border border-border text-left;
+}
+
+.markdown-preview th {
+  @apply bg-muted font-semibold text-foreground;
+}
+
+.markdown-preview tr:nth-child(even) {
+  @apply bg-foreground/[0.015];
+}
+
+.markdown-preview input[type="checkbox"] {
+  @apply w-4 h-4 mr-2 rounded border-border accent-primary align-middle cursor-pointer;
+}
+
+/* ----------------------------------------------------
+   INFINITE CANVAS VECTOR OVERLAYS & DOT PATTERNS
+   ---------------------------------------------------- */
+.canvas-svg-overlay {
+  @apply absolute top-0 left-0 w-full h-full pointer-events-none z-1;
+  overflow: visible !important;
+}
+
+.canvas-connection-line {
+  @apply fill-none transition-[stroke,stroke-width] duration-200;
+  stroke: oklch(0.56 0.01 260 / 60%);
+  stroke-width: 2.5px;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.canvas-connection-line:hover {
+  stroke: var(--primary) !important;
+  stroke-width: 3.5px !important;
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.6)) !important;
+}
+
+.canvas-connection-line.active {
+  stroke: var(--primary);
+  stroke-width: 3.5px;
+  filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.4));
+}
+
+.canvas-connection-line.selected {
+  stroke: oklch(0.60 0.22 25) !important; /* Premium crimson/destructive red accent */
+  stroke-width: 4px !important;
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.75)) !important;
+}
+
+/* Connection node circle connectors */
+.canvas-card-handle {
+  @apply absolute w-3 h-3 bg-white border-2 border-primary rounded-full z-5 cursor-crosshair transition-all duration-200 shadow-sm;
+}
+
+.canvas-card-handle::after {
+  content: '';
+  @apply absolute -inset-2.5 rounded-full bg-transparent;
+}
+
+.canvas-card-handle:hover {
+  @apply bg-primary border-white scale-125 shadow-lg shadow-primary/40;
+}
+
+.handle-top {
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.handle-right {
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.handle-bottom {
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.handle-left {
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Helper to hide scrollbars while preserving scrolling functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
