@@ -92,9 +92,25 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const gravityRef = useRef(gravity);
   const searchHighlightRef = useRef(searchHighlight);
 
+  const zoomRef = useRef(zoom);
+  const panXRef = useRef(panX);
+  const panYRef = useRef(panY);
+
   useEffect(() => {
     repulsionRef.current = repulsionStrength;
   }, [repulsionStrength]);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
+    panXRef.current = panX;
+  }, [panX]);
+
+  useEffect(() => {
+    panYRef.current = panY;
+  }, [panY]);
 
   useEffect(() => {
     springLengthRef.current = springLength;
@@ -471,15 +487,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
       ctx.save();
       // Apply panning and zooming centered around center screen
-      ctx.translate(canvas.width / 2 + panX, canvas.height / 2 + panY);
-      ctx.scale(zoom, zoom);
+      ctx.translate(canvas.width / 2 + panXRef.current, canvas.height / 2 + panYRef.current);
+      ctx.scale(zoomRef.current, zoomRef.current);
       ctx.translate(-canvas.width / 2, -canvas.height / 2);
 
       // Draw high-performance dynamic dotted grid background in world space
-      const left = - (canvas.width / 2 + panX) / zoom + canvas.width / 2;
-      const right = left + canvas.width / zoom;
-      const top = - (canvas.height / 2 + panY) / zoom + canvas.height / 2;
-      const bottom = top + canvas.height / zoom;
+      const left = - (canvas.width / 2 + panXRef.current) / zoomRef.current + canvas.width / 2;
+      const right = left + canvas.width / zoomRef.current;
+      const top = - (canvas.height / 2 + panYRef.current) / zoomRef.current + canvas.height / 2;
+      const bottom = top + canvas.height / zoomRef.current;
 
       const gridSize = 45;
       const startX = Math.floor(left / gridSize) * gridSize;
@@ -561,7 +577,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         }
 
         // Draw Labels
-        if (zoom > 0.55 || isHovered || isSearched) {
+        if (zoomRef.current > 0.55 || isHovered || isSearched) {
           ctx.font = (isHovered || isSearched)
             ? 'bold 11px Inter, sans-serif'
             : '500 10px Inter, sans-serif';
@@ -587,7 +603,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [zoom, panX, panY, activeFilePath]);
+  }, [activeFilePath]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -604,22 +620,33 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
 
-      const worldXDiff = (mouseX - cx - panX) / zoom;
-      const worldYDiff = (mouseY - cy - panY) / zoom;
+      const currentZoom = zoomRef.current;
+      const currentPanX = panXRef.current;
+      const currentPanY = panYRef.current;
 
-      let newZoom = e.deltaY < 0 ? zoom * zoomFactor : zoom / zoomFactor;
+      const worldXDiff = (mouseX - cx - currentPanX) / currentZoom;
+      const worldYDiff = (mouseY - cy - currentPanY) / currentZoom;
+
+      let newZoom = e.deltaY < 0 ? currentZoom * zoomFactor : currentZoom / zoomFactor;
       newZoom = Math.max(0.25, Math.min(newZoom, 2.5));
 
+      const nextPanX = mouseX - cx - worldXDiff * newZoom;
+      const nextPanY = mouseY - cy - worldYDiff * newZoom;
+
+      zoomRef.current = newZoom;
+      panXRef.current = nextPanX;
+      panYRef.current = nextPanY;
+
       setZoom(newZoom);
-      setPanX(mouseX - cx - worldXDiff * newZoom);
-      setPanY(mouseY - cy - worldYDiff * newZoom);
+      setPanX(nextPanX);
+      setPanY(nextPanY);
     };
 
     canvas.addEventListener('wheel', handleWheelEvent, { passive: false });
     return () => {
       canvas.removeEventListener('wheel', handleWheelEvent);
     };
-  }, [zoom, panX, panY]);
+  }, []);
 
   // Transform coordinates
   const screenToWorld = (clientX: number, clientY: number) => {
@@ -629,8 +656,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const x = clientX - rect.left;
     const y = clientY - rect.top;
 
-    const worldX = (x - canvas.width / 2 - panX) / zoom + canvas.width / 2;
-    const worldY = (y - canvas.height / 2 - panY) / zoom + canvas.height / 2;
+    const worldX = (x - canvas.width / 2 - panXRef.current) / zoomRef.current + canvas.width / 2;
+    const worldY = (y - canvas.height / 2 - panYRef.current) / zoomRef.current + canvas.height / 2;
 
     return { x: worldX, y: worldY };
   };
@@ -676,8 +703,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
     else if (e.buttons === 1) {
       const dx = e.clientX - mouseRef.current.x;
       const dy = e.clientY - mouseRef.current.y;
-      setPanX(prev => prev + dx);
-      setPanY(prev => prev + dy);
+      const nextPanX = panXRef.current + dx;
+      const nextPanY = panYRef.current + dy;
+      panXRef.current = nextPanX;
+      panYRef.current = nextPanY;
+      setPanX(nextPanX);
+      setPanY(nextPanY);
       mouseRef.current = { x: e.clientX, y: e.clientY };
     }
   };
@@ -736,8 +767,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
     } else {
       const dx = touch.clientX - mouseRef.current.x;
       const dy = touch.clientY - mouseRef.current.y;
-      setPanX(prev => prev + dx);
-      setPanY(prev => prev + dy);
+      const nextPanX = panXRef.current + dx;
+      const nextPanY = panYRef.current + dy;
+      panXRef.current = nextPanX;
+      panYRef.current = nextPanY;
+      setPanX(nextPanX);
+      setPanY(nextPanY);
       mouseRef.current = { x: touch.clientX, y: touch.clientY };
     }
   };

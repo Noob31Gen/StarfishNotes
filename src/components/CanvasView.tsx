@@ -734,22 +734,33 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const worldX = (mouseX - panX) / zoom;
-      const worldY = (mouseY - panY) / zoom;
+      const currentZoom = zoomRef.current;
+      const currentPanX = panXRef.current;
+      const currentPanY = panYRef.current;
 
-      let newZoom = e.deltaY < 0 ? zoom * zoomFactor : zoom / zoomFactor;
+      const worldX = (mouseX - currentPanX) / currentZoom;
+      const worldY = (mouseY - currentPanY) / currentZoom;
+
+      let newZoom = e.deltaY < 0 ? currentZoom * zoomFactor : currentZoom / zoomFactor;
       newZoom = Math.max(0.2, Math.min(newZoom, 1.8));
 
+      const nextPanX = mouseX - worldX * newZoom;
+      const nextPanY = mouseY - worldY * newZoom;
+
+      zoomRef.current = newZoom;
+      panXRef.current = nextPanX;
+      panYRef.current = nextPanY;
+
       setZoom(newZoom);
-      setPanX(mouseX - worldX * newZoom);
-      setPanY(mouseY - worldY * newZoom);
+      setPanX(nextPanX);
+      setPanY(nextPanY);
     };
 
     container.addEventListener('wheel', handleWheelEvent, { passive: false });
     return () => {
       container.removeEventListener('wheel', handleWheelEvent);
     };
-  }, [zoom, panX, panY]);
+  }, []);
 
   // Global keydown handler to delete selected nodes or connections & trigger Undo/Redo
   useEffect(() => {
@@ -808,16 +819,27 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
 
-    const worldX = (centerX - panX) / zoom;
-    const worldY = (centerY - panY) / zoom;
+    const currentZoom = zoomRef.current;
+    const currentPanX = panXRef.current;
+    const currentPanY = panYRef.current;
+
+    const worldX = (centerX - currentPanX) / currentZoom;
+    const worldY = (centerY - currentPanY) / currentZoom;
 
     const zoomFactor = 1.08;
-    let newZoom = zoomIn ? zoom * zoomFactor : zoom / zoomFactor;
+    let newZoom = zoomIn ? currentZoom * zoomFactor : currentZoom / zoomFactor;
     newZoom = Math.max(0.2, Math.min(newZoom, 1.8));
 
+    const nextPanX = centerX - worldX * newZoom;
+    const nextPanY = centerY - worldY * newZoom;
+
+    zoomRef.current = newZoom;
+    panXRef.current = nextPanX;
+    panYRef.current = nextPanY;
+
     setZoom(newZoom);
-    setPanX(centerX - worldX * newZoom);
-    setPanY(centerY - worldY * newZoom);
+    setPanX(nextPanX);
+    setPanY(nextPanY);
   };
 
   // Global mousemove/touchmove and mouseup/touchend listeners to ensure the active connection tip follows the cursor perfectly
@@ -825,7 +847,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     if (!activeConnection) return;
 
     const handleGlobalMove = (clientX: number, clientY: number) => {
-      const { x, y } = getCanvasCoords(clientX, clientY);
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
       setActiveConnection(prev => prev ? {
         ...prev,
         currentX: x,
@@ -945,7 +970,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     }
 
     if (activeConnection) {
-      const { x, y } = getCanvasCoords(e.clientX, e.clientY);
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
       setActiveConnection(prev => prev ? {
         ...prev,
         currentX: x,
@@ -1045,7 +1073,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     const touch = e.touches[0];
 
     if (isTouchConnecting.current && activeConnection) {
-      const { x, y } = getCanvasCoords(touch.clientX, touch.clientY);
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = touch.clientX - rect.left;
+      const y = touch.clientY - rect.top;
       setActiveConnection(prev => prev ? {
         ...prev,
         currentX: x,
@@ -1295,8 +1326,8 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       fromSide: side,
       startX,
       startY,
-      currentX: startX,
-      currentY: startY,
+      currentX: panX + startX * zoom,
+      currentY: panY + startY * zoom,
     });
     connectionStartClient.current = { x: e.clientX, y: e.clientY };
   };
@@ -1349,8 +1380,8 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       fromSide: side,
       startX,
       startY,
-      currentX: startX,
-      currentY: startY,
+      currentX: panX + startX * zoom,
+      currentY: panY + startY * zoom,
     });
 
     isTouchConnecting.current = true;
@@ -1443,10 +1474,16 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
   const activePathString = () => {
     if (!activeConnection) return '';
-    const start = { x: activeConnection.startX, y: activeConnection.startY };
-    const end = { x: activeConnection.currentX, y: activeConnection.currentY };
+    const start = {
+      x: panX + activeConnection.startX * zoom,
+      y: panY + activeConnection.startY * zoom
+    };
+    const end = {
+      x: activeConnection.currentX,
+      y: activeConnection.currentY
+    };
 
-    const controlOffset = 80;
+    const controlOffset = 80 * zoom;
     let cp1x = start.x;
     let cp1y = start.y;
 
@@ -1485,6 +1522,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         className="canvas-viewport w-full h-full absolute top-0 left-0 cursor-grab active:cursor-grabbing origin-top-left"
         style={{
           transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+          transformOrigin: 'top left',
         }}
       >
         <div
@@ -1559,14 +1597,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
             );
           })}
 
-          {activeConnection && (
-            <path
-              d={activePathString()}
-              className="canvas-connection-line active"
-              style={{ strokeDasharray: '4,4', pointerEvents: 'none' }}
-              markerEnd="url(#arrow-active)"
-            />
-          )}
+
         </svg>
 
         {nodes.map(node => {
@@ -2244,6 +2275,33 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
             activeDragResizeState === 'dragging' ? "cursor-grabbing" : "cursor-se-resize"
           )} 
         />
+      )}
+
+      {activeConnection && (
+        <svg
+          className="absolute top-0 left-0 w-full h-full pointer-events-none z-[1000]"
+          style={{ overflow: 'visible' }}
+        >
+          <defs>
+            <marker
+              id="arrow-active-screen"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="var(--primary)" />
+            </marker>
+          </defs>
+          <path
+            d={activePathString()}
+            className="canvas-connection-line active"
+            style={{ strokeDasharray: '4,4', pointerEvents: 'none' }}
+            markerEnd="url(#arrow-active-screen)"
+          />
+        </svg>
       )}
 
       {errorMessage && (
