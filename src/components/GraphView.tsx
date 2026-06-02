@@ -39,6 +39,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   springLength: propsSpringLength,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
@@ -127,6 +128,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           // Remove common markdown/board/text extensions for match comparisons
           cleanTarget = cleanTarget.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
 
+          const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
+
           // Match against name OR full path
           const targetFile = files.find(f => {
             const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
@@ -136,7 +139,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
             // 1. Matches exact filename (e.g. "1 - IMPORTED FROM KEEP")
             // 2. Matches exact full path (e.g. "+base-planes/1 - imported from keep")
             // 3. Matches relative/nested subfolder matches (e.g. ends with "/1 - imported from keep")
-            return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget);
+            // 4. Matches filename only fallback if folder was specified
+            return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget) || cleanName === targetFilename;
           });
 
           if (targetFile) {
@@ -186,11 +190,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
           let cleanTarget = targetPath.replace(/\\/g, '/').replace(/^\.?\//, '').trim().toLowerCase();
           cleanTarget = cleanTarget.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
 
+          const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
+
           const targetFile = files.find(f => {
             const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
             const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
             
-            return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget);
+            return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget) || cleanName === targetFilename;
           });
 
           if (targetFile) {
@@ -238,10 +244,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 let cleanTarget = node.file.replace(/\\/g, '/').replace(/^\.?\//, '').trim().toLowerCase();
                 cleanTarget = cleanTarget.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
 
+                const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
+
                 const targetFile = files.find(f => {
                   const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
                   const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
-                  return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget);
+                  return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget) || cleanName === targetFilename;
                 });
 
                 if (targetFile) {
@@ -257,6 +265,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     });
 
+    const cx = containerRef.current ? containerRef.current.clientWidth / 2 : window.innerWidth / 2;
+    const cy = containerRef.current ? containerRef.current.clientHeight / 2 : window.innerHeight / 2;
+
     // 2. Build Base Nodes
     const baseNodes: Node[] = files.map((file, idx) => {
       const isCanvas = file.path.endsWith('.canvas');
@@ -269,8 +280,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
         id: file.path,
         name: file.name.replace(/\.md$/, '').replace(/\.canvas$/, ''),
         type: isCanvas ? 'canvas' : 'md',
-        x: existing ? existing.x : window.innerWidth / 2 + Math.cos(angle) * radius,
-        y: existing ? existing.y : window.innerHeight / 2 + Math.sin(angle) * radius,
+        x: existing ? existing.x : cx + Math.cos(angle) * radius,
+        y: existing ? existing.y : cy + Math.sin(angle) * radius,
         vx: existing ? existing.vx : 0,
         vy: existing ? existing.vy : 0,
         radius: isCurrentActive ? 9 : 6,
@@ -294,8 +305,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           id: ghost.id,
           name: ghost.name,
           type: 'ghost',
-          x: existing ? existing.x : window.innerWidth / 2 + Math.cos(angle) * radius,
-          y: existing ? existing.y : window.innerHeight / 2 + Math.sin(angle) * radius,
+          x: existing ? existing.x : cx + Math.cos(angle) * radius,
+          y: existing ? existing.y : cy + Math.sin(angle) * radius,
           vx: existing ? existing.vx : 0,
           vy: existing ? existing.vy : 0,
           radius: 5.5,
@@ -343,6 +354,27 @@ export const GraphView: React.FC<GraphViewProps> = ({
     linksRef.current = allLinks;
   }, [files, fileContents, activeFilePath, showCanvas, showGhosts, showOrphans]);
 
+  // Keep canvas resolution in sync with parent element size
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const parent = containerRef.current || canvas.parentElement;
+    if (!parent) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (!entries || entries.length === 0) return;
+      const entry = entries[0];
+      const { width, height } = entry.contentRect;
+      canvas.width = width || parent.clientWidth || window.innerWidth;
+      canvas.height = height || parent.clientHeight || window.innerHeight;
+    });
+
+    resizeObserver.observe(parent);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
   // Main Force Directed Engine loop
   useEffect(() => {
     let animationFrameId: number;
@@ -352,14 +384,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas dimensions
-    const resizeCanvas = () => {
-      canvas.width = canvas.parentElement?.clientWidth || window.innerWidth;
-      canvas.height = canvas.parentElement?.clientHeight || window.innerHeight;
-    };
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-
     const updatePhysics = () => {
       const nodes = nodesRef.current;
       const links = linksRef.current;
@@ -367,7 +391,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const repulsionStrength = repulsionRef.current;
       const springStrength = 0.055;
       const springLength = springLengthRef.current;
-      const gravity = gravityRef.current * 0.04;
+      const gravity = gravityRef.current * 0.08;
       const friction = 0.8;
 
       // 1. Center of Gravity
@@ -562,7 +586,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     return () => {
       cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', resizeCanvas);
     };
   }, [zoom, panX, panY, activeFilePath]);
 
@@ -573,18 +596,30 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const handleWheelEvent = (e: WheelEvent) => {
       e.preventDefault();
       const zoomFactor = 1.08;
-      if (e.deltaY < 0) {
-        setZoom(prev => Math.min(prev * zoomFactor, 2.5));
-      } else {
-        setZoom(prev => Math.max(prev / zoomFactor, 0.25));
-      }
+      
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      const worldXDiff = (mouseX - cx - panX) / zoom;
+      const worldYDiff = (mouseY - cy - panY) / zoom;
+
+      let newZoom = e.deltaY < 0 ? zoom * zoomFactor : zoom / zoomFactor;
+      newZoom = Math.max(0.25, Math.min(newZoom, 2.5));
+
+      setZoom(newZoom);
+      setPanX(mouseX - cx - worldXDiff * newZoom);
+      setPanY(mouseY - cy - worldYDiff * newZoom);
     };
 
     canvas.addEventListener('wheel', handleWheelEvent, { passive: false });
     return () => {
       canvas.removeEventListener('wheel', handleWheelEvent);
     };
-  }, []);
+  }, [zoom, panX, panY]);
 
   // Transform coordinates
   const screenToWorld = (clientX: number, clientY: number) => {
@@ -731,7 +766,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   };
 
   return (
-    <div className="w-full h-full relative bg-[oklch(0.08_0.015_260)] select-none">
+    <div ref={containerRef} className="w-full h-full relative bg-[oklch(0.08_0.015_260)] select-none">
       <canvas
         ref={canvasRef}
         className="w-full h-full block cursor-grab active:cursor-grabbing"

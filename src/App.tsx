@@ -22,6 +22,8 @@ import { LockScreen } from './components/LockScreen';
 import { InitVaultScreen } from './components/InitVaultScreen';
 import { Sidebar } from './components/Sidebar';
 import { cn } from './utils/cn';
+import { resolveVaultFilePath } from './utils/pathResolver';
+import { getLocalFile } from './services/storage';
 
 export interface StarfishSettings {
   attachmentsFolder: string;
@@ -169,6 +171,15 @@ export default function App() {
   const [files, setFiles] = useState<VaultFile[]>([]);
   const [fileContents, setFileContents] = useState<Record<string, string>>({}); // path -> text
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
+
+  const handleOpenNote = useCallback((path: string | null) => {
+    if (!path) {
+      setActiveFilePath(null);
+      return;
+    }
+    const resolvedPath = resolveVaultFilePath(files, path);
+    setActiveFilePath(resolvedPath);
+  }, [files]);
   const [isLoadingTree, setIsLoadingTree] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -185,6 +196,41 @@ export default function App() {
 
   // Stable handlers declared before checkSession mount hook to prevent Temporal Dead Zone (TDZ)
 
+  const preloadAllFilesContents = useCallback(async (vaultFiles: VaultFile[]) => {
+    try {
+      const contents: Record<string, string> = {};
+      for (const file of vaultFiles) {
+        if (file.path.endsWith('.md') || file.path.endsWith('.canvas') || file.path.endsWith('.txt')) {
+          if (isOffline) {
+            const stored = await offlineStorage.getFile(file.path);
+            if (stored) {
+              let text = stored.content;
+              if (storageMode === 'encrypted' || storageMode === 'keychain') {
+                const activeKey = masterPassphrase;
+                if (activeKey) {
+                  try {
+                    text = await decryptToken(stored.content, activeKey);
+                  } catch {
+                    // ignore decryption errors for incomplete lockscreen transitions
+                  }
+                }
+              }
+              contents[file.path] = text;
+            }
+          } else {
+            const cached = await getLocalFile(file.path);
+            if (cached) {
+              contents[file.path] = cached.content;
+            }
+          }
+        }
+      }
+      setFileContents(prev => ({ ...contents, ...prev }));
+    } catch (e) {
+      console.error('Failed to background preload files contents:', e);
+    }
+  }, [isOffline, storageMode, masterPassphrase]);
+
   const refreshFilesOffline = useCallback(async () => {
     setIsLoadingTree(true);
     try {
@@ -199,6 +245,7 @@ export default function App() {
       }));
 
       setFiles(mappedFiles);
+      preloadAllFilesContents(mappedFiles);
 
       if (mappedFiles.length > 0 && !activeFilePath) {
         const defaultNote = mappedFiles.find(f => f.name === 'Welcome.md') || mappedFiles[0];
@@ -209,7 +256,7 @@ export default function App() {
     } finally {
       setIsLoadingTree(false);
     }
-  }, [activeFilePath]);
+  }, [activeFilePath, preloadAllFilesContents]);
 
   const loadFileContentOffline = useCallback(async (path: string, providedKey?: string) => {
     if (fileContents[path] !== undefined) return;
@@ -621,6 +668,7 @@ export default function App() {
     try {
       const tree = await fetchRepositoryTree(token, repo, branch);
       setFiles(tree);
+      preloadAllFilesContents(tree);
 
       if (tree.length > 0 && !activeFilePath) {
         const defaultNote = tree.find(f => f.name === 'Welcome.md') || tree[0];
@@ -629,14 +677,14 @@ export default function App() {
 
       syncVault(token, repo, branch, tree).then(() => {
         console.log("Vault sync complete!");
-        // Optional: Trigger a state update here to tell the UI the sync is done
+        preloadAllFilesContents(tree);
       }).catch(console.error);
     } catch {
       // Tree retrieval failed
     } finally {
       setIsLoadingTree(false);
     }
-  }, [githubToken, repoName, branchName, activeFilePath, isOffline, refreshFilesOffline]);
+  }, [githubToken, repoName, branchName, activeFilePath, isOffline, refreshFilesOffline, preloadAllFilesContents]);
 
   const checkAndLoadVault = useCallback(async (token: string, repo: string, branch: string) => {
     try {
@@ -874,7 +922,8 @@ export default function App() {
       }
     };
     checkSession();
-  }, [autoConnect, refreshFilesOffline]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // autoConnect function declaration migrated to stable top position
 
@@ -1673,7 +1722,7 @@ export default function App() {
         isLoadingTree={isLoadingTree}
         onOpenSettings={() => setShowSettingsModal(true)}
         activeFilePath={activeFilePath}
-        setActiveFilePath={setActiveFilePath}
+        setActiveFilePath={handleOpenNote}
         setViewTab={setViewTab}
         onDeleteClick={(path, sha) => setPendingDeleteFile({ path, sha })}
         onRenameClick={(path, name, sha) => {
@@ -1810,7 +1859,7 @@ export default function App() {
               files={files}
               fileContents={fileContents}
               onOpenNote={(path) => {
-                setActiveFilePath(path);
+                handleOpenNote(path);
                 setViewTab('workspace'); // Open inside editor tab
               }}
               activeFilePath={activeFilePath || undefined}
@@ -1833,7 +1882,7 @@ export default function App() {
               fileContents={fileContents}
               onSave={(content, sha) => handleSaveFile(activeFilePath, content, sha)}
               onOpenNote={(path) => {
-                setActiveFilePath(path);
+                handleOpenNote(path);
                 setViewTab('workspace');
               }}
               vaultId={repoName}
@@ -1851,7 +1900,7 @@ export default function App() {
               files={files}
               onSave={(content, sha) => handleSaveFile(activeFilePath, content, sha)}
               onOpenNote={(path) => {
-                setActiveFilePath(path);
+                handleOpenNote(path);
                 setViewTab('workspace');
               }}
               vaultId={repoName}

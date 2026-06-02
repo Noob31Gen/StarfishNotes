@@ -105,8 +105,124 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
   const [activeDragResizeState, setActiveDragResizeState] = useState<'idle' | 'dragging' | 'resizing'>('idle');
   const [isAddImageOpen, setIsAddImageOpen] = useState(false);
+  const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
   const [mediaSearchQuery, setMediaSearchQuery] = useState('');
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+
+  // Popups coords for dynamic W3C positioning
+  const [notePopupCoords, setNotePopupCoords] = useState<{ left: number; bottom: number } | null>(null);
+  const [imagePopupCoords, setImagePopupCoords] = useState<{ left: number; bottom: number } | null>(null);
+  const addNoteButtonRef = useRef<HTMLButtonElement | null>(null);
+  const addImageButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (isAddNoteOpen && addNoteButtonRef.current) {
+      const rect = addNoteButtonRef.current.getBoundingClientRect();
+      const popupWidth = 200;
+      const rawLeft = rect.left + rect.width / 2 - popupWidth / 2;
+      const left = Math.max(8, Math.min(rawLeft, window.innerWidth - popupWidth - 8));
+      setNotePopupCoords({
+        left,
+        bottom: window.innerHeight - rect.top + 8,
+      });
+    } else {
+      setNotePopupCoords(null);
+    }
+  }, [isAddNoteOpen]);
+
+  useEffect(() => {
+    if (isAddImageOpen && addImageButtonRef.current) {
+      const rect = addImageButtonRef.current.getBoundingClientRect();
+      const popupWidth = 250;
+      const rawLeft = rect.left + rect.width / 2 - popupWidth / 2;
+      const left = Math.max(8, Math.min(rawLeft, window.innerWidth - popupWidth - 8));
+      setImagePopupCoords({
+        left,
+        bottom: window.innerHeight - rect.top + 8,
+      });
+    } else {
+      setImagePopupCoords(null);
+    }
+  }, [isAddImageOpen]);
+
+  // Autocomplete states for canvas text cards
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionQuery, setSuggestionQuery] = useState('');
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [caretIndex, setCaretIndex] = useState(0);
+
+  const filteredSuggestions = files
+    .filter(f => {
+      const lowerPath = f.path.toLowerCase();
+      if (lowerPath.includes('.obsidian/') || lowerPath.startsWith('.obsidian/')) return false;
+      if (f.name === '.gitkeep' || f.name === '.vault-compat.json') return false;
+      const allowed = ['.md', '.txt', '.canvas', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf'];
+      return allowed.some(ext => lowerPath.endsWith(ext));
+    })
+    .map(f => f.path)
+    .filter(path => path.toLowerCase().includes(suggestionQuery.toLowerCase()));
+
+  const handleTextareaChange = (nodeId: string, value: string, target: HTMLTextAreaElement) => {
+    handleTextChange(nodeId, value);
+
+    const selectionStart = target.selectionStart;
+    const textBeforeCaret = value.substring(0, selectionStart);
+
+    // Find last double bracket index
+    const lastBracketIndex = textBeforeCaret.lastIndexOf('[[');
+
+    if (lastBracketIndex !== -1 && lastBracketIndex >= textBeforeCaret.lastIndexOf(']]')) {
+      const query = textBeforeCaret.substring(lastBracketIndex + 2);
+
+      // Make sure the query is on the current typing line
+      if (!query.includes('\n')) {
+        setShowSuggestions(true);
+        setSuggestionQuery(query);
+        setCaretIndex(lastBracketIndex);
+        setSuggestionIndex(0);
+        return;
+      }
+    }
+
+    setShowSuggestions(false);
+  };
+
+  const handleTextareaKeyDown = (nodeId: string, e: React.KeyboardEvent<HTMLTextAreaElement>, target: HTMLTextAreaElement) => {
+    if (showSuggestions && filteredSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSuggestionIndex(prev => (prev + 1) % filteredSuggestions.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSuggestionIndex(prev => (prev - 1 + filteredSuggestions.length) % filteredSuggestions.length);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        insertSuggestion(nodeId, filteredSuggestions[suggestionIndex], target.value, target);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowSuggestions(false);
+      }
+    }
+  };
+
+  const insertSuggestion = (nodeId: string, path: string, currentText: string, target: HTMLTextAreaElement) => {
+    const cleanNoteName = path.split('/').pop()?.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '') || path;
+    const startText = currentText.substring(0, caretIndex);
+    const endText = currentText.substring(target.selectionStart);
+
+    const insertedLink = `[[${cleanNoteName}]]`;
+    const newContent = startText + insertedLink + endText;
+
+    handleTextChange(nodeId, newContent);
+    setShowSuggestions(false);
+
+    // Re-focus and shift caret location past brackets
+    setTimeout(() => {
+      target.focus();
+      const newPos = caretIndex + insertedLink.length;
+      target.setSelectionRange(newPos, newPos);
+    }, 50);
+  };
 
   const pushState = useCallback((nextNodes: CanvasNode[], nextEdges: CanvasEdge[]) => {
     const newState = {
@@ -389,7 +505,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     currentY: number;
   } | null>(null);
 
-  const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
+
 
   const [activeLinkSelectorCardId, setActiveLinkSelectorCardId] = useState<string | null>(null);
   const [noteSearchQuery, setNoteSearchQuery] = useState('');
@@ -681,10 +797,28 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   const getCanvasCoords = useCallback((clientX: number, clientY: number) => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const rect = containerRef.current.getBoundingClientRect();
-    const x = (clientX - rect.left - panX) / zoom;
-    const y = (clientY - rect.top - panY) / zoom;
+    const x = (clientX - rect.left - panXRef.current) / zoomRef.current;
+    const y = (clientY - rect.top - panYRef.current) / zoomRef.current;
     return { x, y };
-  }, [panX, panY, zoom]);
+  }, []);
+
+  const zoomCentered = (zoomIn: boolean) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+
+    const worldX = (centerX - panX) / zoom;
+    const worldY = (centerY - panY) / zoom;
+
+    const zoomFactor = 1.08;
+    let newZoom = zoomIn ? zoom * zoomFactor : zoom / zoomFactor;
+    newZoom = Math.max(0.2, Math.min(newZoom, 1.8));
+
+    setZoom(newZoom);
+    setPanX(centerX - worldX * newZoom);
+    setPanY(centerY - worldY * newZoom);
+  };
 
   // Global mousemove/touchmove and mouseup/touchend listeners to ensure the active connection tip follows the cursor perfectly
   useEffect(() => {
@@ -1348,7 +1482,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         }
       `}</style>
       <div
-        className="canvas-viewport w-full h-full absolute top-0 left-0 cursor-grab active:cursor-grabbing origin-left-top"
+        className="canvas-viewport w-full h-full absolute top-0 left-0 cursor-grab active:cursor-grabbing origin-top-left"
         style={{
           transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
         }}
@@ -1519,11 +1653,16 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                       autoFocus
                       className="w-full h-full min-h-[80px] bg-transparent border-none resize-none p-0 text-foreground text-sm leading-relaxed outline-none focus:ring-0 select-text font-mono"
                       value={node.text || ''}
-                      onChange={(e) => handleTextChange(node.id, e.target.value)}
+                      onChange={(e) => handleTextareaChange(node.id, e.target.value, e.target as HTMLTextAreaElement)}
+                      onKeyDown={(e) => handleTextareaKeyDown(node.id, e, e.target as HTMLTextAreaElement)}
                       onBlur={() => {
-                        setEditingNodeIds(prev => ({ ...prev, [node.id]: false }));
-                        pushState(nodes, edges);
-                        performAutoSave();
+                        // Defer blur slightly so mouse down on autocomplete dropdown can be processed first
+                        setTimeout(() => {
+                          setEditingNodeIds(prev => ({ ...prev, [node.id]: false }));
+                          setShowSuggestions(false);
+                          pushState(nodes, edges);
+                          performAutoSave();
+                        }, 150);
                       }}
                       placeholder="Enter markdown text..."
                     />
@@ -1710,7 +1849,6 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                   onClick={(e) => e.stopPropagation()}
                 />
               ))}
-
               {isSelected && (
                 <div
                   className="absolute bottom-0 right-0 w-7 h-7 cursor-se-resize z-[100] flex items-end justify-end select-none active:scale-95 transition-all p-1 hover:scale-110"
@@ -1723,6 +1861,56 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                       <path d="M 10 2 L 2 10 M 10 5 L 5 10 M 10 8 L 8 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                     </svg>
                   </div>
+                </div>
+              )}
+
+              {showSuggestions && editingNodeIds[node.id] && (
+                <div className="absolute top-[100%] left-0 w-[240px] mt-1 bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5 z-[1000] max-h-[160px] overflow-y-auto select-none">
+                  <div className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-2 py-1 select-none border-b border-border/40 pb-1 mb-1 flex justify-between items-center">
+                    <span>Suggestions</span>
+                    <span className="text-[0.55rem] lowercase tracking-normal font-semibold font-sans text-muted-foreground/55">enter to link</span>
+                  </div>
+                  {filteredSuggestions.map((path, idx) => {
+                    const isSelectedSug = suggestionIndex === idx;
+                    const name = path.split('/').pop()?.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '') || '';
+                    const dir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : null;
+                    return (
+                      <button
+                        key={path}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const targetTextarea = document.querySelector(`textarea[placeholder="Enter markdown text..."]`) as HTMLTextAreaElement | null;
+                          if (targetTextarea) {
+                            insertSuggestion(node.id, path, node.text || '', targetTextarea);
+                          }
+                        }}
+                        onMouseEnter={() => setSuggestionIndex(idx)}
+                        className={cn(
+                          "w-full text-left px-2.5 py-2 rounded-lg text-xs transition-premium cursor-pointer truncate font-semibold flex items-center justify-between border border-transparent",
+                          isSelectedSug
+                            ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent font-semibold"
+                            : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground"
+                        )}
+                      >
+                        <span className="flex items-center gap-2 truncate">
+                          <FileText className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{name}</span>
+                        </span>
+                        {dir && (
+                          <span className="text-[0.55rem] font-semibold font-sans text-muted-foreground/45 shrink-0 select-none ml-2">
+                            {dir}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {filteredSuggestions.length === 0 && (
+                    <span className="text-[0.65rem] text-muted-foreground/50 italic p-2 text-center select-none">
+                      No matching notes
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -1743,6 +1931,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
         <div className="relative shrink-0">
           <button
+            ref={addNoteButtonRef}
             type="button"
             onClick={() => {
               setIsAddNoteOpen(!isAddNoteOpen);
@@ -1761,6 +1950,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
         <div className="relative shrink-0">
           <button
+            ref={addImageButtonRef}
             type="button"
             onClick={() => {
               setIsAddImageOpen(!isAddImageOpen);
@@ -1826,7 +2016,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         <div className="w-[1px] h-5 bg-border mx-1 shrink-0" />
 
         <button
-          onClick={() => setZoom(z => Math.max(z / 1.08, 0.2))}
+          onClick={() => zoomCentered(false)}
           className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer border border-transparent hover:border-border shrink-0"
           title="Zoom Out"
         >
@@ -1838,7 +2028,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         </span>
 
         <button
-          onClick={() => setZoom(z => Math.min(z * 1.08, 1.8))}
+          onClick={() => zoomCentered(true)}
           className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer border border-transparent hover:border-border shrink-0"
           title="Zoom In"
         >
@@ -1883,13 +2073,16 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         </button>
       </div>
 
-      {isAddNoteOpen && (
+      {isAddNoteOpen && notePopupCoords && (
         <>
           <div
             className="fixed inset-0 z-40 bg-transparent cursor-default"
             onClick={() => setIsAddNoteOpen(false)}
           />
-          <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] sm:bottom-20 right-24 sm:right-36 w-[200px] bg-[#12131a] border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5 z-50 animate-in fade-in zoom-in-95 duration-100 max-h-[180px] overflow-y-auto select-none animate-fade-in">
+          <div 
+            style={{ left: `${notePopupCoords.left}px`, bottom: `${notePopupCoords.bottom}px` }}
+            className="fixed w-[200px] bg-[#12131a] border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5 z-50 animate-in fade-in zoom-in-95 duration-100 max-h-[180px] overflow-y-auto select-none animate-fade-in"
+          >
             <span className="text-[0.6rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-2.5 py-1 select-none">
               Select Note
             </span>
@@ -1930,13 +2123,16 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         </>
       )}
 
-      {isAddImageOpen && (
+      {isAddImageOpen && imagePopupCoords && (
         <>
           <div
             className="fixed inset-0 z-40 bg-transparent cursor-default"
             onClick={() => setIsAddImageOpen(false)}
           />
-          <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] sm:bottom-20 right-2 sm:right-24 w-[250px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 max-h-[300px] overflow-hidden select-none animate-fade-in">
+          <div 
+            style={{ left: `${imagePopupCoords.left}px`, bottom: `${imagePopupCoords.bottom}px` }}
+            className="fixed w-[250px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 max-h-[300px] overflow-hidden select-none animate-fade-in"
+          >
             <span className="text-[0.6rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 py-0.5 select-none">
               Add Media Card
             </span>
