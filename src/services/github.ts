@@ -4,7 +4,7 @@
  * Implements robust tree traversal, UTF-8 base64 encoding/decoding, and conflict resolution (SHA checking).
  */
 import JSZip from 'jszip';
-import { getLocalFile, saveLocalFile, getAllLocalFilePaths } from './storage';
+import { getLocalFile, saveLocalFile } from './storage';
 
 export interface VaultFile {
   path: string;
@@ -401,57 +401,85 @@ export async function deleteFile(
 }
 
 export async function syncVault(token: string, repo: string, branch: string, remoteTree: VaultFile[]) {
-  const localPaths = await getAllLocalFilePaths();
-  const isFirstSync = localPaths.length === 0;
+  console.log("Checking for updates...");
 
-  if (isFirstSync) {
-    // ==========================================
-    // METHOD 1: THE ZIPBALL (Initial Load)
-    // ==========================================
-    console.log("First time setup: Downloading Zipball...");
+  // 1. Identify which files are missing or have different SHAs
+  const changedFiles: VaultFile[] = [];
+  for (const remoteFile of remoteTree) {
+    if (!remoteFile.path.endsWith('.md') && !remoteFile.path.endsWith('.canvas') && !remoteFile.path.endsWith('.txt')) continue;
+
+    const localFile = await getLocalFile(remoteFile.path);
+    if (!localFile || localFile.sha !== remoteFile.sha) {
+      changedFiles.push(remoteFile);
+    }
+  }
+
+  if (changedFiles.length === 0) {
+    console.log("All files are up-to-date.");
+    return;
+  }
+
+  console.log(`Found ${changedFiles.length} new or changed files. Syncing...`);
+
+  const updatedPaths = new Set<string>();
+
+  try {
+    console.log("Downloading zipball for high-quality prefetch...");
     const res = await fetch(`https://api.github.com/repos/${repo}/zipball/${branch}`, {
       headers: { Authorization: `token ${token}` }
     });
 
+    if (!res.ok) {
+      throw new Error(`Failed to download zipball: HTTP ${res.status}`);
+    }
+
     const blob = await res.blob();
     const zip = await JSZip.loadAsync(blob);
 
-    // Extract and save to IndexedDB
+    // Extract and save the changed files to IndexedDB
     for (const [path, file] of Object.entries(zip.files)) {
-      if (!file.dir && (path.endsWith('.md') || path.endsWith('.canvas'))) {
-        const content = await file.async('string');
-        // Find the SHA from the remoteTree we already fetched
-        const cleanPath = path.split('/').slice(1).join('/'); // Remove root folder name from zip path
-        const treeNode = remoteTree.find(n => n.path === cleanPath);
+      if (file.dir) continue;
 
-        if (treeNode) {
-          await saveLocalFile(cleanPath, { content, sha: treeNode.sha });
+      const cleanPath = path.split('/').slice(1).join('/'); // Remove root folder name from zip path
+      const cleanPathLower = cleanPath.toLowerCase();
+      const targetFile = changedFiles.find(f => f.path.toLowerCase() === cleanPathLower);
+
+      if (targetFile) {
+        if (cleanPath.endsWith('.md') || cleanPath.endsWith('.canvas') || cleanPath.endsWith('.txt')) {
+          console.log(`Updating/Saving local file from zip: ${targetFile.path}`);
+          const content = await file.async('string');
+          await saveLocalFile(targetFile.path, { content, sha: targetFile.sha });
+          updatedPaths.add(targetFile.path);
         }
       }
     }
-  } else {
-    // ==========================================
-    // METHOD 2: SMART DIFF (Subsequent Loads)
-    // ==========================================
-    console.log("Checking for updates...");
 
-    for (const remoteFile of remoteTree) {
-      if (!remoteFile.path.endsWith('.md') && !remoteFile.path.endsWith('.canvas')) continue;
+    console.log("Zipball sync complete.");
+  } catch (error) {
+    console.error("Zipball sync failed, falling back to individual file fetches...", error);
+  }
 
-      const localFile = await getLocalFile(remoteFile.path);
-
-      // If the file is new, OR the SHA is different, fetch it!
-      if (!localFile || localFile.sha !== remoteFile.sha) {
+  // 2. Fallback / Cleanup for files not updated by zipball
+  // This handles both:
+  // - The entire zipball download failing
+  // - A specific file not being present in the zipball (e.g. race conditions)
+  const remainingFiles = changedFiles.filter(f => !updatedPaths.has(f.path));
+  if (remainingFiles.length > 0) {
+    console.log(`Fetching ${remainingFiles.length} remaining/failed files individually...`);
+    for (const remoteFile of remainingFiles) {
+      try {
         console.log(`Updating ${remoteFile.path}...`);
         const content = await fetchFileContent(token, repo, remoteFile.path, remoteFile.sha);
         await saveLocalFile(remoteFile.path, { content, sha: remoteFile.sha });
+      } catch (fetchErr) {
+        console.error(`Failed to fetch file ${remoteFile.path} individually:`, fetchErr);
       }
     }
   }
 }
 
 /**
- * 8. Save a binary attachment (base64) directly to the repository
+ * 8. Commit/Save an attachment to the repository
  */
 export async function commitAttachment(
   token: string,

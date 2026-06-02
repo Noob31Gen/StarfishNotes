@@ -199,7 +199,7 @@ export default function App() {
   const preloadAllFilesContents = useCallback(async (vaultFiles: VaultFile[]) => {
     try {
       const contents: Record<string, string> = {};
-      for (const file of vaultFiles) {
+      await Promise.all(vaultFiles.map(async (file) => {
         if (file.path.endsWith('.md') || file.path.endsWith('.canvas') || file.path.endsWith('.txt')) {
           if (isOffline) {
             const stored = await offlineStorage.getFile(file.path);
@@ -224,8 +224,8 @@ export default function App() {
             }
           }
         }
-      }
-      setFileContents(prev => ({ ...contents, ...prev }));
+      }));
+      setFileContents(prev => ({ ...prev, ...contents }));
     } catch (e) {
       console.error('Failed to background preload files contents:', e);
     }
