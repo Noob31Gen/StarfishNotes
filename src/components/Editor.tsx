@@ -244,8 +244,9 @@ export const Editor: React.FC<EditorProps> = ({
 
       // 5. Bulletproof sanitize through DOMPurify to eliminate any script injection vectors
       return DOMPurify.sanitize(html, {
-        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col'],
-        ADD_TAGS: ['svg', 'line'],
+        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col', 'src', 'type', 'class'],
+        ADD_TAGS: ['embed', 'iframe', 'svg', 'line'],
+        ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|sms|blob|data):|[^&:/?#]*(?:[/?#]|$))/i
       });
     } catch {
       return `<p class="text-destructive font-medium">Error parsing content.</p>`;
@@ -457,6 +458,47 @@ export const Editor: React.FC<EditorProps> = ({
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setShowSuggestions(false);
+      }
+    }
+  };
+
+  const handleTextareaPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          setIsUploading(true);
+          try {
+            const result = await onUploadAttachment(file);
+            if (result && result.name) {
+              const textarea = textareaRef.current;
+              if (textarea) {
+                const startPos = textarea.selectionStart;
+                const endPos = textarea.selectionEnd;
+                const textToInsert = `![[${result.name}]]`;
+                const newContent = content.substring(0, startPos) + textToInsert + content.substring(endPos);
+                setContent(newContent);
+                pushEditorState(newContent);
+                
+                // Move cursor past the inserted link
+                setTimeout(() => {
+                  textarea.focus();
+                  const newCursorPos = startPos + textToInsert.length;
+                  textarea.setSelectionRange(newCursorPos, newCursorPos);
+                }, 50);
+              }
+            }
+          } catch (err) {
+            console.error("Failed to upload pasted image:", err);
+          } finally {
+            setIsUploading(false);
+          }
+        }
       }
     }
   };
@@ -796,6 +838,7 @@ export const Editor: React.FC<EditorProps> = ({
             value={content}
             onChange={handleTextareaChange}
             onKeyDown={handleTextareaKeyDown}
+            onPaste={handleTextareaPaste}
             onBlur={handleAutoSave}
             placeholder="Start writing notes in Markdown... Use [[GraphviewLinks]] to connect notes!"
             className="w-full h-full border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] p-6 pb-32 resize-none outline-none focus:ring-0 select-text overflow-y-auto"
@@ -884,7 +927,7 @@ export const Editor: React.FC<EditorProps> = ({
         <div
           className="flex-1 p-6 pb-32 sm:p-8 sm:pb-32 overflow-y-auto bg-background"
           onClick={handlePreviewClick}
-          onInput={handlePreviewInput}
+          onBlur={handlePreviewInput}
         >
           <div
             ref={previewContainerRef}

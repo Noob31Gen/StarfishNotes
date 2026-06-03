@@ -394,7 +394,9 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       });
 
       return DOMPurify.sanitize(html, {
-        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title'],
+        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'src', 'type', 'class'],
+        ADD_TAGS: ['embed', 'iframe'],
+        ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|sms|blob|data):|[^&:/?#]*(?:[/?#]|$))/i
       });
     } catch {
       return `<span class="text-destructive font-medium">Error parsing Markdown.</span>`;
@@ -812,6 +814,58 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     const y = (clientY - rect.top - panYRef.current) / zoomRef.current;
     return { x, y };
   }, []);
+
+  const handleCanvasPaste = async (e: React.ClipboardEvent) => {
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT' || activeEl.hasAttribute('contenteditable'))) {
+      return;
+    }
+
+    const items = e.clipboardData?.items;
+    if (!items || !onUploadAttachment) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          setIsUploadingMedia(true);
+          try {
+            const result = await onUploadAttachment(file);
+            if (result && result.path) {
+              const centerWorld = getCanvasCoords(
+                (containerRef.current?.clientWidth || 800) / 2,
+                (containerRef.current?.clientHeight || 600) / 2
+              );
+              
+              const newNode: CanvasNode = {
+                id: `card_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                x: Math.round(centerWorld.x - 160),
+                y: Math.round(centerWorld.y - 130),
+                width: 320,
+                height: 260,
+                type: 'file',
+                file: result.path
+              };
+
+              setNodes(prev => {
+                const nextNodes = [...prev, newNode];
+                pushState(nextNodes, edgesRef.current);
+                return nextNodes;
+              });
+              setSelectedNodeId(newNode.id);
+              performAutoSave();
+            }
+          } catch (err) {
+            console.error("Failed to upload and add pasted image to canvas:", err);
+          } finally {
+            setIsUploadingMedia(false);
+          }
+        }
+      }
+    }
+  };
 
   const zoomCentered = (zoomIn: boolean) => {
     if (!containerRef.current) return;
@@ -1503,6 +1557,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       )}
       ref={containerRef}
       onMouseDown={handleMouseDown}
+      onPaste={handleCanvasPaste}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onTouchStart={handleTouchStart}

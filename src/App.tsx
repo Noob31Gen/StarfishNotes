@@ -26,6 +26,9 @@ import { cn } from './utils/cn';
 import { resolveVaultFilePath } from './utils/pathResolver';
 import { getLocalFile } from './services/storage';
 
+// Initialize offline storage crypto callbacks to avoid circular dependencies
+offlineStorage.initCrypto(encryptToken, decryptToken);
+
 export interface StarfishSettings {
   attachmentsFolder: string;
   maxAttachmentSize: number; // MB
@@ -660,6 +663,7 @@ export default function App() {
       localStorage.setItem('starfishnotes-is-offline', 'true');
       localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, storageMode);
       setMasterPassphrase(activeKey);
+      offlineStorage.setPassphrase(activeKey);
       setIsOffline(true);
       setIsAuthenticated(true);
       setRepoName('Local Vault');
@@ -894,9 +898,7 @@ export default function App() {
   };
 
   const getFileContentAndType = async (path: string, sha: string): Promise<{ data: Blob; isBinary: boolean }> => {
-    const isBinary = ![
-      '.md', '.txt', '.canvas'
-    ].some(ext => path.toLowerCase().endsWith(ext));
+    const isBinary = !isTextFile(path) && !path.toLowerCase().endsWith('.canvas');
 
     let mime = 'application/octet-stream';
     const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
@@ -1261,6 +1263,7 @@ export default function App() {
         }
 
         setMasterPassphrase(activeKey);
+        offlineStorage.setPassphrase(activeKey);
         setIsAuthenticated(true);
         setShowLockScreen(false);
         await refreshFilesOffline();
@@ -1291,6 +1294,7 @@ export default function App() {
   const handleLogout = () => {
     purgeCredentials();
     localStorage.removeItem('starfishnotes-is-offline');
+    offlineStorage.clearPassphrase();
     setIsOffline(false);
     setAuthMode('github');
     setIsAuthenticated(false);
