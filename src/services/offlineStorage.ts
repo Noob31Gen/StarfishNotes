@@ -107,7 +107,7 @@ class OfflineStorageService {
     });
   }
 
-  public async getMeta(key: string): Promise<string | null> {
+  public async getMeta(key: string): Promise<any | null> {
     const db = await this.initDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction('meta', 'readonly');
@@ -124,7 +124,7 @@ class OfflineStorageService {
     });
   }
 
-  public async saveMeta(key: string, value: string): Promise<void> {
+  public async saveMeta(key: string, value: any): Promise<void> {
     const db = await this.initDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction('meta', 'readwrite');

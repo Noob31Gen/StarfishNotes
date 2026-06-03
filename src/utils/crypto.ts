@@ -6,6 +6,8 @@
  * 3. Tab Session memory storage for reload resilience
  */
 
+import { offlineStorage } from '../services/offlineStorage';
+
 // Helper: Convert ArrayBuffer to Hex string
 function bufToHex(buffer: ArrayBuffer): string {
   const byteArray = new Uint8Array(buffer);
@@ -29,6 +31,28 @@ function strToBuf(str: string): Uint8Array {
 // Helper: Convert ArrayBuffer to string UTF-8
 function bufToStr(buf: ArrayBuffer): string {
   return new TextDecoder().decode(buf);
+}
+
+/**
+ * Retrieve or generate a non-extractable 256-bit AES-GCM key stored in IndexedDB meta store
+ */
+async function getOrCreateSystemKey(): Promise<CryptoKey> {
+  const existingKey = await offlineStorage.getMeta('system_cryptokey');
+  if (existingKey) {
+    return existingKey as CryptoKey;
+  }
+
+  const newKey = await window.crypto.subtle.generateKey(
+    {
+      name: 'AES-GCM',
+      length: 256,
+    },
+    false, // extractable: false (so key cannot be exported via exportKey)
+    ['encrypt', 'decrypt']
+  );
+
+  await offlineStorage.saveMeta('system_cryptokey', newKey);
+  return newKey;
 }
 
 /**
@@ -157,7 +181,25 @@ export async function saveTokenSecurely(
     // Cache the decrypted token in sessionStorage for page reload resilience
     sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
   } else if (mode === 'plain') {
-    localStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
+    try {
+      const key = await getOrCreateSystemKey();
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const ciphertextBuffer = await window.crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv as BufferSource
+        },
+        key,
+        strToBuf(token) as BufferSource
+      );
+      
+      const ivHex = bufToHex(iv.buffer);
+      const cipherHex = bufToHex(ciphertextBuffer);
+      localStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, `${ivHex}:${cipherHex}`);
+    } catch (e) {
+      console.error('Failed to securely encrypt plain token, falling back to cleartext:', e);
+      localStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
+    }
   } else if (mode === 'keychain') {
     // Check W3C Credentials Management API support
     if ('PasswordCredential' in window) {
@@ -196,7 +238,44 @@ export async function retrieveTokenSecurely(passphrase?: string): Promise<string
   }
 
   if (mode === 'plain') {
-    return localStorage.getItem(STORAGE_KEYS.PLAINTEXT_PAT);
+    const stored = localStorage.getItem(STORAGE_KEYS.PLAINTEXT_PAT);
+    if (!stored) return null;
+
+    const isEncryptedFormat = /^[\da-fA-F]+:[\da-fA-F]+$/.test(stored);
+
+    if (isEncryptedFormat) {
+      try {
+        const parts = stored.split(':');
+        const ivHex = parts[0];
+        const cipherHex = parts[1];
+        
+        const iv = new Uint8Array(hexToBuf(ivHex));
+        const cipherBuffer = hexToBuf(cipherHex);
+        const key = await getOrCreateSystemKey();
+        
+        const decryptedBuffer = await window.crypto.subtle.decrypt(
+          {
+            name: 'AES-GCM',
+            iv: iv as BufferSource
+          },
+          key,
+          cipherBuffer
+        );
+        
+        return bufToStr(decryptedBuffer);
+      } catch (e) {
+        console.error('Failed to decrypt plain mode token:', e);
+        return null;
+      }
+    } else {
+      console.log('Migrating legacy plaintext token to secure IndexedDB-keyed format...');
+      try {
+        await saveTokenSecurely(stored, 'plain');
+      } catch (e) {
+        console.error('Failed to migrate plain token, returning plaintext:', e);
+      }
+      return stored;
+    }
   }
 
   if (mode === 'encrypted') {
