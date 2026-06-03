@@ -46,7 +46,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [zoom, setZoom] = useState(0.3);
+  const [zoom, setZoom] = useState(0.5);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
 
