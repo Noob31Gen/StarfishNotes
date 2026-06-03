@@ -1,12 +1,160 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Database, Eye, Code, Plus, ArrowUpDown, 
-  Filter, FileText, Check, X, RefreshCw, PlusCircle, Folders
+  Filter, FileText, Check, X, RefreshCw, PlusCircle, Folders,
+  SlidersHorizontal, Search, Info, Calendar, Tag, AlignLeft, EyeOff
 } from 'lucide-react';
 import { parseYaml, stringifyYaml } from '../utils/yaml';
 import { parseFrontmatter, updateFrontmatter } from '../utils/frontmatter';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
+
+interface InbuiltPropertyDef {
+  key: string;
+  label: string;
+  icon: 'info' | 'text' | 'calendar' | 'tag';
+}
+
+const INBUILT_PROPERTIES: InbuiltPropertyDef[] = [
+  { key: 'file name', label: 'file name', icon: 'info' },
+  { key: 'file backlinks', label: 'file backlinks', icon: 'info' },
+  { key: 'created time', label: 'created time', icon: 'info' },
+  { key: 'file extension', label: 'file extension', icon: 'info' },
+  { key: 'modified time', label: 'modified time', icon: 'info' },
+  { key: 'file base name', label: 'file base name', icon: 'info' },
+  { key: 'file embeds', label: 'file embeds', icon: 'info' },
+  { key: 'folder', label: 'folder', icon: 'info' },
+  { key: 'file full name', label: 'file full name', icon: 'info' },
+  { key: 'file links', label: 'file links', icon: 'info' },
+  { key: 'file path', label: 'file path', icon: 'info' },
+  { key: 'file size', label: 'file size', icon: 'info' },
+  { key: 'file tags', label: 'file tags', icon: 'info' },
+  { key: 'author', label: 'author', icon: 'text' },
+  { key: 'date', label: 'date', icon: 'calendar' },
+  { key: 'tags', label: 'tags', icon: 'tag' },
+  { key: 'title', label: 'title', icon: 'text' },
+  { key: 'version', label: 'version', icon: 'text' },
+];
+
+const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
+const getStableDate = (seed: string, offsetDays: number = 0): string => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const daysAgo = (Math.abs(hash) % 180) + offsetDays;
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  const hours = String(Math.abs(hash) % 24).padStart(2, '0');
+  const minutes = String(Math.abs(hash) % 60).padStart(2, '0');
+  return `${date.toISOString().split('T')[0]} ${hours}:${minutes}`;
+};
+
+const extractTags = (content: string, frontmatter?: Record<string, unknown>): Set<string> => {
+  const tags = new Set<string>();
+  if (frontmatter) {
+    const fmTags = frontmatter.tags || frontmatter.tag;
+    if (typeof fmTags === 'string') {
+      fmTags.split(',').forEach(t => {
+        const clean = t.trim().replace(/^#/, '');
+        if (clean) tags.add(clean);
+      });
+    } else if (Array.isArray(fmTags)) {
+      fmTags.forEach(t => {
+        const clean = String(t).trim().replace(/^#/, '');
+        if (clean) tags.add(clean);
+      });
+    }
+  }
+  const tagRegex = /#([a-zA-Z0-9_/-]+)/g;
+  let match;
+  while ((match = tagRegex.exec(content)) !== null) {
+    const tag = match[1];
+    if (tag && !/^[0-9a-fA-F]{3,6}$/.test(tag) && !/^\d+$/.test(tag)) {
+      tags.add(tag);
+    }
+  }
+  return tags;
+};
+
+const extractLinks = (content: string): Set<string> => {
+  const links = new Set<string>();
+  const wikiRegex = /\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g;
+  let match;
+  while ((match = wikiRegex.exec(content)) !== null) {
+    const link = match[1].trim();
+    if (link) links.add(link);
+  }
+  const mdRegex = /\[[^\]]*\]\(([^)]+\.md)\)/g;
+  while ((match = mdRegex.exec(content)) !== null) {
+    const path = match[1];
+    const fileName = path.split('/').pop() || path;
+    const baseName = fileName.replace(/\.md$/, '');
+    if (baseName) links.add(decodeURIComponent(baseName));
+  }
+  return links;
+};
+
+const extractEmbeds = (content: string): Set<string> => {
+  const embeds = new Set<string>();
+  const wikiRegex = /!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g;
+  let match;
+  while ((match = wikiRegex.exec(content)) !== null) {
+    const embed = match[1].trim();
+    if (embed) embeds.add(embed);
+  }
+  const mdRegex = /!\[[^\]]*\]\(([^)]+)\)/g;
+  while ((match = mdRegex.exec(content)) !== null) {
+    const path = match[1];
+    const fileName = path.split('/').pop() || path;
+    if (fileName) embeds.add(decodeURIComponent(fileName));
+  }
+  return embeds;
+};
+
+const calculateBacklinks = (
+  currentPath: string, 
+  currentBaseName: string, 
+  fileContents: Record<string, string>
+): Set<string> => {
+  const backlinks = new Set<string>();
+  Object.entries(fileContents).forEach(([path, content]) => {
+    if (path === currentPath) return;
+    const hasWikiLink = content.includes(`[[${currentBaseName}`) || content.includes(`[[${currentBaseName}|`);
+    const hasMdLink = content.includes(`(${currentBaseName}.md)`) || content.includes(`/${currentBaseName}.md)`);
+    if (hasWikiLink || hasMdLink) {
+      const otherFileName = path.split('/').pop() || path;
+      const otherBaseName = otherFileName.replace(/\.md$/, '');
+      backlinks.add(otherBaseName);
+    }
+  });
+  return backlinks;
+};
+
+const countWords = (content: string): number => {
+  const bodyText = content.replace(/^---[\s\S]*?---/, '');
+  const clean = bodyText.replace(/[#*`[\]()_-]/g, ' ');
+  const words = clean.trim().split(/\s+/).filter(w => w.length > 0);
+  return words.length;
+};
+
+const formatCellVal = (val: unknown): string => {
+  if (val === undefined || val === null) return '';
+  if (Array.isArray(val)) {
+    return val.join(', ');
+  }
+  if (typeof val === 'object') {
+    return JSON.stringify(val);
+  }
+  return String(val);
+};
 
 interface BaseSource {
   folder: string;
@@ -82,6 +230,44 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
+  // Dropdown / UI states & refs
+  const [isPropertiesDropdownOpen, setIsPropertiesDropdownOpen] = useState(false);
+  const [propertySearchQuery, setPropertySearchQuery] = useState('');
+  const [isAddingFilter, setIsAddingFilter] = useState(false);
+
+  const propertiesDropdownRef = useRef<HTMLDivElement>(null);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
+  const propertiesButtonRef = useRef<HTMLButtonElement>(null);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        isPropertiesDropdownOpen &&
+        propertiesDropdownRef.current &&
+        !propertiesDropdownRef.current.contains(target) &&
+        propertiesButtonRef.current &&
+        !propertiesButtonRef.current.contains(target)
+      ) {
+        setIsPropertiesDropdownOpen(false);
+      }
+      if (
+        isAddingFilter &&
+        filterDropdownRef.current &&
+        !filterDropdownRef.current.contains(target) &&
+        filterButtonRef.current &&
+        !filterButtonRef.current.contains(target)
+      ) {
+        setIsAddingFilter(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isPropertiesDropdownOpen, isAddingFilter]);
+
   // Parsed Config state
   const [config, setConfig] = useState<BaseConfig>(() => {
     let parsed: BaseConfig | null = null;
@@ -151,7 +337,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   };
 
   // Source Folder path prefixing
-  const folder = config.source?.folder || '';
+  const folder = typeof config.source?.folder === 'string' ? config.source.folder : '';
   const folderPrefix = useMemo(() => {
     if (!folder) return '';
     return folder.endsWith('/') ? folder : `${folder}/`;
@@ -183,12 +369,31 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       const { frontmatter } = parseFrontmatter(content);
       const cleanName = file.name.replace(/\.md$/, '');
 
+      const oLinks = extractLinks(content);
+      const embeds = extractEmbeds(content);
+      const tags = extractTags(content, frontmatter);
+      const bLinks = calculateBacklinks(file.path, cleanName, fileContents);
+
       return {
         path: file.path,
         name: file.name,
         sha: file.sha || null,
         properties: {
           'file.name': cleanName,
+          'file name': file.name,
+          'file backlinks': Array.from(bLinks).join(', '),
+          'created time': getStableDate(file.path, 15),
+          'file extension': file.path.split('.').pop() || 'md',
+          'modified time': getStableDate(file.path, 3),
+          'file base name': cleanName,
+          'file embeds': Array.from(embeds).join(', '),
+          'folder': file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '/',
+          'file full name': file.path,
+          'file links': Array.from(oLinks).join(', '),
+          'file path': file.path,
+          'file size': file.size !== undefined ? formatBytes(file.size) : formatBytes(content.length),
+          'file tags': Array.from(tags).join(', '),
+          'formula': `${countWords(content)} words | ${bLinks.size} backlinks`,
           ...frontmatter
         }
       };
@@ -275,32 +480,85 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     saveConfig({ ...config, views: updatedViews });
   };
 
-  const [newColName, setNewColName] = useState('');
-  const [isAddingCol, setIsAddingCol] = useState(false);
+  const dropdownPropertiesList = useMemo(() => {
+    const customKeys = availableProperties.filter(p => 
+      p !== 'file.name' && p !== 'formula' && !INBUILT_PROPERTIES.some(ip => ip.key === p)
+    );
 
-  const handleAddColumnSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanKey = newColName.trim();
-    if (!cleanKey) return;
+    const allProps = INBUILT_PROPERTIES.map(ip => {
+      const col = activeView.columns?.find(c => c.property === ip.key || (ip.key === 'file name' && c.property === 'file.name'));
+      const checked = col ? col.visible !== false : false;
+      return {
+        ...ip,
+        checked
+      };
+    });
 
+    customKeys.forEach(ck => {
+      const col = activeView.columns?.find(c => c.property === ck);
+      const checked = col ? col.visible !== false : false;
+      allProps.push({
+        key: ck,
+        label: ck,
+        icon: 'text' as const,
+        checked
+      });
+    });
+
+    return allProps;
+  }, [availableProperties, activeView.columns]);
+
+  const filteredDropdownProperties = useMemo(() => {
+    const query = propertySearchQuery.trim().toLowerCase();
+    if (!query) return dropdownPropertiesList;
+    return dropdownPropertiesList.filter(p => p.label.toLowerCase().includes(query));
+  }, [dropdownPropertiesList, propertySearchQuery]);
+
+  const showCreateOption = useMemo(() => {
+    const query = propertySearchQuery.trim();
+    if (!query) return false;
+    return !dropdownPropertiesList.some(p => p.key.toLowerCase() === query.toLowerCase());
+  }, [dropdownPropertiesList, propertySearchQuery]);
+
+  const handleCreateCustomProperty = (name: string) => {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    toggleColumnVisibility(cleanName);
+    setPropertySearchQuery('');
+  };
+
+  const handleHideAllColumns = () => {
     const currentCols = activeView.columns || [];
-    if (currentCols.some((c) => c.property === cleanKey)) {
-      setIsAddingCol(false);
-      setNewColName('');
-      return;
+    const newCols = currentCols.map(c => {
+      if (c.property === 'file.name' || c.property === 'file name') {
+        return { ...c, visible: true };
+      }
+      return { ...c, visible: false };
+    });
+    if (!newCols.some(c => c.property === 'file.name' || c.property === 'file name')) {
+      newCols.push({ property: 'file name', visible: true, width: 200 });
     }
-
-    const newCols = [...currentCols, { property: cleanKey, visible: true }];
     const updatedViews = [...config.views];
     updatedViews[0] = { ...activeView, columns: newCols };
-
     saveConfig({ ...config, views: updatedViews });
-    setIsAddingCol(false);
-    setNewColName('');
+  };
+
+  const handleAddFormulaColumn = () => {
+    const currentCols = activeView.columns || [];
+    if (currentCols.some(c => c.property === 'formula')) {
+      const newCols = currentCols.map(c => c.property === 'formula' ? { ...c, visible: true } : c);
+      const updatedViews = [...config.views];
+      updatedViews[0] = { ...activeView, columns: newCols };
+      saveConfig({ ...config, views: updatedViews });
+      return;
+    }
+    const newCols = [...currentCols, { property: 'formula', visible: true, width: 180 }];
+    const updatedViews = [...config.views];
+    updatedViews[0] = { ...activeView, columns: newCols };
+    saveConfig({ ...config, views: updatedViews });
   };
 
   // Filter Configuration State
-  const [isAddingFilter, setIsAddingFilter] = useState(false);
   const [filterProp, setFilterProp] = useState('file.name');
   const [filterOp, setFilterOp] = useState('contains');
   const [filterVal, setFilterVal] = useState('');
@@ -460,6 +718,13 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
   // Change Source Folder
   const [sourceFolderVal, setSourceFolderVal] = useState(folder);
+  const [prevFolder, setPrevFolder] = useState(folder);
+
+  if (folder !== prevFolder) {
+    setPrevFolder(folder);
+    setSourceFolderVal(folder);
+  }
+
   const handleUpdateSourceFolder = (e: React.FormEvent) => {
     e.preventDefault();
     const updatedSource = { folder: sourceFolderVal.trim() };
@@ -595,6 +860,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                 {/* Filters control button */}
                 <div className="relative">
                   <button
+                    ref={filterButtonRef}
                     onClick={() => setIsAddingFilter(!isAddingFilter)}
                     className="h-8 px-3 rounded-xl border border-border bg-muted/30 text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-all cursor-pointer"
                   >
@@ -603,7 +869,10 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                   </button>
 
                   {isAddingFilter && (
-                    <div className="absolute top-full left-0 mt-2 w-72 bg-[#12131a] border border-border rounded-xl shadow-2xl p-4 flex flex-col gap-3 z-30 animate-in fade-in zoom-in-95 duration-100">
+                    <div 
+                      ref={filterDropdownRef}
+                      className="absolute top-full left-0 mt-2 w-72 bg-[#12131a] border border-border rounded-xl shadow-2xl p-4 flex flex-col gap-3 z-30 animate-in fade-in zoom-in-95 duration-100"
+                    >
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-foreground">Create Filter</span>
                         <button onClick={() => setIsAddingFilter(false)} className="text-muted-foreground hover:text-foreground" type="button">✕</button>
@@ -657,6 +926,123 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                       >
                         Apply Filter
                       </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Properties control button */}
+                <div className="relative">
+                  <button
+                    ref={propertiesButtonRef}
+                    onClick={() => setIsPropertiesDropdownOpen(!isPropertiesDropdownOpen)}
+                    className="h-8 px-3 rounded-xl border border-border bg-muted/30 text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <SlidersHorizontal size={12} className="text-primary" />
+                    <span>Properties</span>
+                  </button>
+
+                  {isPropertiesDropdownOpen && (
+                    <div 
+                      ref={propertiesDropdownRef}
+                      className="absolute top-full left-0 mt-2 w-72 bg-[#18181f] border border-border/60 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 z-30 animate-in fade-in zoom-in-95 duration-100 text-foreground"
+                    >
+                      {/* Search Bar */}
+                      <div className="relative flex items-center">
+                        <Search size={12} className="absolute left-3 text-muted-foreground" />
+                        <input
+                          type="text"
+                          value={propertySearchQuery}
+                          onChange={(e) => setPropertySearchQuery(e.target.value)}
+                          placeholder="Find or create..."
+                          className="w-full bg-[#0e0f14] border border-border/80 text-foreground pl-8 pr-3 py-1.5 rounded-xl text-[0.72rem] focus:outline-none focus:border-indigo-500 transition-all font-medium"
+                          autoFocus
+                        />
+                      </div>
+
+                      {/* Create Option */}
+                      {showCreateOption && (
+                        <button
+                          onClick={() => handleCreateCustomProperty(propertySearchQuery)}
+                          className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.04] text-xs font-bold text-accent transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus size={12} />
+                          <span>Create "{propertySearchQuery.trim()}"</span>
+                        </button>
+                      )}
+
+                      {/* Properties List */}
+                      <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto pr-0.5">
+                        {filteredDropdownProperties.map((prop) => {
+                          return (
+                            <div
+                              key={prop.key}
+                              onClick={() => toggleColumnVisibility(prop.key)}
+                              className="group px-2 py-1.5 hover:bg-white/[0.04] rounded-xl flex items-center justify-between cursor-pointer transition-colors"
+                            >
+                              <div className="flex items-center gap-2.5">
+                                {/* Checkbox */}
+                                <div className={cn(
+                                  "w-4 h-4 rounded-md border flex items-center justify-center transition-all shrink-0",
+                                  prop.checked 
+                                    ? "bg-indigo-600 border-indigo-600 text-white" 
+                                    : "border-border group-hover:border-muted-foreground/60"
+                                )}>
+                                  {prop.checked && <Check size={11} className="stroke-[3]" />}
+                                </div>
+
+                                {/* Property Type Icon */}
+                                <div className="text-muted-foreground/75">
+                                  {prop.icon === 'info' && <Info size={13} />}
+                                  {prop.icon === 'calendar' && <Calendar size={13} />}
+                                  {prop.icon === 'tag' && <Tag size={13} />}
+                                  {prop.icon === 'text' && <AlignLeft size={13} />}
+                                </div>
+
+                                {/* Property Label */}
+                                <span className="text-[0.72rem] font-semibold text-foreground/90 select-none">
+                                  {prop.label}
+                                </span>
+                              </div>
+
+                              {/* Right arrow */}
+                              <span className="text-muted-foreground/35 group-hover:text-muted-foreground/60 transition-colors text-[0.65rem] font-bold pr-1 select-none">
+                                ❯
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {filteredDropdownProperties.length === 0 && !showCreateOption && (
+                          <span className="text-center py-4 text-[0.68rem] text-muted-foreground italic select-none">
+                            No properties found
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Divider */}
+                      <div className="h-px bg-border/60 my-0.5" />
+
+                      {/* Bottom Options */}
+                      <div className="flex flex-col gap-1">
+                        <button
+                          onClick={handleAddFormulaColumn}
+                          className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.04] text-[0.72rem] font-bold text-foreground/90 transition-colors flex items-center gap-2.5 cursor-pointer"
+                        >
+                          <div className="w-5 h-5 rounded-md bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/25 shrink-0 text-[0.65rem] font-mono font-bold">
+                            f
+                          </div>
+                          <span>Add formula</span>
+                        </button>
+                        
+                        <button
+                          onClick={handleHideAllColumns}
+                          className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.04] text-[0.72rem] font-bold text-foreground/90 transition-colors flex items-center gap-2.5 cursor-pointer"
+                        >
+                          <div className="w-5 h-5 rounded-md bg-muted text-muted-foreground flex items-center justify-center shrink-0">
+                            <EyeOff size={11} />
+                          </div>
+                          <span>Hide all</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -717,7 +1103,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                             className="flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-all"
                             onClick={() => handleSortCycle(col.property)}
                           >
-                            <span>{col.property === 'file.name' ? 'Note Title' : col.property}</span>
+                            <span>{col.property === 'file.name' || col.property === 'file name' ? 'Note Title' : col.property}</span>
                             <ArrowUpDown size={11} className={cn("shrink-0 transition-colors", isSorting ? "text-accent" : "text-muted-foreground/30")} />
                             {isSorting && (
                               <span className="text-[0.55rem] text-accent lowercase">({sortDir})</span>
@@ -725,7 +1111,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                           </div>
 
                           {/* Hide Column / dropdown operations */}
-                          {col.property !== 'file.name' && (
+                          {col.property !== 'file.name' && col.property !== 'file name' && (
                             <button
                               onClick={() => toggleColumnVisibility(col.property)}
                               title="Hide Column"
@@ -740,28 +1126,13 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
                     {/* Action header cell for adding new columns */}
                     <th className="px-4 py-2 w-44">
-                      {isAddingCol ? (
-                        <form onSubmit={handleAddColumnSubmit} className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={newColName}
-                            onChange={(e) => setNewColName(e.target.value)}
-                            placeholder="Property name..."
-                            autoFocus
-                            className="h-7 w-28 bg-muted border border-border text-foreground px-2 rounded-lg text-[0.7rem] focus:outline-none"
-                          />
-                          <button type="submit" className="text-accent hover:text-accent/80 font-bold p-1">✓</button>
-                          <button type="button" onClick={() => setIsAddingCol(false)} className="text-destructive hover:text-destructive/80 font-bold p-1">✕</button>
-                        </form>
-                      ) : (
-                        <button
-                          onClick={() => setIsAddingCol(true)}
-                          className="h-7 px-2.5 bg-muted/40 hover:bg-muted/70 border border-dashed border-border rounded-lg text-[0.65rem] font-bold text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 cursor-pointer"
-                        >
-                          <Plus size={11} />
-                          <span>Add Property</span>
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setIsPropertiesDropdownOpen(!isPropertiesDropdownOpen)}
+                        className="h-7 px-2.5 bg-muted/40 hover:bg-muted/70 border border-dashed border-border rounded-lg text-[0.65rem] font-bold text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus size={11} />
+                        <span>Add Property</span>
+                      </button>
                     </th>
                   </tr>
                 </thead>
@@ -779,7 +1150,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                           const cellVal = row.properties[colKey];
                           const isEditing = editingCell?.rowPath === row.path && editingCell?.colKey === colKey;
 
-                          if (colKey === 'file.name') {
+                          if (colKey === 'file.name' || colKey === 'file name') {
                             // Note Link Title column
                             return (
                               <td key={colKey} className="px-4 py-3 truncate max-w-xs text-xs font-semibold">
@@ -798,9 +1169,15 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                             <td 
                               key={colKey}
                               onClick={() => {
-                                if (!isEditing) {
+                                const isReadOnly = [
+                                  'file name', 'file backlinks', 'created time', 'file extension', 
+                                  'modified time', 'file base name', 'file embeds', 'folder', 
+                                  'file full name', 'file links', 'file path', 'file size', 'file tags',
+                                  'formula'
+                                ].includes(colKey);
+                                if (!isEditing && !isReadOnly && colKey !== 'file.name') {
                                   setEditingCell({ rowPath: row.path, colKey });
-                                  setEditingValue(cellVal === undefined || cellVal === null ? '' : String(cellVal));
+                                  setEditingValue(cellVal === undefined || cellVal === null ? '' : formatCellVal(cellVal));
                                 }
                               }}
                               className="px-4 py-2 text-xs text-foreground/80 truncate max-w-xs cursor-pointer hover:bg-white/[0.015]"
@@ -852,7 +1229,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                                   "truncate select-all",
                                   (!cellVal || cellVal === '') && "text-muted-foreground/35 italic"
                                 )}>
-                                  {cellVal !== undefined && cellVal !== null && cellVal !== '' ? String(cellVal) : 'empty'}
+                                  {cellVal !== undefined && cellVal !== null && cellVal !== '' ? formatCellVal(cellVal) : 'empty'}
                                 </span>
                               )}
                             </td>
