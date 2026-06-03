@@ -46,7 +46,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(0.3);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
 
@@ -144,7 +144,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         let match;
         while ((match = graphviewLinkRegex.exec(content)) !== null) {
           const rawTargetName = match[1].trim();
-          
+
           // Normalize paths by replacing backslashes with forward slashes, stripping leading dots/slashes, and trimming
           let cleanTarget = rawTargetName.replace(/\\/g, '/').replace(/^\.?\//, '').trim().toLowerCase();
           // Remove common markdown/board/text extensions for match comparisons
@@ -156,7 +156,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           const targetFile = files.find(f => {
             const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
             const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
-            
+
             // Standard Obsidian matching rules:
             // 1. Matches exact filename (e.g. "1 - IMPORTED FROM KEEP")
             // 2. Matches exact full path (e.g. "+base-planes/1 - imported from keep")
@@ -217,7 +217,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           const targetFile = files.find(f => {
             const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
             const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
-            
+
             return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget) || cleanName === targetFilename;
           });
 
@@ -625,7 +625,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const handleWheelEvent = (e: WheelEvent) => {
       e.preventDefault();
       const zoomFactor = 1.08;
-      
+
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -866,7 +866,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             {/* Filter checkboxes */}
             <div className="flex flex-col gap-2">
               <span className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-0.5">Filters</span>
-              
+
               <label className="flex items-center justify-between text-xs text-muted-foreground hover:text-foreground cursor-pointer py-1 px-0.5 transition-colors">
                 <span className="font-medium">Show Canvas Notes</span>
                 <input
@@ -984,8 +984,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
               disabled={prefetchStatus === 'fetching'}
               className={cn(
                 "h-8 px-3 rounded-full flex items-center justify-center gap-1.5 text-xs font-semibold cursor-pointer transition-all shrink-0 border border-transparent hover:border-border/10",
-                prefetchStatus === 'fetching' 
-                  ? "bg-primary/20 text-accent border border-primary/20 animate-pulse-soft" 
+                prefetchStatus === 'fetching'
+                  ? "bg-primary/20 text-accent border border-primary/20 animate-pulse-soft"
                   : prefetchStatus === 'success'
                     ? "bg-accent/20 text-accent border border-accent/25"
                     : prefetchStatus === 'error'
@@ -996,8 +996,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
             >
               <RefreshCw size={12} className={cn(prefetchStatus === 'fetching' && "animate-spin")} />
               <span className="text-[0.7rem] font-bold">
-                {prefetchStatus === 'fetching' 
-                  ? `Prefetching (${prefetchProgress.loaded}/${prefetchProgress.total})` 
+                {prefetchStatus === 'fetching'
+                  ? `Prefetching (${prefetchProgress.loaded}/${prefetchProgress.total})`
                   : prefetchStatus === 'success'
                     ? 'Prefetched!'
                     : prefetchStatus === 'error'
