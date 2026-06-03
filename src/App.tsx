@@ -213,6 +213,10 @@ export default function App() {
   // View state switcher: 'workspace' | 'graph'
   const [viewTab, setViewTab] = useState<'workspace' | 'graph'>('workspace');
 
+  // Prefetching States
+  const [prefetchStatus, setPrefetchStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('idle');
+  const [prefetchProgress, setPrefetchProgress] = useState({ loaded: 0, total: 0 });
+
   // Publish to GitHub (Offline mode) States
   const [publishToken, setPublishToken] = useState('');
   const [publishRepo, setPublishRepo] = useState('');
@@ -262,6 +266,78 @@ export default function App() {
       console.error('Failed to background preload files contents:', e);
     }
   }, [isOffline, storageMode, masterPassphrase]);
+
+  const preloadAllVaultFiles = useCallback(async () => {
+    // Only prefetch text and canvas files
+    const targets = files.filter(f => isTextFile(f.path) || f.path.endsWith('.canvas'));
+    const toFetch = targets.filter(f => fileContents[f.path] === undefined);
+
+    if (toFetch.length === 0) {
+      setPrefetchStatus('success');
+      setPrefetchProgress({ loaded: targets.length, total: targets.length });
+      setTimeout(() => setPrefetchStatus('idle'), 3000);
+      return;
+    }
+
+    setPrefetchStatus('fetching');
+    setPrefetchProgress({ loaded: targets.length - toFetch.length, total: targets.length });
+
+    let loadedCount = targets.length - toFetch.length;
+    let hasError = false;
+
+    // Concurrency queue
+    let index = 0;
+    const concurrency = 5;
+
+    const worker = async () => {
+      while (index < toFetch.length) {
+        const currentIdx = index++;
+        if (currentIdx >= toFetch.length) break;
+        const file = toFetch[currentIdx];
+        try {
+          if (isOffline) {
+            const stored = await offlineStorage.getFile(file.path);
+            if (stored) {
+              let text = stored.content;
+              if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
+                const activeKey = masterPassphrase;
+                if (activeKey) {
+                  try {
+                    text = await decryptToken(stored.content, activeKey);
+                  } catch {
+                    // Ignore decryption error
+                  }
+                }
+              }
+              setFileContents(prev => ({ ...prev, [file.path]: text }));
+            }
+          } else {
+            const content = await fetchFileContent(githubToken, repoName, file.path, file.sha);
+            setFileContents(prev => ({ ...prev, [file.path]: content }));
+          }
+        } catch (err) {
+          console.error(`Failed to background prefetch ${file.path}:`, err);
+          hasError = true;
+        } finally {
+          loadedCount++;
+          setPrefetchProgress({ loaded: loadedCount, total: targets.length });
+        }
+      }
+    };
+
+    try {
+      const workers = [];
+      for (let i = 0; i < Math.min(concurrency, toFetch.length); i++) {
+        workers.push(worker());
+      }
+      await Promise.all(workers);
+      setPrefetchStatus(hasError ? 'error' : 'success');
+      setTimeout(() => setPrefetchStatus('idle'), 3000);
+    } catch (e) {
+      console.error('Prefetch all failed:', e);
+      setPrefetchStatus('error');
+    }
+  }, [files, fileContents, isOffline, storageMode, masterPassphrase, githubToken, repoName]);
 
   const refreshFilesOffline = useCallback(async () => {
     setIsLoadingTree(true);
@@ -2161,6 +2237,9 @@ export default function App() {
               nodeGravity={settings.graphNodeGravity}
               repulsionStrength={settings.graphRepulsionStrength}
               springLength={settings.graphSpringLength}
+              onPrefetchAll={preloadAllVaultFiles}
+              prefetchStatus={prefetchStatus}
+              prefetchProgress={prefetchProgress}
             />
           ) : isLoadingFile ? (
             <div className="flex flex-col gap-3.5 items-center justify-center h-full w-full text-muted-foreground text-sm">
@@ -2202,6 +2281,9 @@ export default function App() {
               }}
               onLoadFileContent={preloadFileContent}
               onCreateFile={(ext, folderPath) => createNewFile(ext, folderPath)}
+              onPrefetchAll={preloadAllVaultFiles}
+              prefetchStatus={prefetchStatus}
+              prefetchProgress={prefetchProgress}
             />
           ) : activeFilePath && isTextFile(activeFilePath) && fileContents[activeFilePath] !== undefined ? (
             <Editor

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ZoomIn, ZoomOut, Maximize2, Settings, SlidersHorizontal, Search } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Settings, SlidersHorizontal, Search, RefreshCw } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 interface Node {
@@ -27,6 +27,9 @@ interface GraphViewProps {
   nodeGravity?: number;
   repulsionStrength?: number;
   springLength?: number;
+  onPrefetchAll?: () => void;
+  prefetchStatus?: 'idle' | 'fetching' | 'success' | 'error';
+  prefetchProgress?: { loaded: number; total: number };
 }
 
 export const GraphView: React.FC<GraphViewProps> = ({
@@ -37,6 +40,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
   nodeGravity: propsNodeGravity,
   repulsionStrength: propsRepulsionStrength,
   springLength: propsSpringLength,
+  onPrefetchAll,
+  prefetchStatus = 'idle',
+  prefetchProgress = { loaded: 0, total: 0 },
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -970,6 +976,37 @@ export const GraphView: React.FC<GraphViewProps> = ({
         >
           <Maximize2 size={14.5} />
         </button>
+        {onPrefetchAll && (
+          <>
+            <div className="w-[1px] h-4 bg-border mx-0.5" />
+            <button
+              onClick={onPrefetchAll}
+              disabled={prefetchStatus === 'fetching'}
+              className={cn(
+                "h-8 px-3 rounded-full flex items-center justify-center gap-1.5 text-xs font-semibold cursor-pointer transition-all shrink-0 border border-transparent hover:border-border/10",
+                prefetchStatus === 'fetching' 
+                  ? "bg-primary/20 text-accent border border-primary/20 animate-pulse-soft" 
+                  : prefetchStatus === 'success'
+                    ? "bg-accent/20 text-accent border border-accent/25"
+                    : prefetchStatus === 'error'
+                      ? "bg-destructive/20 text-destructive border border-destructive/25"
+                      : "text-muted-foreground hover:bg-border/60 hover:text-foreground"
+              )}
+              title="Prefetch all vault files & backlinks"
+            >
+              <RefreshCw size={12} className={cn(prefetchStatus === 'fetching' && "animate-spin")} />
+              <span className="text-[0.7rem] font-bold">
+                {prefetchStatus === 'fetching' 
+                  ? `Prefetching (${prefetchProgress.loaded}/${prefetchProgress.total})` 
+                  : prefetchStatus === 'success'
+                    ? 'Prefetched!'
+                    : prefetchStatus === 'error'
+                      ? 'Prefetch Error'
+                      : 'Prefetch All'}
+              </span>
+            </button>
+          </>
+        )}
       </div>
 
       {/* Floating Map Legend block */}
