@@ -199,6 +199,13 @@ export default function App() {
   // View state switcher: 'workspace' | 'graph'
   const [viewTab, setViewTab] = useState<'workspace' | 'graph'>('workspace');
 
+  // Publish to GitHub (Offline mode) States
+  const [publishToken, setPublishToken] = useState('');
+  const [publishRepo, setPublishRepo] = useState('');
+  const [publishBranch, setPublishBranch] = useState('main');
+  const [publishStatus, setPublishStatus] = useState<string | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
+
   // Modal States
   const [pendingDeleteFile, setPendingDeleteFile] = useState<{ path: string, sha: string } | null>(null);
   const [pendingRenameFile, setPendingRenameFile] = useState<{ path: string, name: string, sha: string } | null>(null);
@@ -991,6 +998,108 @@ export default function App() {
       const msg = e instanceof Error ? e.message : 'Failed to generate bulk ZIP download.';
       setGlobalError(msg);
       setBulkDownloadStatus(null);
+    }
+  };
+
+  const handlePublishOfflineVaultToGitHub = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPublishError(null);
+    setPublishStatus('Validating repository...');
+
+    if (!publishToken.trim() || !publishRepo.trim() || !publishBranch.trim()) {
+      setPublishError('All fields (Token, Repository Name, Branch) are required.');
+      setPublishStatus(null);
+      return;
+    }
+
+    try {
+      // 1. Validate connection credentials (token, repo)
+      const validation = await validateRepository(publishToken.trim(), publishRepo.trim(), publishBranch.trim());
+      if (!validation.exists) {
+        throw new Error('Repository not found or unauthorized.');
+      }
+      if (!validation.isEmpty) {
+        throw new Error('MANDATORY: The target repository must be completely empty to publish offline vault.');
+      }
+
+      // 2. Initialize repository with .vault-compat.json marker
+      setPublishStatus('Initializing vault metadata on GitHub...');
+      await initializeVault(publishToken.trim(), publishRepo.trim(), publishBranch.trim());
+
+      // 3. Load all local files list from IndexedDB
+      setPublishStatus('Loading local vault files...');
+      const localFilesList = await offlineStorage.getFilesList();
+
+      // 4. Upload loop
+      for (let i = 0; i < localFilesList.length; i++) {
+        const fileRecord = localFilesList[i];
+        setPublishStatus(`Uploading (${i + 1}/${localFilesList.length}): ${fileRecord.name}...`);
+
+        // Load content from IndexedDB
+        const fileData = await offlineStorage.getFile(fileRecord.path);
+        if (!fileData) continue;
+
+        let contentToUpload = fileData.content;
+        // Decrypt if storage is encrypted
+        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+          if (masterPassphrase) {
+            contentToUpload = await decryptToken(fileData.content, masterPassphrase);
+          }
+        }
+
+        const isBinaryFileNode = !isTextFile(fileRecord.path) && !fileRecord.path.toLowerCase().endsWith('.canvas');
+
+        let resultSha = '';
+        if (isBinaryFileNode) {
+          // contentToUpload is base64 encoded for binary files
+          const res = await commitAttachment(publishToken.trim(), publishRepo.trim(), publishBranch.trim(), fileRecord.path, contentToUpload, null, `upload local attachment "${fileRecord.path}" via StarfishNotes`);
+          resultSha = res.sha;
+        } else {
+          // contentToUpload is plaintext for text/canvas files
+          const res = await commitFileContent(publishToken.trim(), publishRepo.trim(), publishBranch.trim(), fileRecord.path, contentToUpload, null, `publish local note "${fileRecord.path}" via StarfishNotes`);
+          resultSha = res.sha;
+        }
+
+        // Update IndexedDB SHA and type so local database matches GitHub
+        await offlineStorage.saveFile({
+          ...fileData,
+          sha: resultSha
+        });
+      }
+
+      // 5. Transition mode to online/github
+      setPublishStatus('Finalizing transition to GitHub mode...');
+      
+      // Save credentials secure or in localstorage based on storageMode
+      await saveTokenSecurely(publishToken.trim(), storageMode, masterPassphrase);
+      localStorage.setItem(STORAGE_KEYS.REPO_NAME, publishRepo.trim());
+      localStorage.setItem(STORAGE_KEYS.BRANCH_NAME, publishBranch.trim());
+      localStorage.setItem('starfishnotes-is-offline', 'false');
+      localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, storageMode);
+
+      // Update state to render online UI immediately
+      setGithubToken(publishToken.trim());
+      setRepoName(publishRepo.trim());
+      setBranchName(publishBranch.trim());
+      setIsOffline(false);
+      setAuthMode('github');
+
+      // Fetch the updated files tree from GitHub to complete initialization
+      const tree = await fetchRepositoryTree(publishToken.trim(), publishRepo.trim(), publishBranch.trim());
+      setFiles(tree);
+      preloadAllFilesContents(tree);
+
+      if (tree.length > 0) {
+        const defaultNote = tree.find(f => f.name === 'Welcome.md') || tree[0];
+        setActiveFilePath(defaultNote.path);
+      }
+
+      setPublishStatus(null);
+      setShowSettingsModal(false);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Sync failed. Please verify credentials.';
+      setPublishError(msg);
+      setPublishStatus(null);
     }
   };
 
@@ -2751,6 +2860,90 @@ export default function App() {
                   )}
                 </div>
               </div>
+
+              {/* Category 5: Publish to GitHub Cloud (Only visible in offline mode) */}
+              {isOffline && (
+                <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl">
+                  <h4 className="text-[0.72rem] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5 select-none">
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-primary animate-pulse-soft" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
+                      <path d="M9 18c-4.51 2-5-2-7-2" />
+                    </svg>
+                    Publish to GitHub Cloud
+                  </h4>
+                  <div className="flex flex-col gap-3 select-text text-foreground">
+                    <span className="text-[0.62rem] text-muted-foreground/60 leading-normal mb-1 block select-none">
+                      Connect a newly created **empty repository** on GitHub. All your local notes, canvases, and attachments will be decrypted and uploaded to it, enabling seamless cloud syncing.
+                    </span>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[0.65rem] font-bold text-muted-foreground uppercase tracking-wider select-none">
+                        GitHub Token (PAT)
+                      </label>
+                      <input
+                        type="password"
+                        value={publishToken}
+                        onChange={(e) => setPublishToken(e.target.value)}
+                        placeholder="github_pat_..."
+                        className="w-full bg-muted/40 border border-border text-foreground px-3 py-2 rounded-xl text-xs focus:outline-none focus:border-primary transition-all duration-200"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[0.65rem] font-bold text-muted-foreground uppercase tracking-wider select-none">
+                          Repository Name
+                        </label>
+                        <input
+                          type="text"
+                          value={publishRepo}
+                          onChange={(e) => setPublishRepo(e.target.value)}
+                          placeholder="username/notes-vault"
+                          className="w-full bg-muted/40 border border-border text-foreground px-3 py-2 rounded-xl text-xs focus:outline-none focus:border-primary transition-all duration-200"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[0.65rem] font-bold text-muted-foreground uppercase tracking-wider select-none">
+                          Branch
+                        </label>
+                        <input
+                          type="text"
+                          value={publishBranch}
+                          onChange={(e) => setPublishBranch(e.target.value)}
+                          placeholder="main"
+                          className="w-full bg-muted/40 border border-border text-foreground px-3 py-2 rounded-xl text-xs focus:outline-none focus:border-primary transition-all duration-200"
+                        />
+                      </div>
+                    </div>
+
+                    {publishError && (
+                      <div className="p-3 bg-destructive/10 border-l-2 border-destructive text-destructive text-xs font-semibold rounded-lg select-none">
+                        {publishError}
+                      </div>
+                    )}
+
+                    {publishStatus ? (
+                      <div className="flex items-center justify-center gap-2 text-xs font-semibold text-accent animate-pulse-soft bg-muted/40 border border-border px-3 py-2 rounded-xl select-none">
+                        <RefreshCw size={13} className="animate-spin text-primary shrink-0" />
+                        <span className="truncate">{publishStatus}</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handlePublishOfflineVaultToGitHub}
+                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer shadow-lg shadow-primary/10 select-none"
+                      >
+                        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <span>Publish Vault to GitHub</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
             </div>
 
