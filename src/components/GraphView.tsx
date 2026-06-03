@@ -979,7 +979,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       </div>
 
       {/* Floating Canvas controls */}
-      <div className="absolute bottom-6 left-6 flex items-center gap-1.5 z-10 select-none bg-card/60 backdrop-blur-xl border border-border px-3 py-2 rounded-full shadow-2xl">
+      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 sm:bottom-6 sm:right-6 flex items-center gap-1.5 z-50 bg-card/60 backdrop-blur-xl border border-border px-3 py-2 rounded-full shadow-2xl animate-fade-in select-none max-w-[calc(100%-2rem)] overflow-x-auto flex-nowrap no-scrollbar">
         <button
           onClick={() => setZoom(z => Math.min(z * 1.15, 2.5))}
           className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer border border-transparent hover:border-border"
