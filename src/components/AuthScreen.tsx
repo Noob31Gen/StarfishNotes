@@ -53,9 +53,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
   const storageOptions: { value: StorageMode; label: string; desc: string }[] = [
     { value: 'session', label: 'Tab Session Storage (Default)', desc: 'Survives F5 page refresh, wiped when closed' },
-    { value: 'keychain', label: 'Browser Saved Passwords (Keychain)', desc: 'Stores token inside your browser\'s secure credential manager' },
-    { value: 'encrypted', label: 'AES-GCM Encrypted LocalStorage', desc: 'Persists locally, requires master lock password' },
-    { value: 'plain', label: 'Obfuscated Plaintext LocalStorage', desc: 'Obfuscated storage (Convenient but less secure)' },
+    {
+      value: 'keychain',
+      label: 'Browser Saved Passwords (Keychain)',
+      desc: authMode === 'github'
+        ? 'Stores token inside your browser\'s secure credential manager'
+        : 'Stores vault seed inside your browser\'s secure credential manager'
+    },
+    {
+      value: 'encrypted',
+      label: 'AES-GCM Encrypted LocalStorage',
+      desc: authMode === 'github'
+        ? 'Persists locally, requires master lock password'
+        : 'Encrypts IndexedDB vault records, requires master lock password'
+    },
+    {
+      value: 'plain',
+      label: 'Browser-bound System-key Encrypted Storage',
+      desc: 'Encrypted via system-generated key, no password required'
+    },
     { value: 'memory', label: 'Strict In-Memory React state', desc: 'Keeps token strictly in volatile memory, wiped on F5' },
   ];
 
@@ -291,7 +307,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {storageMode === 'session' && (authMode === 'github' ? "Tab session: survives page reload (F5), credentials wiped on tab close." : "Tab session: notes are temporarily stored in memory, wiped on close.")}
               {storageMode === 'keychain' && (authMode === 'github' ? "Browser Manager: saves credentials securely inside your browser's password manager." : "Browser lock: encrypts offline database and locks decryption seed inside your browser's credential storage.")}
               {storageMode === 'encrypted' && (authMode === 'github' ? "Encrypted LocalStorage: encrypts your PAT using AES-GCM, requires password." : "Encrypted LocalStorage: encrypts your IndexedDB database entries using AES-GCM, requires password.")}
-              {storageMode === 'plain' && (authMode === 'github' ? "Plaintext: saves token plain in localStorage. Wipes on logout." : "Plaintext: saves notes in plaintext IndexedDB format. Durable but unencrypted.")}
+              {storageMode === 'plain' && (authMode === 'github' ? "Browser-bound System-key: encrypts token via client-side system key. Wipes on logout." : "Browser-bound System-key: encrypts local database records via client-side system key. Wipes on logout.")}
               {storageMode === 'memory' && (authMode === 'github' ? "Volatile memory: kept strictly in active React state. Lost on F5 reload." : "Volatile memory: kept strictly in volatile React state. Notes wiped on F5 reload.")}
             </p>
           </div>

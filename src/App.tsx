@@ -9,7 +9,7 @@ import {
 import type { VaultFile } from './services/github';
 import {
   saveTokenSecurely, retrieveTokenSecurely, purgeCredentials, STORAGE_KEYS,
-  encryptToken, decryptToken
+  encryptToken, decryptToken, getOrCreateSystemVaultPassphrase
 } from './utils/crypto';
 import type { StorageMode } from './utils/crypto';
 import { Editor } from './components/Editor';
@@ -386,7 +386,7 @@ export default function App() {
     const ext = dotIndex !== -1 ? file.name.substring(dotIndex) : '';
 
     while (files.some(f => f.path === finalPathResolved)) {
-      finalPathResolved = `${parentPath}${baseName} ${counter}${ext}`;
+      finalPathResolved = `${parentPath}${baseName}-${counter}${ext}`;
       counter++;
     }
 
@@ -621,11 +621,13 @@ export default function App() {
           }
         }
         activeKey = seed;
+      } else if (storageMode === 'plain') {
+        activeKey = await getOrCreateSystemVaultPassphrase();
       }
 
       const verification = await offlineStorage.getMeta('vault_verification');
       if (verification) {
-        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+        if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
           try {
             const dec = await decryptToken(verification, activeKey);
             if (dec !== 'Welcome') {
@@ -636,7 +638,7 @@ export default function App() {
           }
         }
       } else {
-        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+        if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
           const enc = await encryptToken('Welcome', activeKey);
           await offlineStorage.saveMeta('vault_verification', enc);
         }
@@ -645,7 +647,7 @@ export default function App() {
           const welcomeContent = `# Welcome to your Local Offline Vault! 🚀\n\nThis is your secure, private note-taking space stored entirely inside your browser.\n\n### Offline Vault Details\n- **IndexedDB Storage**: Your notes are kept locally on this device, bypassing any cloud servers.\n- **Zero Account Required**: Use all features—including infinite canvases and graph visualization—with full privacy.\n- **Storage Protection**: Encrypted using AES-GCM or native OS keychain as configured.\n\n### Warning Alert\nClearing your browser's site data, cookies, or database cache will permanently erase your offline notes. Make sure to **Secure Storage** using the button on the login screen to request browser protection.\n`;
 
           let welcomeContentToSave = welcomeContent;
-          if (storageMode === 'encrypted' || storageMode === 'keychain') {
+          if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
             welcomeContentToSave = await encryptToken(welcomeContent, activeKey);
           }
 
@@ -844,7 +846,7 @@ export default function App() {
     const ext = dotIndex !== -1 ? file.name.substring(dotIndex) : '';
 
     while (files.some(f => f.path === finalPathResolved)) {
-      finalPathResolved = `${parentPath}${baseName} ${counter}${ext}`;
+      finalPathResolved = `${parentPath}${baseName}-${counter}${ext}`;
       counter++;
     }
 
@@ -1130,6 +1132,15 @@ export default function App() {
         if (mode === 'encrypted' || mode === 'keychain') {
           setShowLockScreen(true);
         } else {
+          if (mode === 'plain') {
+            try {
+              const activeKey = await getOrCreateSystemVaultPassphrase();
+              offlineStorage.setPassphrase(activeKey);
+              setMasterPassphrase(activeKey);
+            } catch (e) {
+              console.error('Failed to initialize system vault key:', e);
+            }
+          }
           setIsAuthenticated(true);
           setTimeout(() => {
             refreshFilesOfflineRef.current();
@@ -2181,11 +2192,12 @@ export default function App() {
                   ].some(ext => activeFilePath.toLowerCase().endsWith(ext)) ? (
                     vaultImages[activeFilePath] ? (
                       activeFilePath.toLowerCase().endsWith('.pdf') ? (
-                        <embed
+                        <iframe
                           src={vaultImages[activeFilePath]}
-                          type="application/pdf"
-                          className="w-full h-[500px] rounded-lg"
+                          title={activeFilePath.split('/').pop()}
+                          className="w-full h-[500px] rounded-lg border-none bg-card"
                         />
+
                       ) : (
                         <img
                           src={vaultImages[activeFilePath]}

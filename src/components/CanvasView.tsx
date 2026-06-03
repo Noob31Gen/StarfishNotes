@@ -3,6 +3,8 @@ import { Plus, Minus, Trash2, FileText, Type, Save, RefreshCw, Link2, ChevronDow
 import { cn } from '../utils/cn';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { isTextFile } from '../services/github';
+
 
 export interface CanvasNode {
   id: string;
@@ -319,8 +321,8 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       if (!text) return;
 
       const attachments: string[] = [];
-      const obsRegex = /!\[\[([^\]]+)\]\]/g;
-      const mdRegex = /!\[[^\]]*\]\(([^)]+)\)/g;
+      const obsRegex = /!?\[\[([^\]]+)\]\]/g;
+      const mdRegex = /!?\[[^\]]*\]\(([^)]+)\)/g;
       let match;
       while ((match = obsRegex.exec(text)) !== null) {
         attachments.push(match[1].trim());
@@ -331,7 +333,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
       attachments.forEach(attachmentName => {
         const matchedFile = files.find(f => f.name.toLowerCase() === attachmentName.toLowerCase() || f.path.toLowerCase().endsWith(attachmentName.toLowerCase()));
-        if (matchedFile && matchedFile.sha && !vaultImages[matchedFile.path]) {
+        if (matchedFile && !isTextFile(matchedFile.path) && matchedFile.sha && !vaultImages[matchedFile.path]) {
           onFetchBinaryFile(matchedFile.path, matchedFile.sha);
         }
       });
@@ -340,26 +342,25 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
   const renderCanvasMarkdown = useCallback((text: string): string => {
     try {
-      // 1. Parse Wiki-embedded images: ![[Cute Image.png]] or ![[Cute Image.png|300]]
-      const wikiImageRegex = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
-      text = text.replace(wikiImageRegex, (_, target, width) => {
+      // 1. Parse Wiki-links and wiki-embeds (render binary/pdf/images as image tags for subsequent resolving)
+      const wikiRegex = /(!)?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+      const processedText = text.replace(wikiRegex, (match, isEmbed, target, width) => {
         const targetClean = target.trim();
-        const style = width ? `width: ${width.trim()}px; max-width: 100%;` : `max-width: 100%;`;
-        return `<img src="${targetClean}" alt="${targetClean}" style="${style} border-radius: 8px;" />`;
+        const extIndex = targetClean.lastIndexOf('.');
+        const ext = extIndex !== -1 ? targetClean.substring(extIndex).toLowerCase() : '';
+        const isBinaryExt = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.pdf'].includes(ext) || !isTextFile(targetClean);
+
+        if (isEmbed || isBinaryExt) {
+          const style = width ? `width: ${width.trim()}px; max-width: 100%;` : `max-width: 100%;`;
+          return `<img src="${targetClean}" alt="${targetClean}" style="${style} border-radius: 8px;" />`;
+        }
+        return match;
       });
 
       // 2. Compile standard Markdown to HTML
-      let html = marked.parse(text) as string;
+      let html = marked.parse(processedText) as string;
 
-      // 3. Resolve Graphview links: [[Note Name]]
-      const graphviewLinkRegex = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
-      html = html.replace(graphviewLinkRegex, (_, target, label) => {
-        const targetClean = target.trim();
-        const displayLabel = label ? label.trim() : targetClean;
-        return `<a class="graphview-link" data-note="${targetClean}" title="Open note: ${targetClean}">${displayLabel}</a>`;
-      });
-
-      // 4. Resolve local vault image paths to base64 Data URLs, or custom attachment cards for non-images
+      // 3. Resolve local vault image paths to base64 Data URLs, or custom iframe for PDFs / attachment cards
       html = html.replace(/<img src="([^"]+)"([^>]*)>/g, (_match, src, rest) => {
         const altMatch = rest.match(/alt="([^"]+)"/);
         const alt = altMatch ? altMatch[1] : '';
@@ -369,15 +370,21 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         const ext = extIndex !== -1 ? srcClean.substring(extIndex).toLowerCase() : '';
         const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
 
+        // Normalize relative path: strip leading "./" to resolve root files correctly
+        const cleanSrc = srcClean.startsWith('./') ? srcClean.substring(2) : srcClean;
+
         if (imageExtensions.includes(ext) || srcClean.startsWith('data:image/')) {
-          const cached = vaultImages[srcClean] || Object.entries(vaultImages).find(([k]) => k.endsWith(srcClean))?.[1];
-          return `<img src="${cached || srcClean}"${rest}>`;
+          const cached = vaultImages[cleanSrc] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanSrc))?.[1];
+          return `<img src="${cached || cleanSrc}"${rest}>`;
+        } else if (ext === '.pdf') {
+          const cached = vaultImages[cleanSrc] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanSrc))?.[1];
+          return `<iframe src="${cached || cleanSrc}" title="${cleanSrc}" class="w-full h-[500px] rounded-lg border border-border bg-card" />`;
         } else {
           // Render a custom embed card instead of image!
           const filename = alt || srcClean.split('/').pop() || srcClean;
           const displayExt = ext ? ext.substring(1).toUpperCase() : 'FILE';
           return `
-            <div class="attachment-embed-card border border-border bg-muted/30 rounded-xl p-3 my-2 flex items-center gap-3 animate-fade-in" data-attachment="${srcClean}">
+            <div class="attachment-embed-card border border-border bg-muted/30 rounded-xl p-3 my-2 flex items-center gap-3 animate-fade-in" data-attachment="${cleanSrc}">
               <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
               </div>
@@ -385,12 +392,58 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                 <span class="text-xs font-bold text-foreground truncate block">${filename}</span>
                 <span class="text-[0.6rem] text-muted-foreground uppercase font-semibold block">${displayExt} Attachment</span>
               </div>
-              <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${srcClean}" title="Download attachment">
+              <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${cleanSrc}" title="Download attachment">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
               </button>
             </div>
           `;
         }
+      });
+
+      // 3b. Resolve standard markdown links to binary/pdf files in <a> tags
+      html = html.replace(/<a href="([^"]+)"([^>]*)>(.*?)<\/a>/g, (match, href, _rest, innerText) => {
+        const hrefClean = href.trim();
+        const extIndex = hrefClean.lastIndexOf('.');
+        const hrefExt = extIndex !== -1 ? hrefClean.substring(extIndex).toLowerCase() : '';
+        const cleanHref = hrefClean.startsWith('./') ? hrefClean.substring(2) : hrefClean;
+
+        const isBinaryExt = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.pdf'].includes(hrefExt) || !isTextFile(cleanHref);
+        if (isBinaryExt) {
+          const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+          if (imageExtensions.includes(hrefExt) || hrefClean.startsWith('data:image/')) {
+            const cached = vaultImages[cleanHref] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanHref))?.[1];
+            return `<img src="${cached || cleanHref}" alt="${innerText || cleanHref}" style="max-width: 100%; border-radius: 8px;" />`;
+          } else if (hrefExt === '.pdf') {
+            const cached = vaultImages[cleanHref] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanHref))?.[1];
+            return `<iframe src="${cached || cleanHref}" title="${cleanHref}" class="w-full h-[500px] rounded-lg border border-border bg-card" />`;
+          } else {
+            const filename = innerText || cleanHref.split('/').pop() || cleanHref;
+            const displayExt = hrefExt ? hrefExt.substring(1).toUpperCase() : 'FILE';
+            return `
+              <div class="attachment-embed-card border border-border bg-muted/30 rounded-xl p-3 my-2 flex items-center gap-3 animate-fade-in" data-attachment="${cleanHref}">
+                <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <span class="text-xs font-bold text-foreground truncate block">${filename}</span>
+                  <span class="text-[0.6rem] text-muted-foreground uppercase font-semibold block">${displayExt} Attachment</span>
+                </div>
+                <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${cleanHref}" title="Download attachment">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                </button>
+              </div>
+            `;
+          }
+        }
+        return match;
+      });
+
+      // 4. Resolve Graphview links: [[Note Name]]
+      const graphviewLinkRegex = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+      html = html.replace(graphviewLinkRegex, (_, target, label) => {
+        const targetClean = target.trim();
+        const displayLabel = label ? label.trim() : targetClean;
+        return `<a class="graphview-link" data-note="${targetClean}" title="Open note: ${targetClean}">${displayLabel}</a>`;
       });
 
       return DOMPurify.sanitize(html, {
@@ -424,9 +477,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     if (downloadBtn) {
       const filePath = downloadBtn.getAttribute('data-path');
       if (filePath) {
-        const matched = files.find(f => f.name.toLowerCase() === filePath.toLowerCase() || f.path.toLowerCase().endsWith(filePath.toLowerCase()));
-        const fullPath = matched ? matched.path : filePath;
-        const base64Data = vaultImages[fullPath] || Object.entries(vaultImages).find(([k]) => k.endsWith(filePath))?.[1];
+        const cleanPath = filePath.startsWith('./') ? filePath.substring(2) : filePath;
+        const matched = files.find(f => f.name.toLowerCase() === cleanPath.toLowerCase() || f.path.toLowerCase().endsWith(cleanPath.toLowerCase()));
+        const fullPath = matched ? matched.path : cleanPath;
+        const base64Data = vaultImages[fullPath] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanPath))?.[1];
         if (base64Data) {
           const link = document.createElement('a');
           link.href = base64Data;
@@ -1795,10 +1849,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                           return (
                             <div className="w-full h-full flex items-center justify-center bg-background/50 rounded-b-xl overflow-hidden p-2">
                               {vaultImages[node.file] ? (
-                                <embed
+                                <iframe
                                   src={vaultImages[node.file]}
-                                  type="application/pdf"
-                                  className="w-full h-full rounded-lg"
+                                  title={node.file.split('/').pop()}
+                                  className="w-full h-full rounded-lg border-none bg-card"
                                 />
                               ) : (
                                 <div className="flex flex-col gap-1.5 items-center justify-center text-muted-foreground text-[0.65rem]">

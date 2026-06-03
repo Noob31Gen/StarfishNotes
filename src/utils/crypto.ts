@@ -368,3 +368,67 @@ export function purgeCredentials(): void {
     navigator.credentials.preventSilentAccess();
   }
 }
+
+/**
+ * Encrypts a string using the browser-bound system CryptoKey
+ */
+export async function encryptWithSystemKey(plainText: string): Promise<string> {
+  const key = await getOrCreateSystemKey();
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const ciphertextBuffer = await window.crypto.subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv: iv as BufferSource
+    },
+    key,
+    strToBuf(plainText) as BufferSource
+  );
+  const ivHex = bufToHex(iv.buffer);
+  const cipherHex = bufToHex(ciphertextBuffer);
+  return `${ivHex}:${cipherHex}`;
+}
+
+/**
+ * Decrypts a string using the browser-bound system CryptoKey
+ */
+export async function decryptWithSystemKey(cipherText: string): Promise<string> {
+  const parts = cipherText.split(':');
+  if (parts.length !== 2) {
+    throw new Error('Invalid system-encrypted format.');
+  }
+  const [ivHex, cipherHex] = parts;
+  const iv = new Uint8Array(hexToBuf(ivHex));
+  const cipherBuffer = hexToBuf(cipherHex);
+  const key = await getOrCreateSystemKey();
+  const decryptedBuffer = await window.crypto.subtle.decrypt(
+    {
+      name: 'AES-GCM',
+      iv: iv as BufferSource
+    },
+    key,
+    cipherBuffer
+  );
+  return bufToStr(decryptedBuffer);
+}
+
+/**
+ * Retrieves or generates a system-wide passphrase for database encryption
+ */
+export async function getOrCreateSystemVaultPassphrase(): Promise<string> {
+  const stored = localStorage.getItem('starfishnotes_sys_vault_pass');
+  if (stored) {
+    try {
+      return await decryptWithSystemKey(stored);
+    } catch (e) {
+      console.error('Failed to decrypt system vault passphrase, regenerating:', e);
+    }
+  }
+
+  // Generate a new random 32-character passphrase (16 bytes)
+  const randomBytes = window.crypto.getRandomValues(new Uint8Array(16));
+  const newPass = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  const encrypted = await encryptWithSystemKey(newPass);
+  localStorage.setItem('starfishnotes_sys_vault_pass', encrypted);
+  return newPass;
+}
+

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { Eye, Edit2, Columns, Save, AlertCircle, RefreshCw, FileText, Paperclip, Undo2, Redo2 } from 'lucide-react';
+import { Eye, Edit2, Columns, Save, AlertCircle, RefreshCw, FileText, Paperclip, Undo2, Redo2, Image } from 'lucide-react';
 import { GitConflictError, isTextFile } from '../services/github';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
@@ -135,17 +135,17 @@ export const Editor: React.FC<EditorProps> = ({
         const delimiter = ext === '.csv' ? ',' : '\t';
         const rows = parseCSV(text, delimiter);
         const maxCols = Math.max(...rows.map(r => r.length), 1);
-        
+
         let tableHtml = `<div class="overflow-x-auto w-full border border-border rounded-xl shadow-sm bg-card/20 my-4 select-text">`;
         tableHtml += `<table class="csv-table w-full border-collapse text-left text-xs text-foreground" style="min-width: 600px;">`;
-        
+
         tableHtml += `<thead><tr class="border-b border-border bg-muted/40">`;
         tableHtml += `<th class="p-2 text-center font-semibold text-muted-foreground border-r border-border bg-muted/60 w-12 select-none"></th>`;
         for (let c = 0; c < maxCols; c++) {
           tableHtml += `<th class="p-2 font-semibold text-muted-foreground border-r border-border text-center select-none">${getColLabel(c)}</th>`;
         }
         tableHtml += `</tr></thead>`;
-        
+
         tableHtml += `<tbody>`;
         rows.forEach((row, rIdx) => {
           tableHtml += `<tr class="border-b border-border/80 hover:bg-muted/10">`;
@@ -157,7 +157,7 @@ export const Editor: React.FC<EditorProps> = ({
           tableHtml += `</tr>`;
         });
         tableHtml += `</tbody></table></div>`;
-        
+
         tableHtml += `
           <div class="flex items-center gap-2 mt-4 select-none flex-wrap">
             <button class="add-row-btn flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold rounded-lg transition-all cursor-pointer">
@@ -185,33 +185,43 @@ export const Editor: React.FC<EditorProps> = ({
       }
       // C. Markdown / Plaintext
       else {
-        // 1. Parse Wiki-embedded images: ![[Cute Image.png]] or ![[Cute Image.png|300]]
-        const wikiImageRegex = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
-        const processedText = text.replace(wikiImageRegex, (_, target, width) => {
+        // 1. Parse Wiki-links and wiki-embeds (render binary/pdf/images as image tags for subsequent resolving)
+        const wikiRegex = /(!)?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+        const processedText = text.replace(wikiRegex, (match, isEmbed, target, width) => {
           const targetClean = target.trim();
-          const style = width ? `width: ${width.trim()}px; max-width: 100%;` : `max-width: 100%;`;
-          return `<img src="${targetClean}" alt="${targetClean}" style="${style} border-radius: 8px;" />`;
+          const extIndex = targetClean.lastIndexOf('.');
+          const ext = extIndex !== -1 ? targetClean.substring(extIndex).toLowerCase() : '';
+          const isBinaryExt = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.pdf'].includes(ext) || !isTextFile(targetClean);
+
+          if (isEmbed || isBinaryExt) {
+            const style = width ? `width: ${width.trim()}px; max-width: 100%;` : `max-width: 100%;`;
+            return `<img src="${targetClean}" alt="${targetClean}" style="${style} border-radius: 8px;" />`;
+          }
+          return match;
         });
 
         // 2. Compile standard Markdown to HTML
         html = marked.parse(processedText) as string;
 
-        // 3. Resolve local vault image paths to base64 Data URLs, or custom attachment cards for non-images
+        // 3. Resolve local vault image paths to base64 Data URLs, or custom iframe for PDFs / attachment cards
         html = html.replace(/<img src="([^"]+)"([^>]*)>/g, (_match, src, rest) => {
           const altMatch = rest.match(/alt="([^"]+)"/);
           const alt = altMatch ? altMatch[1] : '';
-          
+
           const srcClean = src.trim();
           const extIndex = srcClean.lastIndexOf('.');
           const srcExt = extIndex !== -1 ? srcClean.substring(extIndex).toLowerCase() : '';
           const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
-          
+
+          // Normalize relative path: strip leading "./" to resolve root files correctly
+          const cleanSrc = srcClean.startsWith('./') ? srcClean.substring(2) : srcClean;
+
           if (imageExtensions.includes(srcExt) || srcClean.startsWith('data:image/')) {
-            const cached = vaultImages[srcClean] || Object.entries(vaultImages).find(([k]) => k.endsWith(srcClean))?.[1];
+            const cached = vaultImages[cleanSrc] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanSrc))?.[1];
             return `<img src="${cached || srcClean}"${rest}>`;
           } else if (srcExt === '.pdf') {
-            const cached = vaultImages[srcClean] || Object.entries(vaultImages).find(([k]) => k.endsWith(srcClean))?.[1];
-            return `<embed src="${cached || srcClean}" type="application/pdf" class="w-full h-[500px] rounded-lg border border-border" />`;
+            const cached = vaultImages[cleanSrc] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanSrc))?.[1];
+            return `<iframe src="${cached || srcClean}" title="${cleanSrc}" class="w-full h-[500px] rounded-lg border border-border bg-card" />`;
           } else {
             // Render a custom embed card instead of image!
             const filename = alt || srcClean.split('/').pop() || srcClean;
@@ -231,6 +241,44 @@ export const Editor: React.FC<EditorProps> = ({
               </div>
             `;
           }
+        });
+
+        // 3a. Resolve standard markdown links to binary/pdf files in <a> tags
+        html = html.replace(/<a href="([^"]+)"([^>]*)>(.*?)<\/a>/g, (match, href, _rest, innerText) => {
+          const hrefClean = href.trim();
+          const extIndex = hrefClean.lastIndexOf('.');
+          const hrefExt = extIndex !== -1 ? hrefClean.substring(extIndex).toLowerCase() : '';
+          const cleanHref = hrefClean.startsWith('./') ? hrefClean.substring(2) : hrefClean;
+
+          // If the link points to a binary/PDF file (i.e. not a text file)
+          if (!isTextFile(cleanHref)) {
+            const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+            if (imageExtensions.includes(hrefExt) || hrefClean.startsWith('data:image/')) {
+              const cached = vaultImages[cleanHref] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanHref))?.[1];
+              return `<img src="${cached || cleanHref}" alt="${innerText || cleanHref}" style="max-width: 100%; border-radius: 8px;" />`;
+            } else if (hrefExt === '.pdf') {
+              const cached = vaultImages[cleanHref] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanHref))?.[1];
+              return `<iframe src="${cached || cleanHref}" title="${cleanHref}" class="w-full h-[500px] rounded-lg border border-border bg-card" />`;
+            } else {
+              const filename = innerText || cleanHref.split('/').pop() || cleanHref;
+              const displayExt = hrefExt ? hrefExt.substring(1).toUpperCase() : 'FILE';
+              return `
+                <div class="attachment-embed-card border border-border bg-muted/30 rounded-xl p-3 my-2 flex items-center gap-3 animate-fade-in" data-attachment="${cleanHref}">
+                  <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <span class="text-xs font-bold text-foreground truncate block">${filename}</span>
+                    <span class="text-[0.6rem] text-muted-foreground uppercase font-semibold block">${displayExt} Attachment</span>
+                  </div>
+                  <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${cleanHref}" title="Download attachment">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  </button>
+                </div>
+              `;
+            }
+          }
+          return match;
         });
 
         // 4. Parse Graphview-links: [[Another Note]] or [[Another Note|Display Name]]
@@ -301,8 +349,8 @@ export const Editor: React.FC<EditorProps> = ({
   // Background Scraper scanning note text for local vault attachments (images and other files)
   useEffect(() => {
     const attachments: string[] = [];
-    const obsRegex = /!\[\[([^\]]+)\]\]/g;
-    const mdRegex = /!\[[^\]]*\]\(([^)]+)\)/g;
+    const obsRegex = /!?\[\[([^\]]+)\]\]/g;
+    const mdRegex = /!?\[[^\]]*\]\(([^)]+)\)/g;
     let match;
     while ((match = obsRegex.exec(content)) !== null) {
       attachments.push(match[1].split('|')[0].trim());
@@ -313,7 +361,7 @@ export const Editor: React.FC<EditorProps> = ({
 
     attachments.forEach(attachmentName => {
       const matchedFile = files.find(f => f.name.toLowerCase() === attachmentName.toLowerCase() || f.path.toLowerCase().endsWith(attachmentName.toLowerCase()));
-      if (matchedFile && matchedFile.sha && !vaultImages[matchedFile.path]) {
+      if (matchedFile && !isTextFile(matchedFile.path) && matchedFile.sha && !vaultImages[matchedFile.path]) {
         onFetchBinaryFile(matchedFile.path, matchedFile.sha);
       }
     });
@@ -322,6 +370,7 @@ export const Editor: React.FC<EditorProps> = ({
   // Autocomplete suggestions states
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionQuery, setSuggestionQuery] = useState('');
+  const [suggestionSearchQuery, setSuggestionSearchQuery] = useState('');
   const [suggestionPosition, setSuggestionPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [caretIndex, setCaretIndex] = useState(0);
@@ -378,7 +427,12 @@ export const Editor: React.FC<EditorProps> = ({
       return allowed.some(ext => lowerPath.endsWith(ext));
     })
     .map(f => f.path)
-    .filter(path => path.toLowerCase().includes(suggestionQuery.toLowerCase()));
+    .filter(path => {
+      const q = suggestionQuery.toLowerCase();
+      const s = suggestionSearchQuery.toLowerCase();
+      const lower = path.toLowerCase();
+      return lower.includes(q) && lower.includes(s);
+    });
 
   const calculateCaretPosition = (textarea: HTMLTextAreaElement, caretIdx: number) => {
     const mirror = document.createElement('div');
@@ -435,6 +489,7 @@ export const Editor: React.FC<EditorProps> = ({
     setContent(newContent);
     pushEditorState(newContent);
     setShowSuggestions(false);
+    setSuggestionSearchQuery('');
 
     // Re-focus and shift caret location past brackets
     setTimeout(() => {
@@ -458,6 +513,26 @@ export const Editor: React.FC<EditorProps> = ({
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setShowSuggestions(false);
+        setSuggestionSearchQuery('');
+      }
+    }
+  };
+
+  const handleSearchInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowSuggestions(false);
+      setSuggestionSearchQuery('');
+    } else if (filteredSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSuggestionIndex(prev => (prev + 1) % filteredSuggestions.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSuggestionIndex(prev => (prev - 1 + filteredSuggestions.length) % filteredSuggestions.length);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        insertSuggestion(filteredSuggestions[suggestionIndex]);
       }
     }
   };
@@ -484,7 +559,7 @@ export const Editor: React.FC<EditorProps> = ({
                 const newContent = content.substring(0, startPos) + textToInsert + content.substring(endPos);
                 setContent(newContent);
                 pushEditorState(newContent);
-                
+
                 // Move cursor past the inserted link
                 setTimeout(() => {
                   textarea.focus();
@@ -687,7 +762,7 @@ export const Editor: React.FC<EditorProps> = ({
   // Capture clicks inside the preview panel to handle custom interactive graphview-links and downloads
   const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
-    
+
     // Capture spreadsheet row/col modification buttons
     const addRowBtn = target.closest('.add-row-btn');
     if (addRowBtn) {
@@ -760,9 +835,10 @@ export const Editor: React.FC<EditorProps> = ({
     if (downloadBtn) {
       const filePath = downloadBtn.getAttribute('data-path');
       if (filePath) {
-        const matched = files.find(f => f.name.toLowerCase() === filePath.toLowerCase() || f.path.toLowerCase().endsWith(filePath.toLowerCase()));
-        const fullPath = matched ? matched.path : filePath;
-        const base64Data = vaultImages[fullPath] || Object.entries(vaultImages).find(([k]) => k.endsWith(filePath))?.[1];
+        const cleanPath = filePath.startsWith('./') ? filePath.substring(2) : filePath;
+        const matched = files.find(f => f.name.toLowerCase() === cleanPath.toLowerCase() || f.path.toLowerCase().endsWith(cleanPath.toLowerCase()));
+        const fullPath = matched ? matched.path : cleanPath;
+        const base64Data = vaultImages[fullPath] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanPath))?.[1];
         if (base64Data) {
           const link = document.createElement('a');
           link.href = base64Data;
@@ -853,6 +929,7 @@ export const Editor: React.FC<EditorProps> = ({
                 onClick={() => {
                   setShowSuggestions(false);
                   setSuggestionQuery('');
+                  setSuggestionSearchQuery('');
                 }}
               />
 
@@ -862,48 +939,78 @@ export const Editor: React.FC<EditorProps> = ({
                   top: `${suggestionPosition.top}px`,
                   left: `${suggestionPosition.left}px`
                 }}
-                className="absolute w-[240px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5 z-40 animate-in fade-in zoom-in-95 duration-100 max-h-[180px] overflow-y-auto select-none"
+                className="absolute w-[240px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-40 animate-in fade-in zoom-in-95 duration-100 max-h-[300px] overflow-hidden select-none animate-fade-in"
               >
-                <div className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-2 py-1 select-none border-b border-border/40 pb-1 mb-1 flex justify-between items-center">
-                  <span>GraphviewLink Suggestions</span>
-                  <span className="text-[0.55rem] lowercase tracking-normal font-semibold font-sans text-muted-foreground/55">enter to link</span>
+                <div className="text-[0.6rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 py-0.5 select-none flex justify-between items-center">
+                  <span>Select Link Target</span>
+                  <span className="text-[0.5rem] lowercase tracking-normal font-semibold font-sans text-muted-foreground/45">enter to link</span>
+                </div>
+                <div className="h-[1px] bg-border/60 my-0.5 select-none" />
+
+                <div className="relative flex items-center px-1 py-1 border-b border-border/40 pb-1.5 shrink-0">
+                  <input
+                    type="text"
+                    value={suggestionSearchQuery}
+                    onChange={(e) => {
+                      setSuggestionSearchQuery(e.target.value);
+                      setSuggestionIndex(0);
+                    }}
+                    onKeyDown={handleSearchInputKeyDown}
+                    placeholder="Search notes/attachments..."
+                    className="w-full bg-muted/30 border border-border/40 text-foreground px-2 py-1 rounded-md text-[0.7rem] focus:outline-none focus:border-primary/60 transition-all duration-150"
+                    onClick={(e) => e.stopPropagation()}
+                    autoFocus
+                  />
                 </div>
 
-                {filteredSuggestions.map((path, idx) => {
-                  const isSelected = suggestionIndex === idx;
-                  const name = path.split('/').pop()?.replace(/\.md$/, '') || '';
-                  const dir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : null;
-                  return (
-                    <button
-                      key={path}
-                      type="button"
-                      onClick={() => insertSuggestion(path)}
-                      onMouseEnter={() => setSuggestionIndex(idx)}
-                      className={cn(
-                        "w-full text-left px-2.5 py-2 rounded-lg text-xs transition-premium cursor-pointer truncate font-semibold flex items-center justify-between border border-transparent",
-                        isSelected
-                          ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent"
-                          : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground"
-                      )}
-                    >
-                      <span className="flex items-center gap-2 truncate">
-                        <FileText className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{name}</span>
-                      </span>
-                      {dir && (
-                        <span className="text-[0.55rem] font-semibold font-sans text-muted-foreground/45 shrink-0 select-none ml-2">
-                          {dir}
+                <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 pr-0.5 max-h-[160px]">
+                  {filteredSuggestions.map((path, idx) => {
+                    const isSelected = suggestionIndex === idx;
+                    const name = path.split('/').pop()?.replace(/\.md$/, '') || '';
+                    const dir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : null;
+                    return (
+                      <button
+                        key={path}
+                        type="button"
+                        onClick={() => insertSuggestion(path)}
+                        onMouseEnter={() => setSuggestionIndex(idx)}
+                        className={cn(
+                          "w-full text-left px-2 py-1.5 rounded-md text-[0.7rem] font-semibold transition-premium cursor-pointer flex items-center justify-between border border-transparent font-medium",
+                          isSelected
+                            ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent font-semibold border-primary/20"
+                            : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                        )}
+                      >
+                        <span className="flex items-center gap-1.5 truncate">
+                          {path.toLowerCase().endsWith('.png') ||
+                            path.toLowerCase().endsWith('.jpg') ||
+                            path.toLowerCase().endsWith('.jpeg') ||
+                            path.toLowerCase().endsWith('.gif') ||
+                            path.toLowerCase().endsWith('.webp') ||
+                            path.toLowerCase().endsWith('.svg') ? (
+                            <Image className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                          ) : path.toLowerCase().endsWith('.pdf') ? (
+                            <Paperclip className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                          ) : (
+                            <FileText className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                          )}
+                          <span className="truncate">{name}</span>
                         </span>
-                      )}
-                    </button>
-                  );
-                })}
+                        {dir && (
+                          <span className="text-[0.55rem] font-semibold font-sans text-muted-foreground/45 shrink-0 select-none ml-2">
+                            {dir}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
 
-                {filteredSuggestions.length === 0 && (
-                  <span className="text-[0.65rem] text-muted-foreground/50 italic p-2.5 text-center select-none">
-                    No matching notes. Continue typing to create.
-                  </span>
-                )}
+                  {filteredSuggestions.length === 0 && (
+                    <span className="text-[0.65rem] text-muted-foreground/50 italic p-2 text-center select-none">
+                      No matching notes.
+                    </span>
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -957,7 +1064,7 @@ export const Editor: React.FC<EditorProps> = ({
                       const newContent = content.substring(0, startPos) + textToInsert + content.substring(endPos);
                       setContent(newContent);
                       pushEditorState(newContent);
-                      
+
                       // Move cursor past the inserted link
                       setTimeout(() => {
                         textarea.focus();
