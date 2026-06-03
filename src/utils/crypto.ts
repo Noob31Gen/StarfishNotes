@@ -172,14 +172,28 @@ export async function saveTokenSecurely(
   localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, mode);
 
   if (mode === 'session') {
-    sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
+    try {
+      const key = await getOrCreateSystemKey();
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const ciphertextBuffer = await window.crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv as BufferSource
+        },
+        key,
+        strToBuf(token) as BufferSource
+      );
+      const ivHex = bufToHex(iv.buffer);
+      const cipherHex = bufToHex(ciphertextBuffer);
+      sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, `${ivHex}:${cipherHex}`);
+    } catch (e) {
+      console.error('Failed to securely encrypt session token:', e);
+      sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
+    }
   } else if (mode === 'encrypted') {
     if (!passphrase) throw new Error('Passphrase required for encrypted storage mode.');
     const encrypted = await encryptToken(token, passphrase);
     localStorage.setItem(STORAGE_KEYS.ENCRYPTED_PAT, encrypted);
-
-    // Cache the decrypted token in sessionStorage for page reload resilience
-    sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
   } else if (mode === 'plain') {
     try {
       const key = await getOrCreateSystemKey();
@@ -211,9 +225,6 @@ export async function saveTokenSecurely(
           name: 'StarfishNotes Synchronizer'
         });
         await navigator.credentials.store(credential);
-
-        // Cache in sessionStorage to satisfy standard reload resilience
-        sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
       } catch (err: unknown) {
         throw new Error('OS Vault rejected saving token. Make sure page is loaded over HTTPS/localhost.', { cause: err });
       }
@@ -227,14 +238,41 @@ export async function saveTokenSecurely(
  * Retrieve token based on storage mode
  * If keychain is selected, retrieves from the OS secure manager.
  */
-export async function retrieveTokenSecurely(passphrase?: string): Promise<string | null> {
+export async function retrieveTokenSecurely(passphrase?: string, interactive = false): Promise<string | null> {
   const mode = (localStorage.getItem(STORAGE_KEYS.STORAGE_MODE) || 'memory') as StorageMode;
 
-  // 1. Session and Cached tokens reside in sessionStorage.
-  // This automatically satisfies the F5 page reload requirement!
-  const cached = sessionStorage.getItem(STORAGE_KEYS.PLAINTEXT_PAT);
-  if (cached) {
-    return cached;
+  if (mode === 'session') {
+    const stored = sessionStorage.getItem(STORAGE_KEYS.PLAINTEXT_PAT);
+    if (!stored) return null;
+
+    const isEncryptedFormat = /^[\da-fA-F]+:[\da-fA-F]+$/.test(stored);
+    if (isEncryptedFormat) {
+      try {
+        const parts = stored.split(':');
+        const ivHex = parts[0];
+        const cipherHex = parts[1];
+        
+        const iv = new Uint8Array(hexToBuf(ivHex));
+        const cipherBuffer = hexToBuf(cipherHex);
+        const key = await getOrCreateSystemKey();
+        
+        const decryptedBuffer = await window.crypto.subtle.decrypt(
+          {
+            name: 'AES-GCM',
+            iv: iv as BufferSource
+          },
+          key,
+          cipherBuffer
+        );
+        
+        return bufToStr(decryptedBuffer);
+      } catch (e) {
+        console.error('Failed to decrypt session mode token:', e);
+        return null;
+      }
+    } else {
+      return stored;
+    }
   }
 
   if (mode === 'plain') {
@@ -288,9 +326,6 @@ export async function retrieveTokenSecurely(passphrase?: string): Promise<string
     }
 
     const decrypted = await decryptToken(encrypted, passphrase);
-
-    // Cache the decrypted token in sessionStorage to protect future reloads
-    sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, decrypted);
     return decrypted;
   }
 
@@ -299,18 +334,16 @@ export async function retrieveTokenSecurely(passphrase?: string): Promise<string
       try {
         const credential = await navigator.credentials.get({
           password: true,
-          mediation: 'required'
+          mediation: interactive ? 'required' : 'silent'
         } as unknown as CredentialRequestOptions);
         if (credential) {
           const token = (credential as unknown as { password?: string }).password || null;
           if (token) {
-            // Cache in sessionStorage for friction-free reload persistence
-            sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
             return token;
           }
         }
-      } catch {
-        // Retrieval failed or user cancelled OS Hello prompt
+      } catch (e) {
+        console.warn('Keychain retrieval failed', e);
         return null;
       }
     }

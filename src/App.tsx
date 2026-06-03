@@ -659,6 +659,7 @@ export default function App() {
 
       localStorage.setItem('starfishnotes-is-offline', 'true');
       localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, storageMode);
+      setMasterPassphrase(activeKey);
       setIsOffline(true);
       setIsAuthenticated(true);
       setRepoName('Local Vault');
@@ -1146,7 +1147,7 @@ export default function App() {
       }
 
       // Check if sessionStorage contains a cached decrypted token (surviving page reload F5!)
-      const token = await retrieveTokenSecurely();
+      const token = await retrieveTokenSecurely(undefined, false);
       if (token) {
         setGithubToken(token);
         setIsAuthenticated(true);
@@ -1264,7 +1265,7 @@ export default function App() {
         setShowLockScreen(false);
         await refreshFilesOffline();
       } else {
-        const decrypted = await retrieveTokenSecurely(unlockPassphrase);
+        const decrypted = await retrieveTokenSecurely(unlockPassphrase, true);
         if (decrypted) {
           setGithubToken(decrypted);
           setIsAuthenticated(true);
