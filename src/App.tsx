@@ -2192,12 +2192,38 @@ export default function App() {
                   ].some(ext => activeFilePath.toLowerCase().endsWith(ext)) ? (
                     vaultImages[activeFilePath] ? (
                       activeFilePath.toLowerCase().endsWith('.pdf') ? (
-                        <iframe
-                          src={vaultImages[activeFilePath]}
-                          title={activeFilePath.split('/').pop()}
-                          className="w-full h-[500px] rounded-lg border-none bg-card"
-                        />
-
+                        <div className="flex flex-col items-center justify-center max-w-md w-full mx-auto text-center animate-fade-in">
+                          <div className="w-16 h-16 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mb-4 border border-red-500/20">
+                            <Paperclip className="w-8 h-8" />
+                          </div>
+                          <h3 className="text-base font-bold text-foreground mb-1">{activeFilePath.split('/').pop()}</h3>
+                          <p className="text-xs text-muted-foreground mb-6 max-w-xs leading-relaxed">
+                            PDF embedding is restricted by modern browser security. Open it in a new tab to view, or download it.
+                          </p>
+                          <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
+                            <a
+                              href={vaultImages[activeFilePath]}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold rounded-lg transition-all cursor-pointer shadow-md shadow-primary/20"
+                            >
+                              Open PDF in New Tab
+                            </a>
+                            <button
+                              onClick={() => {
+                                const link = document.createElement('a');
+                                link.href = vaultImages[activeFilePath];
+                                link.download = activeFilePath.split('/').pop() || 'document.pdf';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                              }}
+                              className="flex items-center justify-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 text-foreground text-xs font-semibold rounded-lg transition-all cursor-pointer border border-border"
+                            >
+                              Download PDF
+                            </button>
+                          </div>
+                        </div>
                       ) : (
                         <img
                           src={vaultImages[activeFilePath]}

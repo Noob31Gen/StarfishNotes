@@ -378,7 +378,27 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
           return `<img src="${cached || cleanSrc}"${rest}>`;
         } else if (ext === '.pdf') {
           const cached = vaultImages[cleanSrc] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanSrc))?.[1];
-          return `<iframe src="${cached || cleanSrc}" title="${cleanSrc}" class="w-full h-[500px] rounded-lg border border-border bg-card" />`;
+          const filename = cleanSrc.split('/').pop() || cleanSrc;
+          const pdfUrl = cached || cleanSrc;
+          return `
+            <div class="pdf-embed-card border border-border bg-card/30 rounded-xl p-4 my-4 flex flex-col sm:flex-row items-center gap-4 max-w-xl mx-auto shadow-sm animate-fade-in" data-attachment="${cleanSrc}">
+              <div class="w-12 h-12 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center shrink-0 border border-red-500/20">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </div>
+              <div class="flex-1 min-w-0 text-center sm:text-left">
+                <span class="text-sm font-bold text-foreground truncate block">${filename}</span>
+                <span class="text-[0.65rem] text-muted-foreground block mt-0.5">PDF attachment (embedding restricted by browser security)</span>
+              </div>
+              <div class="flex gap-2 shrink-0">
+                <a href="${pdfUrl}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/95 text-xs font-semibold rounded-lg transition-all cursor-pointer shadow-sm shadow-primary/10 flex items-center justify-center">
+                  Open PDF
+                </a>
+                <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${cleanSrc}" title="Download PDF">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                </button>
+              </div>
+            </div>
+          `;
         } else {
           // Render a custom embed card instead of image!
           const filename = alt || srcClean.split('/').pop() || srcClean;
@@ -415,7 +435,27 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
             return `<img src="${cached || cleanHref}" alt="${innerText || cleanHref}" style="max-width: 100%; border-radius: 8px;" />`;
           } else if (hrefExt === '.pdf') {
             const cached = vaultImages[cleanHref] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanHref))?.[1];
-            return `<iframe src="${cached || cleanHref}" title="${cleanHref}" class="w-full h-[500px] rounded-lg border border-border bg-card" />`;
+            const filename = cleanHref.split('/').pop() || cleanHref;
+            const pdfUrl = cached || cleanHref;
+            return `
+              <div class="pdf-embed-card border border-border bg-card/30 rounded-xl p-4 my-4 flex flex-col sm:flex-row items-center gap-4 max-w-xl mx-auto shadow-sm animate-fade-in" data-attachment="${cleanHref}">
+                <div class="w-12 h-12 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center shrink-0 border border-red-500/20">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </div>
+                <div class="flex-1 min-w-0 text-center sm:text-left">
+                  <span class="text-sm font-bold text-foreground truncate block">${filename}</span>
+                  <span class="text-[0.65rem] text-muted-foreground block mt-0.5">PDF attachment (embedding restricted by browser security)</span>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                  <a href="${pdfUrl}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/95 text-xs font-semibold rounded-lg transition-all cursor-pointer shadow-sm shadow-primary/10 flex items-center justify-center">
+                    Open PDF
+                  </a>
+                  <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${cleanHref}" title="Download PDF">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  </button>
+                </div>
+              </div>
+            `;
           } else {
             const filename = innerText || cleanHref.split('/').pop() || cleanHref;
             const displayExt = hrefExt ? hrefExt.substring(1).toUpperCase() : 'FILE';
@@ -1822,17 +1862,18 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                   <div className="text-xs text-muted-foreground leading-relaxed h-full overflow-y-auto" onClick={handlePreviewClick}>
                     {node.file ? (
                       (() => {
-                        const lowerPath = node.file.toLowerCase();
+                        const fileKey = node.file!;
+                        const lowerPath = fileKey.toLowerCase();
                         const isImage = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'].some(ext => lowerPath.endsWith(ext));
                         const isPdf = lowerPath.endsWith('.pdf');
 
                         if (isImage) {
                           return (
                             <div className="w-full h-full flex items-center justify-center bg-background/50 rounded-b-xl overflow-hidden p-2">
-                              {vaultImages[node.file] ? (
+                              {vaultImages[fileKey] ? (
                                 <img
-                                  src={vaultImages[node.file]}
-                                  alt={node.file.split('/').pop()}
+                                  src={vaultImages[fileKey]}
+                                  alt={fileKey.split('/').pop()}
                                   className="max-w-full max-h-full object-contain rounded-lg shadow-lg select-none"
                                 />
                               ) : (
@@ -1847,17 +1888,44 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
                         if (isPdf) {
                           return (
-                            <div className="w-full h-full flex items-center justify-center bg-background/50 rounded-b-xl overflow-hidden p-2">
-                              {vaultImages[node.file] ? (
-                                <iframe
-                                  src={vaultImages[node.file]}
-                                  title={node.file.split('/').pop()}
-                                  className="w-full h-full rounded-lg border-none bg-card"
-                                />
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-background/50 rounded-b-xl overflow-hidden p-4 text-center">
+                              <div className="w-10 h-10 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center mb-2 border border-red-500/20">
+                                <Paperclip className="w-5 h-5" />
+                              </div>
+                              <span className="text-[0.7rem] font-bold text-foreground truncate max-w-full block px-2 mb-1">
+                                {fileKey.split('/').pop()}
+                              </span>
+                              <span className="text-[0.55rem] text-muted-foreground block mb-3">
+                                PDF Document
+                              </span>
+                              {vaultImages[fileKey] ? (
+                                <div className="flex gap-1.5 justify-center w-full">
+                                  <a
+                                    href={vaultImages[fileKey]}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1 bg-primary hover:bg-primary/90 text-primary-foreground text-[0.6rem] font-semibold rounded-md transition-all cursor-pointer shadow-sm shadow-primary/10"
+                                  >
+                                    Open PDF
+                                  </a>
+                                  <button
+                                    onClick={() => {
+                                      const link = document.createElement('a');
+                                      link.href = vaultImages[fileKey]!;
+                                      link.download = fileKey.split('/').pop() || 'document.pdf';
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      document.body.removeChild(link);
+                                    }}
+                                    className="px-2.5 py-1 bg-muted hover:bg-muted/80 text-foreground text-[0.6rem] font-semibold rounded-md transition-all cursor-pointer border border-border"
+                                  >
+                                    Download
+                                  </button>
+                                </div>
                               ) : (
-                                <div className="flex flex-col gap-1.5 items-center justify-center text-muted-foreground text-[0.65rem]">
-                                  <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                                  <span>Loading PDF...</span>
+                                <div className="flex items-center gap-1.5 text-[0.65rem] text-muted-foreground">
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary" />
+                                  <span>Loading...</span>
                                 </div>
                               )}
                             </div>
