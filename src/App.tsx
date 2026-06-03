@@ -1522,7 +1522,7 @@ export default function App() {
         ? ''
         : extension === '.canvas'
           ? JSON.stringify({ nodes: [], edges: [] }, null, 2)
-          : `version: 1\nsource:\n  folder: "Projects"\nviews:\n  - id: view_table_1\n    name: "All Active Projects"\n    type: table\n    columns:\n      - property: file.name\n        visible: true\n        width: 200\n`;
+          : `version: 1\nsource:\n  folder: ""\nviews:\n  - id: view_table_1\n    name: "All Active Projects"\n    type: table\n    columns:\n      - property: file.name\n        visible: true\n        width: 200\n`;
 
       const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`);
 
