@@ -2873,13 +2873,23 @@ export default function App() {
                   </h4>
                   <div className="flex flex-col gap-3 select-text text-foreground">
                     <span className="text-[0.62rem] text-muted-foreground/60 leading-normal mb-1 block select-none">
-                      Connect a newly created **empty repository** on GitHub. All your local notes, canvases, and attachments will be decrypted and uploaded to it, enabling seamless cloud syncing.
+                      Connect a newly created <strong className="text-foreground font-bold underline decoration-primary/40 underline-offset-2">empty repository</strong> on GitHub. All your local notes, canvases, and attachments will be decrypted and uploaded to it, enabling seamless cloud syncing.
                     </span>
 
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[0.65rem] font-bold text-muted-foreground uppercase tracking-wider select-none">
-                        GitHub Token (PAT)
-                      </label>
+                      <div className="flex justify-between items-center select-none">
+                        <label className="text-[0.65rem] font-bold text-muted-foreground uppercase tracking-wider">
+                          GitHub Token (PAT)
+                        </label>
+                        <a
+                          href="https://github.com/settings/tokens?type=beta"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[0.65rem] text-secondary hover:text-secondary/80 font-semibold transition-colors hover:underline"
+                        >
+                          Create fine-grained token ↗
+                        </a>
+                      </div>
                       <input
                         type="password"
                         value={publishToken}
