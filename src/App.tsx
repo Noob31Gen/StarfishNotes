@@ -24,10 +24,11 @@ import { InitVaultScreen } from './components/InitVaultScreen';
 import { Sidebar } from './components/Sidebar';
 import { cn } from './utils/cn';
 import { resolveVaultFilePath } from './utils/pathResolver';
-import { getLocalFile } from './services/storage';
+import { getLocalFile, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase } from './services/storage';
 
 // Initialize offline storage crypto callbacks to avoid circular dependencies
 offlineStorage.initCrypto(encryptToken, decryptToken);
+initStorageCrypto(encryptToken, decryptToken);
 
 export interface StarfishSettings {
   attachmentsFolder: string;
@@ -102,6 +103,15 @@ export default function App() {
 
   // Global settings modal state
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Synchronize masterPassphrase with storage encryption passphrase
+  useEffect(() => {
+    if (masterPassphrase) {
+      setStoragePassphrase(masterPassphrase);
+    } else {
+      clearStoragePassphrase();
+    }
+  }, [masterPassphrase]);
 
   // Keep track of ghost note paths that failed to be created to prevent infinite request loops
   const failedGhostNotesRef = React.useRef<Set<string>>(new Set());
@@ -666,6 +676,7 @@ export default function App() {
       localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, storageMode);
       setMasterPassphrase(activeKey);
       offlineStorage.setPassphrase(activeKey);
+      setStoragePassphrase(activeKey);
       setIsOffline(true);
       setIsAuthenticated(true);
       setRepoName('Local Vault');
@@ -1136,6 +1147,7 @@ export default function App() {
             try {
               const activeKey = await getOrCreateSystemVaultPassphrase();
               offlineStorage.setPassphrase(activeKey);
+              setStoragePassphrase(activeKey);
               setMasterPassphrase(activeKey);
             } catch (e) {
               console.error('Failed to initialize system vault key:', e);
@@ -1162,6 +1174,14 @@ export default function App() {
       // Check if sessionStorage contains a cached decrypted token (surviving page reload F5!)
       const token = await retrieveTokenSecurely(undefined, false);
       if (token) {
+        if (mode === 'plain') {
+          try {
+            const activeKey = await getOrCreateSystemVaultPassphrase();
+            setMasterPassphrase(activeKey);
+          } catch (e) {
+            console.error('Failed to load system key on session restore:', e);
+          }
+        }
         setGithubToken(token);
         setIsAuthenticated(true);
         // Direct auto-connect since token is readily decrypted in session memory
@@ -1201,8 +1221,14 @@ export default function App() {
       // A. Verify credentials against GitHub API
       const result = await validateRepository(githubToken.trim(), repoName.trim(), branchName.trim());
 
+      let activeKey = masterPassphrase;
+      if (storageMode === 'plain') {
+        activeKey = await getOrCreateSystemVaultPassphrase();
+        setMasterPassphrase(activeKey);
+      }
+
       // B. Save credentials securely to tiered storage
-      await saveTokenSecurely(githubToken.trim(), storageMode, masterPassphrase, repoName.trim());
+      await saveTokenSecurely(githubToken.trim(), storageMode, activeKey, repoName.trim());
       localStorage.setItem(STORAGE_KEYS.REPO_NAME, repoName.trim());
       localStorage.setItem(STORAGE_KEYS.BRANCH_NAME, branchName.trim());
 
@@ -1281,6 +1307,12 @@ export default function App() {
       } else {
         const decrypted = await retrieveTokenSecurely(unlockPassphrase, true);
         if (decrypted) {
+          if (mode === 'encrypted') {
+            setMasterPassphrase(unlockPassphrase);
+          } else if (mode === 'plain') {
+            const activeKey = await getOrCreateSystemVaultPassphrase();
+            setMasterPassphrase(activeKey);
+          }
           setGithubToken(decrypted);
           setIsAuthenticated(true);
           setShowLockScreen(false);
