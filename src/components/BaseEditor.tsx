@@ -122,20 +122,124 @@ const extractEmbeds = (content: string): Set<string> => {
 
 const calculateBacklinks = (
   currentPath: string, 
-  currentBaseName: string, 
+  currentName: string, 
   fileContents: Record<string, string>
 ): Set<string> => {
   const backlinks = new Set<string>();
+
+  const cleanBName = currentName.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
+  const cleanBPath = currentPath.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
+
   Object.entries(fileContents).forEach(([path, content]) => {
     if (path === currentPath) return;
-    const hasWikiLink = content.includes(`[[${currentBaseName}`) || content.includes(`[[${currentBaseName}|`);
-    const hasMdLink = content.includes(`(${currentBaseName}.md)`) || content.includes(`/${currentBaseName}.md)`);
-    if (hasWikiLink || hasMdLink) {
+
+    let isLinked = false;
+
+    if (path.endsWith('.canvas')) {
+      try {
+        const canvasData = JSON.parse(content);
+        if (canvasData.nodes && Array.isArray(canvasData.nodes)) {
+          for (const node of canvasData.nodes) {
+            if (node.type === 'file' && node.file) {
+              let cleanTarget = node.file.replace(/\\/g, '/').replace(/^\.?\//, '').trim().toLowerCase();
+              cleanTarget = cleanTarget.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+
+              const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
+
+              if (cleanBName === cleanTarget || cleanBPath === cleanTarget || cleanBPath.endsWith('/' + cleanTarget) || cleanBName === targetFilename) {
+                isLinked = true;
+                break;
+              }
+            } else if (node.type === 'text' && typeof node.text === 'string') {
+              const textContent = node.text;
+              const wikiRegex = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
+              let match;
+              while ((match = wikiRegex.exec(textContent)) !== null) {
+                const rawTargetName = match[1].trim();
+                let cleanTarget = rawTargetName.replace(/\\/g, '/').replace(/^\.?\//, '').trim().toLowerCase();
+                cleanTarget = cleanTarget.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+
+                const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
+
+                if (cleanBName === cleanTarget || cleanBPath === cleanTarget || cleanBPath.endsWith('/' + cleanTarget) || cleanBName === targetFilename) {
+                  isLinked = true;
+                  break;
+                }
+              }
+              if (isLinked) break;
+
+              const mdLinkRegex = /\[[^\]]*\]\(([^)]+)\)/g;
+              let mdMatch;
+              while ((mdMatch = mdLinkRegex.exec(textContent)) !== null) {
+                let targetPath = mdMatch[1].trim();
+                if (targetPath.startsWith('http://') || targetPath.startsWith('https://')) continue;
+
+                try { targetPath = decodeURIComponent(targetPath); } catch { /* ignore decode errors */ }
+
+                let cleanTarget = targetPath.replace(/\\/g, '/').replace(/^\.?\//, '').trim().toLowerCase();
+                cleanTarget = cleanTarget.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+
+                const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
+
+                if (cleanBName === cleanTarget || cleanBPath === cleanTarget || cleanBPath.endsWith('/' + cleanTarget) || cleanBName === targetFilename) {
+                  isLinked = true;
+                  break;
+                }
+              }
+              if (isLinked) break;
+            }
+          }
+        }
+      } catch {
+        // ignore canvas parse errors
+      }
+    } else {
+      // Wiki links in markdown/text files
+      const wikiRegex = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
+      let match;
+      while ((match = wikiRegex.exec(content)) !== null) {
+        const rawTargetName = match[1].trim();
+        let cleanTarget = rawTargetName.replace(/\\/g, '/').replace(/^\.?\//, '').trim().toLowerCase();
+        cleanTarget = cleanTarget.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+
+        const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
+
+        if (cleanBName === cleanTarget || cleanBPath === cleanTarget || cleanBPath.endsWith('/' + cleanTarget) || cleanBName === targetFilename) {
+          isLinked = true;
+          break;
+        }
+      }
+
+      if (!isLinked) {
+        // Markdown links
+        const mdLinkRegex = /\[[^\]]*\]\(([^)]+)\)/g;
+        let mdMatch;
+        while ((mdMatch = mdLinkRegex.exec(content)) !== null) {
+          let targetPath = mdMatch[1].trim();
+          if (targetPath.startsWith('http://') || targetPath.startsWith('https://')) continue;
+
+          try { targetPath = decodeURIComponent(targetPath); } catch { /* ignore decode errors */ }
+
+          let cleanTarget = targetPath.replace(/\\/g, '/').replace(/^\.?\//, '').trim().toLowerCase();
+          cleanTarget = cleanTarget.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+
+          const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
+
+          if (cleanBName === cleanTarget || cleanBPath === cleanTarget || cleanBPath.endsWith('/' + cleanTarget) || cleanBName === targetFilename) {
+            isLinked = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (isLinked) {
       const otherFileName = path.split('/').pop() || path;
-      const otherBaseName = otherFileName.replace(/\.md$/, '');
+      const otherBaseName = otherFileName.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.base$/, '');
       backlinks.add(otherBaseName);
     }
   });
+
   return backlinks;
 };
 
@@ -452,7 +556,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       const oLinks = extractLinks(content);
       const embeds = extractEmbeds(content);
       const tags = extractTags(content, frontmatter);
-      const bLinks = calculateBacklinks(file.path, cleanName, fileContents);
+      const bLinks = calculateBacklinks(file.path, file.name, fileContents);
 
       return {
         path: file.path,
@@ -1143,7 +1247,11 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                           if (colKey === 'file.name' || colKey === 'file name') {
                             // Note Link Title column
                             return (
-                              <td key={colKey} className="px-4 py-3 truncate max-w-xs text-xs font-semibold">
+                              <td 
+                                key={colKey} 
+                                className="px-4 py-3 truncate max-w-xs text-xs font-semibold"
+                                title={cellVal as string}
+                              >
                                 <button
                                   onClick={() => onOpenNote(row.path)}
                                   className="text-primary hover:text-accent font-bold text-left truncate transition-colors hover:underline flex items-center gap-2 cursor-pointer w-full"
@@ -1171,6 +1279,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                                 }
                               }}
                               className="px-4 py-2 text-xs text-foreground/80 truncate max-w-xs cursor-pointer hover:bg-white/[0.015]"
+                              title={cellVal !== undefined && cellVal !== null && cellVal !== '' ? formatCellVal(cellVal) : ''}
                             >
                               {isEditing ? (
                                 <div className="flex items-center gap-1.5">
