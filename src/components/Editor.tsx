@@ -188,12 +188,8 @@ export const Editor: React.FC<EditorProps> = ({
         // 1. Parse Wiki-links and wiki-embeds (render binary/pdf/images as image tags for subsequent resolving)
         const wikiRegex = /(!)?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
         const processedText = text.replace(wikiRegex, (match, isEmbed, target, width) => {
-          const targetClean = target.trim();
-          const extIndex = targetClean.lastIndexOf('.');
-          const ext = extIndex !== -1 ? targetClean.substring(extIndex).toLowerCase() : '';
-          const isBinaryExt = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.pdf'].includes(ext) || !isTextFile(targetClean);
-
-          if (isEmbed || isBinaryExt) {
+          if (isEmbed) {
+            const targetClean = target.trim();
             const style = width ? `width: ${width.trim()}px; max-width: 100%;` : `max-width: 100%;`;
             return `<img src="${targetClean}" alt="${targetClean}" style="${style} border-radius: 8px;" />`;
           }
