@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings } from 'lucide-react';
+import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings, Download } from 'lucide-react';
+import JSZip from 'jszip';
 import {
   validateRepository, checkVaultCompatibility, initializeVault,
   fetchRepositoryTree, fetchFileContent, commitFileContent, deleteFile, syncVault,
@@ -40,6 +41,16 @@ const DEFAULT_SETTINGS: StarfishSettings = {
   graphRepulsionStrength: 180,
   graphSpringLength: 120
 };
+
+function base64ToBlob(base64: string, mimeType: string = 'application/octet-stream'): Blob {
+  const byteCharacters = atob(base64.replace(/\s/g, ''));
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType });
+}
 
 export default function App() {
   // Connection and Authentication State
@@ -867,6 +878,118 @@ export default function App() {
       const msg = e instanceof Error ? e.message : 'Failed to upload attachment.';
       setGlobalError(msg);
       throw e;
+    }
+  };
+
+  const getFileContentAndType = async (path: string, sha: string): Promise<{ data: Blob; isBinary: boolean }> => {
+    const isBinary = ![
+      '.md', '.txt', '.canvas'
+    ].some(ext => path.toLowerCase().endsWith(ext));
+
+    let mime = 'application/octet-stream';
+    const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
+    if (ext === '.md' || ext === '.txt') mime = 'text/plain;charset=utf-8';
+    else if (ext === '.canvas' || ext === '.json') mime = 'application/json;charset=utf-8';
+    else if (ext === '.png') mime = 'image/png';
+    else if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
+    else if (ext === '.webp') mime = 'image/webp';
+    else if (ext === '.gif') mime = 'image/gif';
+    else if (ext === '.svg') mime = 'image/svg+xml';
+    else if (ext === '.pdf') mime = 'application/pdf';
+
+    if (isOffline) {
+      const file = await offlineStorage.getFile(path);
+      if (!file) throw new Error(`File not found in offline storage: ${path}`);
+      let content = file.content;
+      if (storageMode === 'encrypted' || storageMode === 'keychain') {
+        if (masterPassphrase) {
+          content = await decryptToken(file.content, masterPassphrase);
+        }
+      }
+      if (isBinary) {
+        return { data: base64ToBlob(content, mime), isBinary: true };
+      } else {
+        return { data: new Blob([content], { type: mime }), isBinary: false };
+      }
+    } else {
+      // Remote
+      if (isBinary) {
+        let base64 = '';
+        const cachedDataUrl = vaultImages[path];
+        if (cachedDataUrl && cachedDataUrl.startsWith('data:')) {
+          base64 = cachedDataUrl.split(',')[1];
+        } else {
+          base64 = await fetchBinaryFileContent(githubToken, repoName, sha);
+        }
+        return { data: base64ToBlob(base64, mime), isBinary: true };
+      } else {
+        let content = fileContents[path];
+        if (content === undefined) {
+          content = await fetchFileContent(githubToken, repoName, path, sha);
+        }
+        return { data: new Blob([content], { type: mime }), isBinary: false };
+      }
+    }
+  };
+
+  const handleDownloadFile = async (path: string, name: string, sha: string) => {
+    try {
+      setGlobalError('');
+      const finalSha = sha || files.find(f => f.path === path)?.sha || '';
+      const { data } = await getFileContentAndType(path, finalSha);
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to download file.';
+      setGlobalError(msg);
+    }
+  };
+
+  const [bulkDownloadStatus, setBulkDownloadStatus] = useState<string | null>(null);
+
+  const handleBulkDownload = async () => {
+    setBulkDownloadStatus('Preparing files...');
+    try {
+      const zip = new JSZip();
+      const filesToZip = files.filter(f => f.name !== '.gitkeep' && f.name !== '.vault-compat.json');
+      
+      for (let i = 0; i < filesToZip.length; i++) {
+        const file = filesToZip[i];
+        setBulkDownloadStatus(`Packing (${i + 1}/${filesToZip.length}): ${file.name}...`);
+        
+        try {
+          const { data } = await getFileContentAndType(file.path, file.sha);
+          const buffer = await data.arrayBuffer();
+          zip.file(file.path, buffer);
+        } catch (fileErr) {
+          console.error(`Failed to pack file ${file.path}:`, fileErr);
+        }
+      }
+
+      setBulkDownloadStatus('Generating ZIP...');
+      const content = await zip.generateAsync({ type: 'blob' });
+      
+      const zipName = `${(repoName || 'local_vault').replace(/[\/\\:*?"<>|]/g, '_')}_vault.zip`;
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = zipName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setBulkDownloadStatus(null);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to generate bulk ZIP download.';
+      setGlobalError(msg);
+      setBulkDownloadStatus(null);
     }
   };
 
@@ -1733,6 +1856,7 @@ export default function App() {
         }}
         repoName={repoName}
         branchName={branchName}
+        onDownloadClick={handleDownloadFile}
 
         // Resize and collapse control props
         sidebarWidth={sidebarWidth}
@@ -2570,6 +2694,34 @@ export default function App() {
                   >
                     Logout & Purge
                   </button>
+                </div>
+              </div>
+
+              {/* Category 4: Backup & Export */}
+              <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl">
+                <h4 className="text-[0.72rem] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5 select-none">
+                  <Download size={11.5} />
+                  Backup & Export
+                </h4>
+                <div className="flex flex-col gap-2">
+                  <span className="text-[0.62rem] text-muted-foreground/60 leading-normal mb-1">
+                    Download all notes, canvas boards, and attachments in your vault packed as a single ZIP archive. Works in both online and offline storage modes.
+                  </span>
+                  {bulkDownloadStatus ? (
+                    <div className="flex items-center gap-2 text-xs font-semibold text-accent animate-pulse-soft bg-muted/40 border border-border px-3 py-2 rounded-xl">
+                      <RefreshCw size={13} className="animate-spin text-primary shrink-0" />
+                      <span className="truncate">{bulkDownloadStatus}</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleBulkDownload}
+                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer shadow-lg shadow-primary/10"
+                    >
+                      <Download size={13.5} />
+                      <span>Export Vault as ZIP</span>
+                    </button>
+                  )}
                 </div>
               </div>
 

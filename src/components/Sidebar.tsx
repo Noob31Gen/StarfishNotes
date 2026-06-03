@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Compass, LogOut, Plus, Search, RefreshCw, Settings, FileText, Trash2, Edit3, GitBranch,
   Folder, FolderOpen, ChevronRight, ChevronDown, FolderPlus, Copy, ArrowRight, MoreHorizontal,
-  PanelLeftClose, Paperclip, Image
+  PanelLeftClose, Paperclip, Image, Download
 } from 'lucide-react';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
@@ -95,6 +95,7 @@ interface FolderTreeItemProps {
   onDeleteFile: (path: string, sha: string) => void;
   onCopyFile: (path: string, name: string) => void;
   onMoveFile: (path: string, name: string, sha: string) => void;
+  onDownloadFile: (path: string, name: string, sha: string) => void;
 
   // Coordination states for active 3-dots dropdown popover menu
   activeMenuPath: string | null;
@@ -116,6 +117,7 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
   onDeleteFile,
   onCopyFile,
   onMoveFile,
+  onDownloadFile,
 
   activeMenuPath,
   setActiveMenuPath,
@@ -231,6 +233,18 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
                 <Edit3 size={11} className="text-muted-foreground/75" />
                 <span>Rename Note</span>
               </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveMenuPath(null);
+                  onDownloadFile(node.path, node.name, node.file.sha);
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
+              >
+                <Download size={11} className="text-muted-foreground/75" />
+                <span>Download</span>
+              </button>
 
               <div className="h-[1px] bg-border my-0.5" />
 
@@ -340,6 +354,7 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
                 onDeleteFile={onDeleteFile}
                 onCopyFile={onCopyFile}
                 onMoveFile={onMoveFile}
+                onDownloadFile={onDownloadFile}
                 activeMenuPath={activeMenuPath}
                 setActiveMenuPath={setActiveMenuPath}
               />
@@ -366,6 +381,7 @@ interface SidebarProps {
   setViewTab: (tab: 'workspace' | 'graph') => void;
   onDeleteClick: (path: string, sha: string) => void;
   onRenameClick: (path: string, name: string, sha: string) => void;
+  onDownloadClick: (path: string, name: string, sha: string) => void;
   repoName: string;
   branchName: string;
 
@@ -402,6 +418,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setViewTab,
   onDeleteClick,
   onRenameClick,
+  onDownloadClick,
   repoName,
   branchName,
 
@@ -745,6 +762,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 <Edit3 size={11} className="text-muted-foreground/75" />
                                 <span>Rename Note</span>
                               </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveMenuPath(null);
+                                  onDownloadClick(file.path, file.name, file.sha);
+                                }}
+                                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
+                              >
+                                <Download size={11} className="text-muted-foreground/75" />
+                                <span>Download</span>
+                              </button>
 
                               <div className="h-[1px] bg-border my-0.5" />
 
@@ -798,6 +827,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       onDeleteFile={onDeleteClick}
                       onCopyFile={onCopyClick}
                       onMoveFile={onMoveClick}
+                      onDownloadFile={onDownloadClick}
                       activeMenuPath={activeMenuPath}
                       setActiveMenuPath={setActiveMenuPath}
                     />
