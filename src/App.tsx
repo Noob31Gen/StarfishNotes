@@ -2164,7 +2164,7 @@ export default function App() {
           <div className="flex items-center gap-3 font-heading font-semibold text-[0.975rem] max-w-[45%] truncate text-foreground">
             <button
               onClick={() => setIsMobileSidebarOpen(true)}
-              className="md:hidden w-8 h-8 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer"
+              className="md:hidden w-8 h-8 shrink-0 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer"
               title="Open Sidebar"
             >
               <Menu size={15} />
