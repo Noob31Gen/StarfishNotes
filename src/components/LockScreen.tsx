@@ -36,11 +36,11 @@ export const LockScreen: React.FC<LockScreenProps> = ({
             </div>
           </div>
           <h1 className="font-heading font-bold text-2xl tracking-tight text-foreground mb-1.5">
-            {isKeychain ? 'Authenticate with Passkey' : 'Unlock Workspace'}
+            {isKeychain ? 'Unlock with Browser Keychain' : 'Unlock Workspace'}
           </h1>
           <p className="text-muted-foreground text-sm font-medium px-4">
             {isKeychain
-              ? 'Your session is secured using your Native Secure OS Vault (Passkeys / Windows Hello / Touch ID).'
+              ? 'Your session is secured using your browser\'s saved passwords manager.'
               : 'Your session is locked. Enter your master passphrase to load credentials.'}
           </p>
         </div>
@@ -78,7 +78,7 @@ export const LockScreen: React.FC<LockScreenProps> = ({
               ) : (
                 <Key className="w-4 h-4" />
               )}
-              {isKeychain ? 'Unlock Workspace with Passkey' : 'Unlock Connection'}
+              {isKeychain ? 'Unlock Workspace with Browser Key' : 'Unlock Connection'}
             </button>
             <button
               type="button"

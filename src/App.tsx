@@ -1279,7 +1279,7 @@ export default function App() {
         }
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : (mode === 'keychain' ? 'Failed to unlock with Passkey.' : 'Failed to decrypt token. Check passphrase.');
+      const msg = e instanceof Error ? e.message : (mode === 'keychain' ? 'Failed to unlock via Browser Keychain.' : 'Failed to decrypt token. Check passphrase.');
       setUnlockError(msg);
     } finally {
       setIsConnecting(false);
