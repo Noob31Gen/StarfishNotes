@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Eye, Edit2, Columns, Save, AlertCircle, RefreshCw, FileText, Paperclip, Undo2, Redo2 } from 'lucide-react';
-import { GitConflictError } from '../services/github';
+import { GitConflictError, isTextFile } from '../services/github';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
 import { saveEditorState, restoreEditorState } from '../utils/editorState';
@@ -18,6 +18,88 @@ interface EditorProps {
   vaultImages: Record<string, string>;
   onFetchBinaryFile: (path: string, sha: string) => Promise<void>;
   onUploadAttachment: (file: File, folderPath?: string) => Promise<{ path: string; name: string }>;
+}
+
+function parseCSV(text: string, delimiter: string = ','): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentVal = '';
+  let inQuotes = false;
+
+  const cleanText = text.replace(/\r\n/g, '\n');
+
+  for (let i = 0; i < cleanText.length; i++) {
+    const char = cleanText[i];
+    const nextChar = cleanText[i + 1];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (nextChar === '"') {
+          currentVal += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        currentVal += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === delimiter) {
+        currentRow.push(currentVal);
+        currentVal = '';
+      } else if (char === '\n') {
+        currentRow.push(currentVal);
+        rows.push(currentRow);
+        currentRow = [];
+        currentVal = '';
+      } else {
+        currentVal += char;
+      }
+    }
+  }
+
+  if (currentVal || currentRow.length > 0) {
+    currentRow.push(currentVal);
+    rows.push(currentRow);
+  }
+
+  if (rows.length === 0) {
+    rows.push(['']);
+  }
+
+  return rows;
+}
+
+function stringifyCSV(rows: string[][], delimiter: string = ','): string {
+  return rows
+    .map(row =>
+      row
+        .map(cell => {
+          const needsQuotes =
+            cell.includes(delimiter) ||
+            cell.includes('"') ||
+            cell.includes('\n') ||
+            cell.includes('\r');
+          if (needsQuotes) {
+            return `"${cell.replace(/"/g, '""')}"`;
+          }
+          return cell;
+        })
+        .join(delimiter)
+    )
+    .join('\n');
+}
+
+function getColLabel(index: number): string {
+  let label = '';
+  let temp = index;
+  while (temp >= 0) {
+    label = String.fromCharCode((temp % 26) + 65) + label;
+    temp = Math.floor(temp / 26) - 1;
+  }
+  return label;
 }
 
 export const Editor: React.FC<EditorProps> = ({
@@ -41,6 +123,134 @@ export const Editor: React.FC<EditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+
+  // Custom renderer or post-processor for graphviewlinks [[Note Name]] and vault images
+  const renderMarkdown = useCallback((text: string): string => {
+    try {
+      const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+      let html = '';
+
+      // A. Spreadsheet Files (.csv, .tsv)
+      if (ext === '.csv' || ext === '.tsv') {
+        const delimiter = ext === '.csv' ? ',' : '\t';
+        const rows = parseCSV(text, delimiter);
+        const maxCols = Math.max(...rows.map(r => r.length), 1);
+        
+        let tableHtml = `<div class="overflow-x-auto w-full border border-border rounded-xl shadow-sm bg-card/20 my-4 select-text">`;
+        tableHtml += `<table class="csv-table w-full border-collapse text-left text-xs text-foreground" style="min-width: 600px;">`;
+        
+        tableHtml += `<thead><tr class="border-b border-border bg-muted/40">`;
+        tableHtml += `<th class="p-2 text-center font-semibold text-muted-foreground border-r border-border bg-muted/60 w-12 select-none"></th>`;
+        for (let c = 0; c < maxCols; c++) {
+          tableHtml += `<th class="p-2 font-semibold text-muted-foreground border-r border-border text-center select-none">${getColLabel(c)}</th>`;
+        }
+        tableHtml += `</tr></thead>`;
+        
+        tableHtml += `<tbody>`;
+        rows.forEach((row, rIdx) => {
+          tableHtml += `<tr class="border-b border-border/80 hover:bg-muted/10">`;
+          tableHtml += `<td class="p-2 text-center font-semibold text-muted-foreground border-r border-border bg-muted/30 select-none w-12">${rIdx + 1}</td>`;
+          for (let cIdx = 0; cIdx < maxCols; cIdx++) {
+            const val = row[cIdx] || '';
+            tableHtml += `<td contenteditable="true" data-row="${rIdx}" data-col="${cIdx}" class="p-2 border-r border-border outline-none focus:bg-primary/5 focus:ring-1 focus:ring-primary/20 transition-all font-mono text-xs whitespace-pre-wrap">${val}</td>`;
+          }
+          tableHtml += `</tr>`;
+        });
+        tableHtml += `</tbody></table></div>`;
+        
+        tableHtml += `
+          <div class="flex items-center gap-2 mt-4 select-none flex-wrap">
+            <button class="add-row-btn flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold rounded-lg transition-all cursor-pointer">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add Row
+            </button>
+            <button class="add-col-btn flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold rounded-lg transition-all cursor-pointer">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add Column
+            </button>
+            <button class="delete-row-btn flex items-center gap-1.5 px-3 py-1.5 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-semibold rounded-lg transition-all cursor-pointer sm:ml-auto">
+              Delete Last Row
+            </button>
+            <button class="delete-col-btn flex items-center gap-1.5 px-3 py-1.5 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-semibold rounded-lg transition-all cursor-pointer">
+              Delete Last Column
+            </button>
+          </div>
+        `;
+        html = tableHtml;
+      }
+      // B. Code/Configuration Files
+      else if (ext !== '.md' && ext !== '.txt' && ext !== '.canvas' && isTextFile(filePath)) {
+        const lang = ext.substring(1);
+        html = `<pre class="bg-card/30 border border-border rounded-xl p-4 overflow-x-auto my-4 select-text font-mono text-[0.85rem] leading-[1.6]"><code class="language-${lang}">${text}</code></pre>`;
+      }
+      // C. Markdown / Plaintext
+      else {
+        // 1. Parse Wiki-embedded images: ![[Cute Image.png]] or ![[Cute Image.png|300]]
+        const wikiImageRegex = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+        const processedText = text.replace(wikiImageRegex, (_, target, width) => {
+          const targetClean = target.trim();
+          const style = width ? `width: ${width.trim()}px; max-width: 100%;` : `max-width: 100%;`;
+          return `<img src="${targetClean}" alt="${targetClean}" style="${style} border-radius: 8px;" />`;
+        });
+
+        // 2. Compile standard Markdown to HTML
+        html = marked.parse(processedText) as string;
+
+        // 3. Resolve local vault image paths to base64 Data URLs, or custom attachment cards for non-images
+        html = html.replace(/<img src="([^"]+)"([^>]*)>/g, (_match, src, rest) => {
+          const altMatch = rest.match(/alt="([^"]+)"/);
+          const alt = altMatch ? altMatch[1] : '';
+          
+          const srcClean = src.trim();
+          const extIndex = srcClean.lastIndexOf('.');
+          const srcExt = extIndex !== -1 ? srcClean.substring(extIndex).toLowerCase() : '';
+          const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+          
+          if (imageExtensions.includes(srcExt) || srcClean.startsWith('data:image/')) {
+            const cached = vaultImages[srcClean] || Object.entries(vaultImages).find(([k]) => k.endsWith(srcClean))?.[1];
+            return `<img src="${cached || srcClean}"${rest}>`;
+          } else if (srcExt === '.pdf') {
+            const cached = vaultImages[srcClean] || Object.entries(vaultImages).find(([k]) => k.endsWith(srcClean))?.[1];
+            return `<embed src="${cached || srcClean}" type="application/pdf" class="w-full h-[500px] rounded-lg border border-border" />`;
+          } else {
+            // Render a custom embed card instead of image!
+            const filename = alt || srcClean.split('/').pop() || srcClean;
+            const displayExt = srcExt ? srcExt.substring(1).toUpperCase() : 'FILE';
+            return `
+              <div class="attachment-embed-card border border-border bg-muted/30 rounded-xl p-3 my-2 flex items-center gap-3 animate-fade-in" data-attachment="${srcClean}">
+                <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <span class="text-xs font-bold text-foreground truncate block">${filename}</span>
+                  <span class="text-[0.6rem] text-muted-foreground uppercase font-semibold block">${displayExt} Attachment</span>
+                </div>
+                <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${srcClean}" title="Download attachment">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                </button>
+              </div>
+            `;
+          }
+        });
+
+        // 4. Parse Graphview-links: [[Another Note]] or [[Another Note|Display Name]]
+        const graphviewLinkRegex = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+        html = html.replace(graphviewLinkRegex, (_, target, label) => {
+          const targetClean = target.trim();
+          const displayLabel = label ? label.trim() : targetClean;
+          return `<a class="graphview-link" data-note="${targetClean}" title="Open note: ${targetClean}">${displayLabel}</a>`;
+        });
+      }
+
+      // 5. Bulletproof sanitize through DOMPurify to eliminate any script injection vectors
+      return DOMPurify.sanitize(html, {
+        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col'],
+        ADD_TAGS: ['svg', 'line'],
+      });
+    } catch {
+      return `<p class="text-destructive font-medium">Error parsing content.</p>`;
+    }
+  }, [filePath, vaultImages]);
 
   // Undo / Redo history state stack
   const [history, setHistory] = useState<string[]>([]);
@@ -116,6 +326,8 @@ export const Editor: React.FC<EditorProps> = ({
   const [caretIndex, setCaretIndex] = useState(0);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
+  const isEditingFromPreviewRef = useRef(false);
 
   // Track original content to see if there are unsaved changes
   const originalContent = useRef(initialContent);
@@ -274,6 +486,16 @@ export const Editor: React.FC<EditorProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (previewContainerRef.current) {
+      if (isEditingFromPreviewRef.current) {
+        isEditingFromPreviewRef.current = false;
+        return;
+      }
+      previewContainerRef.current.innerHTML = renderMarkdown(content);
+    }
+  }, [content, filePath, viewMode, renderMarkdown]);
+
   // Unified save orchestration
   const performAutoSave = useCallback(async () => {
     const currentVal = contentRef.current;
@@ -382,72 +604,7 @@ export const Editor: React.FC<EditorProps> = ({
     });
   }, []);
 
-  // Custom renderer or post-processor for graphviewlinks [[Note Name]] and vault images
-  const renderMarkdown = (text: string): string => {
-    try {
-      // 1. Parse Wiki-embedded images: ![[Cute Image.png]] or ![[Cute Image.png|300]]
-      const wikiImageRegex = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
-      text = text.replace(wikiImageRegex, (_, target, width) => {
-        const targetClean = target.trim();
-        const style = width ? `width: ${width.trim()}px; max-width: 100%;` : `max-width: 100%;`;
-        return `<img src="${targetClean}" alt="${targetClean}" style="${style} border-radius: 8px;" />`;
-      });
 
-      // 2. Compile standard Markdown to HTML
-      let html = marked.parse(text) as string;
-
-      // 3. Resolve local vault image paths to base64 Data URLs, or custom attachment cards for non-images
-      html = html.replace(/<img src="([^"]+)"([^>]*)>/g, (_match, src, rest) => {
-        const altMatch = rest.match(/alt="([^"]+)"/);
-        const alt = altMatch ? altMatch[1] : '';
-        
-        const srcClean = src.trim();
-        const extIndex = srcClean.lastIndexOf('.');
-        const ext = extIndex !== -1 ? srcClean.substring(extIndex).toLowerCase() : '';
-        const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
-        
-        if (imageExtensions.includes(ext) || srcClean.startsWith('data:image/')) {
-          const cached = vaultImages[srcClean] || Object.entries(vaultImages).find(([k]) => k.endsWith(srcClean))?.[1];
-          return `<img src="${cached || srcClean}"${rest}>`;
-        } else {
-          // Render a custom embed card instead of image!
-          const filename = alt || srcClean.split('/').pop() || srcClean;
-          const displayExt = ext ? ext.substring(1).toUpperCase() : 'FILE';
-          return `
-            <div class="attachment-embed-card border border-border bg-muted/30 rounded-xl p-3 my-2 flex items-center gap-3 animate-fade-in" data-attachment="${srcClean}">
-              <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-              </div>
-              <div class="flex-1 min-w-0">
-                <span class="text-xs font-bold text-foreground truncate block">${filename}</span>
-                <span class="text-[0.6rem] text-muted-foreground uppercase font-semibold block">${displayExt} Attachment</span>
-              </div>
-              <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${srcClean}" title="Download attachment">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-              </button>
-            </div>
-          `;
-        }
-      });
-
-      // 4. Parse Graphview-links: [[Another Note]] or [[Another Note|Display Name]]
-      // Matches [[Name]] or [[Name|Label]]
-      const graphviewLinkRegex = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
-      html = html.replace(graphviewLinkRegex, (_, target, label) => {
-        const targetClean = target.trim();
-        const displayLabel = label ? label.trim() : targetClean;
-        // Output a custom visual anchor with data-note attribute for runtime capture
-        return `<a class="graphview-link" data-note="${targetClean}" title="Open note: ${targetClean}">${displayLabel}</a>`;
-      });
-
-      // 5. Bulletproof sanitize through DOMPurify to eliminate any script injection vectors
-      return DOMPurify.sanitize(html, {
-        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title'], // Allow our custom graphview-link attributes
-      });
-    } catch {
-      return `<p class="text-destructive font-medium">Error parsing Markdown content.</p>`;
-    }
-  };
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
@@ -488,6 +645,62 @@ export const Editor: React.FC<EditorProps> = ({
   // Capture clicks inside the preview panel to handle custom interactive graphview-links and downloads
   const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
+    
+    // Capture spreadsheet row/col modification buttons
+    const addRowBtn = target.closest('.add-row-btn');
+    if (addRowBtn) {
+      const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+      const delimiter = ext === '.csv' ? ',' : '\t';
+      const rows = parseCSV(content, delimiter);
+      const maxCols = Math.max(...rows.map(r => r.length), 1);
+      rows.push(Array(maxCols).fill(''));
+      const newContent = stringifyCSV(rows, delimiter);
+      setContent(newContent);
+      pushEditorState(newContent);
+      return;
+    }
+
+    const addColBtn = target.closest('.add-col-btn');
+    if (addColBtn) {
+      const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+      const delimiter = ext === '.csv' ? ',' : '\t';
+      const rows = parseCSV(content, delimiter);
+      const updatedRows = rows.map(row => [...row, '']);
+      const newContent = stringifyCSV(updatedRows, delimiter);
+      setContent(newContent);
+      pushEditorState(newContent);
+      return;
+    }
+
+    const deleteRowBtn = target.closest('.delete-row-btn');
+    if (deleteRowBtn) {
+      const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+      const delimiter = ext === '.csv' ? ',' : '\t';
+      const rows = parseCSV(content, delimiter);
+      if (rows.length > 1) {
+        rows.pop();
+        const newContent = stringifyCSV(rows, delimiter);
+        setContent(newContent);
+        pushEditorState(newContent);
+      }
+      return;
+    }
+
+    const deleteColBtn = target.closest('.delete-col-btn');
+    if (deleteColBtn) {
+      const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+      const delimiter = ext === '.csv' ? ',' : '\t';
+      const rows = parseCSV(content, delimiter);
+      const maxCols = Math.max(...rows.map(r => r.length), 1);
+      if (maxCols > 1) {
+        const updatedRows = rows.map(row => row.slice(0, -1));
+        const newContent = stringifyCSV(updatedRows, delimiter);
+        setContent(newContent);
+        pushEditorState(newContent);
+      }
+      return;
+    }
+
     // Check if clicked element or parent has graphview-link class
     const graphviewLink = target.closest('.graphview-link');
     if (graphviewLink) {
@@ -520,6 +733,35 @@ export const Editor: React.FC<EditorProps> = ({
           setSaveStatus('error');
         }
       }
+    }
+  };
+
+  const handlePreviewInput = (e: React.FormEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'TD' && target.hasAttribute('data-row') && target.hasAttribute('data-col')) {
+      const rowIdx = parseInt(target.getAttribute('data-row') || '0', 10);
+      const colIdx = parseInt(target.getAttribute('data-col') || '0', 10);
+      const newVal = target.innerText;
+
+      const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+      const delimiter = ext === '.csv' ? ',' : '\t';
+      const rows = parseCSV(content, delimiter);
+
+      // Make sure row/col exists in our array
+      while (rows.length <= rowIdx) {
+        rows.push([]);
+      }
+      const maxCols = Math.max(...rows.map(r => r.length), 1);
+      rows.forEach(r => {
+        while (r.length < maxCols) {
+          r.push('');
+        }
+      });
+      rows[rowIdx][colIdx] = newVal;
+
+      const newContent = stringifyCSV(rows, delimiter);
+      isEditingFromPreviewRef.current = true;
+      setContent(newContent);
     }
   };
 
@@ -642,10 +884,11 @@ export const Editor: React.FC<EditorProps> = ({
         <div
           className="flex-1 p-6 pb-32 sm:p-8 sm:pb-32 overflow-y-auto bg-background"
           onClick={handlePreviewClick}
+          onInput={handlePreviewInput}
         >
           <div
+            ref={previewContainerRef}
             className="markdown-preview"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
           />
         </div>
       </div>

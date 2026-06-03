@@ -24,6 +24,14 @@ export interface VaultCompatibility {
   };
 }
 
+export function isTextFile(path: string): boolean {
+  const binaryExtensions = [
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.tar', '.gz', '.mp3', '.mp4', '.mov', '.avi', '.ttf', '.woff', '.woff2', '.eot'
+  ];
+  const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
+  return !binaryExtensions.includes(ext) && ext !== '.canvas';
+}
+
 /**
  * Custom error handler for conflict resolution
  */
@@ -232,13 +240,13 @@ export async function fetchRepositoryTree(
 
   const treeNodes = data.tree as GitTreeNode[];
 
-  // Filter files that are strictly Markdown (.md), Text (.txt), Canvas (.canvas), or binary attachments
-  const allowedExtensions = ['.md', '.txt', '.canvas', '.gitkeep', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf'];
   return treeNodes
     .filter((node) => {
       if (node.type !== 'blob') return false;
       const lowerPath = node.path.toLowerCase();
-      return allowedExtensions.some(ext => lowerPath.endsWith(ext));
+      if (lowerPath.includes('.git/') || lowerPath.startsWith('.git/')) return false;
+      if (lowerPath.includes('.obsidian/') || lowerPath.startsWith('.obsidian/')) return false;
+      return true;
     })
     .map((node) => ({
       path: node.path,
@@ -406,7 +414,7 @@ export async function syncVault(token: string, repo: string, branch: string, rem
   // 1. Identify which files are missing or have different SHAs
   const changedFiles: VaultFile[] = [];
   for (const remoteFile of remoteTree) {
-    if (!remoteFile.path.endsWith('.md') && !remoteFile.path.endsWith('.canvas') && !remoteFile.path.endsWith('.txt')) continue;
+    if (!isTextFile(remoteFile.path) && !remoteFile.path.endsWith('.canvas')) continue;
 
     const localFile = await getLocalFile(remoteFile.path);
     if (!localFile || localFile.sha !== remoteFile.sha) {
@@ -445,7 +453,7 @@ export async function syncVault(token: string, repo: string, branch: string, rem
       const targetFile = changedFiles.find(f => f.path.toLowerCase() === cleanPathLower);
 
       if (targetFile) {
-        if (cleanPath.endsWith('.md') || cleanPath.endsWith('.canvas') || cleanPath.endsWith('.txt')) {
+        if (isTextFile(cleanPath) || cleanPath.endsWith('.canvas')) {
           console.log(`Updating/Saving local file from zip: ${targetFile.path}`);
           const content = await file.async('string');
           await saveLocalFile(targetFile.path, { content, sha: targetFile.sha });

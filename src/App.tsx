@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import {
   validateRepository, checkVaultCompatibility, initializeVault,
   fetchRepositoryTree, fetchFileContent, commitFileContent, deleteFile, syncVault,
-  commitAttachment, fetchBinaryFileContent
+  commitAttachment, fetchBinaryFileContent, isTextFile
 } from './services/github';
 import type { VaultFile } from './services/github';
 import {
@@ -211,7 +211,7 @@ export default function App() {
     try {
       const contents: Record<string, string> = {};
       await Promise.all(vaultFiles.map(async (file) => {
-        if (file.path.endsWith('.md') || file.path.endsWith('.canvas') || file.path.endsWith('.txt')) {
+        if (isTextFile(file.path) || file.path.endsWith('.canvas')) {
           if (isOffline) {
             const stored = await offlineStorage.getFile(file.path);
             if (stored) {
@@ -914,13 +914,10 @@ export default function App() {
     } else {
       // Remote
       if (isBinary) {
-        let base64 = '';
         const cachedDataUrl = vaultImages[path];
-        if (cachedDataUrl && cachedDataUrl.startsWith('data:')) {
-          base64 = cachedDataUrl.split(',')[1];
-        } else {
-          base64 = await fetchBinaryFileContent(githubToken, repoName, sha);
-        }
+        const base64 = (cachedDataUrl && cachedDataUrl.startsWith('data:'))
+          ? cachedDataUrl.split(',')[1]
+          : await fetchBinaryFileContent(githubToken, repoName, sha);
         return { data: base64ToBlob(base64, mime), isBinary: true };
       } else {
         let content = fileContents[path];
@@ -975,7 +972,7 @@ export default function App() {
       setBulkDownloadStatus('Generating ZIP...');
       const content = await zip.generateAsync({ type: 'blob' });
       
-      const zipName = `${(repoName || 'local_vault').replace(/[\/\\:*?"<>|]/g, '_')}_vault.zip`;
+      const zipName = `${(repoName || 'local_vault').replace(new RegExp('[\\\\/:*?"<>|]', 'g'), '_')}_vault.zip`;
       const url = URL.createObjectURL(content);
       const a = document.createElement('a');
       a.href = url;
@@ -1045,8 +1042,7 @@ export default function App() {
       }
     };
     checkSession();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [autoConnect, refreshFilesOffline]);
 
   // autoConnect function declaration migrated to stable top position
 
@@ -1384,9 +1380,7 @@ export default function App() {
             savedContent = await encryptToken(content, masterPassphrase);
           }
         }
-        const isBinary = [
-          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
-        ].some(ext => oldPath.toLowerCase().endsWith(ext));
+        const isBinary = !isTextFile(oldPath) && !oldPath.toLowerCase().endsWith('.canvas');
         
         await offlineStorage.saveFile({
           path: newPath,
@@ -1502,9 +1496,7 @@ export default function App() {
             savedContent = await encryptToken(content, masterPassphrase);
           }
         }
-        const isBinary = [
-          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
-        ].some(ext => oldPath.toLowerCase().endsWith(ext));
+        const isBinary = !isTextFile(oldPath) && !oldPath.toLowerCase().endsWith('.canvas');
 
         await offlineStorage.saveFile({
           path: newPath,
@@ -1578,9 +1570,7 @@ export default function App() {
             savedContent = await encryptToken(content, masterPassphrase);
           }
         }
-        const isBinary = [
-          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
-        ].some(ext => oldPath.toLowerCase().endsWith(ext));
+        const isBinary = !isTextFile(oldPath) && !oldPath.toLowerCase().endsWith('.canvas');
 
         await offlineStorage.saveFile({
           path: newPath,
@@ -1664,9 +1654,7 @@ export default function App() {
     if (activeFilePath) {
       const matchingFile = files.find(f => f.path === activeFilePath);
       if (matchingFile) {
-        const isBinary = [
-          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
-        ].some(ext => matchingFile.path.toLowerCase().endsWith(ext));
+        const isBinary = !isTextFile(matchingFile.path) && !matchingFile.path.toLowerCase().endsWith('.canvas');
 
         if (isBinary) {
           Promise.resolve().then(() => {
@@ -1678,14 +1666,24 @@ export default function App() {
           });
         }
       } else {
-        const isGhostMd = activeFilePath.endsWith('.md') || activeFilePath.endsWith('.txt');
+        const isGhostMd = isTextFile(activeFilePath);
         if (isGhostMd && !isLoadingFile && !failedGhostNotesRef.current.has(activeFilePath)) {
           // Wrap in microtask to defer setState and avoid cascading renders lint warning
           Promise.resolve().then(() => {
             setIsLoadingFile(true);
             const cleanFileName = activeFilePath.split('/').pop() || activeFilePath;
-            const noteTitle = cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '');
-            const initialText = `# ${noteTitle}\n\nCreated from Link Map. Start typing here...`;
+            const ext = activeFilePath.substring(activeFilePath.lastIndexOf('.')).toLowerCase();
+            let initialText = '';
+            if (ext === '.md' || ext === '.txt') {
+              const noteTitle = cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '');
+              initialText = `# ${noteTitle}\n\nCreated from Link Map. Start typing here...`;
+            } else if (ext === '.csv') {
+              initialText = `Header1,Header2,Header3\nValue1,Value2,Value3`;
+            } else if (ext === '.tsv') {
+              initialText = `Header1\tHeader2\tHeader3\nValue1\tValue2\tValue3`;
+            } else {
+              initialText = `// Created from Link Map. Start typing here...\n`;
+            }
 
             if (isOffline) {
               const sha = 'offline-sha-' + Date.now();
@@ -2015,7 +2013,7 @@ export default function App() {
               onFetchBinaryFile={loadBinaryFile}
               onUploadAttachment={(file) => uploadAttachment(file, undefined, false)}
             />
-          ) : activeFilePath && (activeFilePath.endsWith('.md') || activeFilePath.endsWith('.txt')) && fileContents[activeFilePath] !== undefined ? (
+          ) : activeFilePath && isTextFile(activeFilePath) && fileContents[activeFilePath] !== undefined ? (
             <Editor
               key={activeFilePath}
               filePath={activeFilePath}

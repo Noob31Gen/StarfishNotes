@@ -1,4 +1,4 @@
-# Noob31's Notes
+# Starfish Notes
 
 Notes saved as Markdown.
 Created as an alternative to Obsidian on web.
