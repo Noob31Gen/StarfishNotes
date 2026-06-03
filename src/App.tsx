@@ -15,6 +15,7 @@ import type { StorageMode } from './utils/crypto';
 import { Editor } from './components/Editor';
 import { GraphView } from './components/GraphView';
 import { CanvasView } from './components/CanvasView';
+import { BaseEditor } from './components/BaseEditor';
 import { offlineStorage } from './services/offlineStorage';
 
 // Split modular components
@@ -490,11 +491,11 @@ export default function App() {
     return { sha };
   };
 
-  const createNewFileOffline = async (extension: '.md' | '.txt' | '.canvas', folderPath?: string) => {
+  const createNewFileOffline = async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
     if (isLoadingFile) return;
 
     const isText = extension === '.md' || extension === '.txt';
-    const baseName = extension === '.canvas' ? 'Untitled Board' : 'Untitled Note';
+    const baseName = extension === '.canvas' ? 'Untitled Board' : extension === '.base' ? 'Untitled Base' : 'Untitled Note';
 
     const parentPath = folderPath && folderPath !== '/'
       ? (folderPath.endsWith('/') ? folderPath : `${folderPath}/`)
@@ -513,7 +514,9 @@ export default function App() {
       const cleanFileName = finalPath.split('/').pop() || finalPath;
       const initialText = isText
         ? `# ${cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '')}\n\nStart typing here...`
-        : JSON.stringify({ nodes: [], edges: [] }, null, 2);
+        : extension === '.canvas'
+          ? JSON.stringify({ nodes: [], edges: [] }, null, 2)
+          : `version: 1\nsource:\n  folder: "Projects"\nviews:\n  - id: view_table_1\n    name: "All Active Projects"\n    type: table\n    columns:\n      - property: file.name\n        visible: true\n        width: 200\n`;
 
       let savedContent = initialText;
       const mode = storageMode;
@@ -1401,8 +1404,7 @@ export default function App() {
     return result;
   };
 
-  // Create empty file
-  const createNewFile = async (extension: '.md' | '.txt' | '.canvas', folderPath?: string) => {
+  const createNewFile = async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
     if (isOffline) {
       await createNewFileOffline(extension, folderPath);
       return;
@@ -1410,7 +1412,7 @@ export default function App() {
     if (isLoadingFile) return;
 
     const isText = extension === '.md' || extension === '.txt';
-    const baseName = extension === '.canvas' ? 'Untitled Board' : 'Untitled Note';
+    const baseName = extension === '.canvas' ? 'Untitled Board' : extension === '.base' ? 'Untitled Base' : 'Untitled Note';
 
     // Resolve parent directory path
     const parentPath = folderPath && folderPath !== '/'
@@ -1431,7 +1433,9 @@ export default function App() {
       const cleanFileName = finalPath.split('/').pop() || finalPath;
       const initialText = isText
         ? `# ${cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '')}\n\nStart typing here...`
-        : JSON.stringify({ nodes: [], edges: [] }, null, 2);
+        : extension === '.canvas'
+          ? JSON.stringify({ nodes: [], edges: [] }, null, 2)
+          : `version: 1\nsource:\n  folder: "Projects"\nviews:\n  - id: view_table_1\n    name: "All Active Projects"\n    type: table\n    columns:\n      - property: file.name\n        visible: true\n        width: 200\n`;
 
       const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`);
 
@@ -2181,6 +2185,23 @@ export default function App() {
               vaultImages={vaultImages}
               onFetchBinaryFile={loadBinaryFile}
               onUploadAttachment={(file) => uploadAttachment(file, undefined, false)}
+            />
+          ) : activeFilePath && activeFilePath.endsWith('.base') && fileContents[activeFilePath] !== undefined ? (
+            <BaseEditor
+              key={activeFilePath}
+              filePath={activeFilePath}
+              initialContent={fileContents[activeFilePath]}
+              initialSha={activeFile?.sha || null}
+              files={files}
+              fileContents={fileContents}
+              onSave={(content, sha) => handleSaveFile(activeFilePath, content, sha)}
+              onSaveFile={handleSaveFile}
+              onOpenNote={(path) => {
+                handleOpenNote(path);
+                setViewTab('workspace');
+              }}
+              onLoadFileContent={preloadFileContent}
+              onCreateFile={(ext, folderPath) => createNewFile(ext, folderPath)}
             />
           ) : activeFilePath && isTextFile(activeFilePath) && fileContents[activeFilePath] !== undefined ? (
             <Editor

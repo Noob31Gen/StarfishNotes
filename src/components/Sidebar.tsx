@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Compass, LogOut, Plus, Search, RefreshCw, Settings, FileText, Trash2, Edit3, GitBranch,
   Folder, FolderOpen, ChevronRight, ChevronDown, FolderPlus, Copy, ArrowRight, MoreHorizontal,
-  PanelLeftClose, Paperclip, Image, Download
+  PanelLeftClose, Paperclip, Image, Download, Database
 } from 'lucide-react';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
@@ -88,7 +88,7 @@ interface FolderTreeItemProps {
   setIsMobileSidebarOpen: (open: boolean) => void;
   openFolders: Record<string, boolean>;
   toggleFolder: (path: string) => void;
-  onCreateFile: (folderPath: string, extension: '.md' | '.canvas') => void;
+  onCreateFile: (folderPath: string, extension: '.md' | '.canvas' | '.base') => void;
   onCreateFolder: (parentPath: string) => void;
   onDeleteFolder: (folderPath: string) => void;
   onRenameFile: (path: string, name: string, sha: string) => void;
@@ -125,6 +125,7 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
   if (node.type === 'file') {
     const isActive = node.path === activeFilePath;
     const isCanvas = node.path.endsWith('.canvas');
+    const isBase = node.path.endsWith('.base');
     return (
       <div
         title={node.name}
@@ -159,6 +160,13 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
               isActive ? "text-accent" : "text-muted-foreground/60"
             )}
           />
+        ) : isBase ? (
+          <Database
+            className={cn(
+              "w-3.5 h-3.5 shrink-0 transition-colors",
+              isActive ? "text-accent" : "text-muted-foreground/60"
+            )}
+          />
         ) : (
           <FileText
             className={cn(
@@ -168,11 +176,16 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
           />
         )}
         <span className="truncate flex-1">
-          {node.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '')}
+          {node.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').replace(/\.base$/, '')}
         </span>
         {isCanvas && (
           <span className="text-[0.55rem] bg-secondary/15 text-secondary px-1 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
             Board
+          </span>
+        )}
+        {isBase && (
+          <span className="text-[0.55rem] bg-indigo-500/15 text-indigo-400 px-1 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
+            Base
           </span>
         )}
 
@@ -372,7 +385,7 @@ interface SidebarProps {
   isMobileSidebarOpen: boolean;
   setIsMobileSidebarOpen: (open: boolean) => void;
   handleLogout: () => void;
-  createNewFile: (extension: '.md' | '.txt' | '.canvas', folderPath?: string) => Promise<void>;
+  createNewFile: (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => Promise<void>;
   searchTerm: string;
   setSearchTerm: (term: string) => void;
   files: VaultFile[];
@@ -583,6 +596,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <Plus className="w-3.5 h-3.5 text-secondary shrink-0" />
               <span className="truncate flex-1">Create New Board</span>
+            </div>
+            <div
+              onClick={() => {
+                createNewFile('.base');
+                setIsMobileSidebarOpen(false);
+              }}
+              className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+            >
+              <Plus className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span className="truncate flex-1">Create New Base</span>
             </div>
             <div
               onClick={() => {
