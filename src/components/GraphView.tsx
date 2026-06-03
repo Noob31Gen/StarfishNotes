@@ -742,7 +742,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
     isDraggingRef.current = false;
   };
 
-  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+  const handleTouchStart = React.useCallback((e: TouchEvent) => {
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+
     if (e.touches.length === 2) {
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
@@ -773,9 +777,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
 
     mouseRef.current = { x: touch.clientX, y: touch.clientY };
-  };
+  }, []);
 
-  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+  const handleTouchMove = React.useCallback((e: TouchEvent) => {
     if (e.touches.length === 2 && initialPinchDistance.current !== null) {
       if (e.cancelable) {
         e.preventDefault();
@@ -813,9 +817,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
       setPanY(nextPanY);
       mouseRef.current = { x: touch.clientX, y: touch.clientY };
     }
-  };
+  }, []);
 
-  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+  const handleTouchEnd = React.useCallback((e: TouchEvent) => {
     initialPinchDistance.current = null;
     if (dragNodeRef.current) {
       const touch = e.changedTouches[0];
@@ -831,7 +835,24 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
     dragNodeRef.current = null;
     isDraggingRef.current = false;
-  };
+  }, [onOpenNote]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+    canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchmove', handleTouchMove);
+      canvas.removeEventListener('touchend', handleTouchEnd);
+      canvas.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
 
   const resetViewport = () => {
     setZoom(1);
@@ -848,10 +869,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
       />
 
       {/* Floating Gear Settings trigger button */}
