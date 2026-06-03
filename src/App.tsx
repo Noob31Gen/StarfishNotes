@@ -193,7 +193,19 @@ export default function App() {
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<string | null>(null);
 
   // File system State
-  const [files, setFiles] = useState<VaultFile[]>([]);
+  const [files, setFilesRaw] = useState<VaultFile[]>([]);
+  const setFiles = useCallback((val: VaultFile[] | ((prev: VaultFile[]) => VaultFile[])) => {
+    setFilesRaw(prev => {
+      const resolved = typeof val === 'function' ? val(prev) : val;
+      const seen = new Set<string>();
+      return resolved.filter(f => {
+        if (!f || !f.path) return false;
+        if (seen.has(f.path)) return false;
+        seen.add(f.path);
+        return true;
+      });
+    });
+  }, []);
   const [fileContents, setFileContents] = useState<Record<string, string>>({}); // path -> text
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
 
@@ -592,7 +604,7 @@ export default function App() {
         ? ''
         : extension === '.canvas'
           ? JSON.stringify({ nodes: [], edges: [] }, null, 2)
-          : `version: 1\nsource:\n  folder: "Projects"\nviews:\n  - id: view_table_1\n    name: "All Active Projects"\n    type: table\n    columns:\n      - property: file.name\n        visible: true\n        width: 200\n`;
+          : `version: 1\nsource:\n  folder: ""\nviews:\n  - id: view_table_1\n    name: "All Active Projects"\n    type: table\n    columns:\n      - property: file.name\n        visible: true\n        width: 200\n`;
 
       let savedContent = initialText;
       const mode = storageMode;
@@ -2080,7 +2092,6 @@ export default function App() {
       <Sidebar
         isMobileSidebarOpen={isMobileSidebarOpen}
         setIsMobileSidebarOpen={setIsMobileSidebarOpen}
-        handleLogout={handleLogout}
         createNewFile={createNewFile}
         onUploadAttachment={uploadAttachment}
         searchTerm={searchTerm}

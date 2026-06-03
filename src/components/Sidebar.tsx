@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Compass, LogOut, Plus, Search, RefreshCw, Settings, FileText, Trash2, Edit3, GitBranch,
+  Compass, Plus, Search, RefreshCw, Settings, FileText, Trash2, Edit3, GitBranch,
   Folder, FolderOpen, ChevronRight, ChevronDown, FolderPlus, Copy, ArrowRight, MoreHorizontal,
-  PanelLeftClose, Paperclip, Image, Download, Database
+  PanelLeftClose, Paperclip, Image, Download, Database, X
 } from 'lucide-react';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
@@ -395,7 +395,6 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
 interface SidebarProps {
   isMobileSidebarOpen: boolean;
   setIsMobileSidebarOpen: (open: boolean) => void;
-  handleLogout: () => void;
   createNewFile: (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => Promise<void>;
   searchTerm: string;
   setSearchTerm: (term: string) => void;
@@ -432,7 +431,6 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   isMobileSidebarOpen,
   setIsMobileSidebarOpen,
-  handleLogout,
   createNewFile,
   searchTerm,
   setSearchTerm,
@@ -549,7 +547,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }}
         className={cn(
           "h-full bg-card border-r border-border flex flex-col z-[1000] fixed top-0 left-0 md:relative md:top-auto md:left-auto transition-transform md:translate-x-0",
-          isMobileSidebarOpen ? "translate-x-0 w-[280px] min-w-[280px]" : "-translate-x-full md:translate-x-0",
+          isMobileSidebarOpen ? "translate-x-0 w-full min-w-full md:w-[280px] md:min-w-[280px]" : "-translate-x-full md:translate-x-0",
           isSidebarCollapsed && "overflow-hidden border-r-0 md:w-0!",
           !isResizingSidebar && "transition-all duration-300 ease-in-out"
         )}
@@ -561,8 +559,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Collapse Sidebar Button (visible on desktop) */}
-            {!isMobileSidebarOpen && (
+            {isMobileSidebarOpen ? (
+              <button
+                onClick={() => setIsMobileSidebarOpen(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer"
+                title="Close Sidebar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : (
               <button
                 onClick={() => setIsSidebarCollapsed(true)}
                 className="w-8 h-8 hidden md:flex items-center justify-center rounded-full text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer"
@@ -571,14 +576,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <PanelLeftClose className="w-4 h-4" />
               </button>
             )}
-
-            <button
-              onClick={handleLogout}
-              className="w-8 h-8 flex items-center justify-center rounded-full text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer"
-              title="Log Out / Lock Connection"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
         </div>
 
@@ -691,11 +688,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Scrolled note tree list */}
-          <div className="flex-1 flex flex-col gap-2 min-h-0">
+          <div className="flex flex-col gap-2">
             <span className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1">
               {searchTerm ? 'Search Results' : 'Vault Files'} ({files.filter(f => f.name !== '.gitkeep').length})
             </span>
-            <div className="flex-1 overflow-y-auto flex flex-col gap-1 pr-1">
+            <div className="flex flex-col gap-1 pr-1">
               {isLoadingTree ? (
                 <div className="flex gap-2 items-center justify-center p-6 text-muted-foreground text-xs">
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />

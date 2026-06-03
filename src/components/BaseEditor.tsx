@@ -930,7 +930,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
         className={cn(
           "w-auto sm:w-72 bg-[#18181f] border border-border/60 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 z-30 duration-100 text-foreground text-left normal-case font-normal",
           position === 'header' 
-            ? "fixed top-16 left-4 right-4 sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-72 sm:mt-2 animate-in fade-in slide-in-from-top-2" 
+            ? "fixed top-32 left-4 right-4 sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-72 sm:mt-2 animate-in fade-in slide-in-from-top-2" 
             : "fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-4 right-4 sm:fixed sm:bottom-20 sm:right-6 sm:left-auto sm:mb-0 animate-in fade-in slide-in-from-bottom-2"
         )}
       >
