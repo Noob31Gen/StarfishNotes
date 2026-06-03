@@ -127,6 +127,7 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
     const isCanvas = node.path.endsWith('.canvas');
     return (
       <div
+        title={node.name}
         className={cn(
           "group flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-xs font-medium border border-transparent transition-all duration-150 hover:bg-white/[0.04] hover:text-foreground relative",
           isActive
@@ -278,6 +279,7 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
         )}
       >
         <div
+          title={node.name}
           className="flex items-center gap-1.5 cursor-pointer flex-1 min-w-0"
           onClick={() => toggleFolder(node.path)}
         >
@@ -649,6 +651,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     return (
                       <div
                         key={file.path}
+                        title={file.name}
                         className={cn(
                           "group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-medium border border-transparent transition-all duration-200 hover:bg-border/40 hover:text-foreground relative",
                           isActive

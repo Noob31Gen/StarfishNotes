@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings, Download, Paperclip } from 'lucide-react';
 import JSZip from 'jszip';
 import {
@@ -341,10 +341,12 @@ export default function App() {
         else if (ext === '.svg') mime = 'image/svg+xml';
         else if (ext === '.pdf') mime = 'application/pdf';
 
-        const dataUrl = `data:${mime};base64,${base64}`;
+        const fileUrl = ext === '.pdf'
+          ? URL.createObjectURL(base64ToBlob(base64, mime))
+          : `data:${mime};base64,${base64}`;
         setVaultImages(prev => ({
           ...prev,
-          [path]: dataUrl
+          [path]: fileUrl
         }));
       }
     } catch (e) {
@@ -792,10 +794,12 @@ export default function App() {
       else if (ext === '.svg') mime = 'image/svg+xml';
       else if (ext === '.pdf') mime = 'application/pdf';
 
-      const dataUrl = `data:${mime};base64,${base64}`;
+      const fileUrl = ext === '.pdf'
+        ? URL.createObjectURL(base64ToBlob(base64, mime))
+        : `data:${mime};base64,${base64}`;
       setVaultImages(prev => ({
         ...prev,
-        [path]: dataUrl
+        [path]: fileUrl
       }));
     } catch (e) {
       console.error('Failed to load binary file:', e);
@@ -991,6 +995,14 @@ export default function App() {
   };
 
   // 1. Session Restoration on Mount
+  const autoConnectRef = useRef(autoConnect);
+  const refreshFilesOfflineRef = useRef(refreshFilesOffline);
+
+  useEffect(() => {
+    autoConnectRef.current = autoConnect;
+    refreshFilesOfflineRef.current = refreshFilesOffline;
+  }, [autoConnect, refreshFilesOffline]);
+
   useEffect(() => {
     const checkSession = async () => {
       const offlineFlag = localStorage.getItem('starfishnotes-is-offline') === 'true';
@@ -1008,7 +1020,7 @@ export default function App() {
         } else {
           setIsAuthenticated(true);
           setTimeout(() => {
-            refreshFilesOffline();
+            refreshFilesOfflineRef.current();
           }, 0);
         }
         return;
@@ -1030,7 +1042,7 @@ export default function App() {
         setGithubToken(token);
         setIsAuthenticated(true);
         // Direct auto-connect since token is readily decrypted in session memory
-        autoConnect(token, cachedRepo, cachedBranch);
+        autoConnectRef.current(token, cachedRepo, cachedBranch);
       } else if (mode === 'encrypted' && localStorage.getItem(STORAGE_KEYS.ENCRYPTED_PAT)) {
         // Encrypted token exists in localStorage, but decryption key is missing in sessionStorage
         // Prompt user to enter passphrase to unlock the app!
@@ -1042,7 +1054,7 @@ export default function App() {
       }
     };
     checkSession();
-  }, [autoConnect, refreshFilesOffline]);
+  }, [autoConnectRef, refreshFilesOfflineRef]);
 
   // autoConnect function declaration migrated to stable top position
 
