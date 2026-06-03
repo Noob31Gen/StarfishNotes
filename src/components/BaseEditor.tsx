@@ -343,18 +343,44 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     return folder.endsWith('/') ? folder : `${folder}/`;
   }, [folder]);
 
+  // Track in-flight and completed preloads to prevent duplicate requests
+  const preloadedRef = useRef<Set<string>>(new Set());
+
   // Preload file contents for all notes in the database's source folder
   useEffect(() => {
-    files.forEach(f => {
-      if (f.path.endsWith('.md')) {
-        const isMatched = folderPrefix ? f.path.startsWith(folderPrefix) : true;
-        if (isMatched && fileContents[f.path] === undefined) {
-          onLoadFileContent(f.path, f.sha || '').catch(err => {
-            console.error('Failed to preload note content:', f.path, err);
-          });
-        }
-      }
+    // Collect all matched files that need loading and aren't already loading
+    const matchedFiles = files.filter(f => {
+      if (!f.path.endsWith('.md')) return false;
+      const isMatched = folderPrefix ? f.path.startsWith(folderPrefix) : true;
+      return isMatched && fileContents[f.path] === undefined && !preloadedRef.current.has(f.path);
     });
+
+    if (matchedFiles.length === 0) return;
+
+    // Add them to the in-flight ref first to avoid triggering duplicate fetches on sub-renders
+    matchedFiles.forEach(f => {
+      preloadedRef.current.add(f.path);
+    });
+
+    // Process queue with a maximum concurrency limit of 5 concurrent fetches
+    let nextIdx = 0;
+    const next = () => {
+      if (nextIdx >= matchedFiles.length) return;
+      const file = matchedFiles[nextIdx++];
+      onLoadFileContent(file.path, file.sha || '')
+        .catch(err => {
+          console.error('Failed to preload note content:', file.path, err);
+          preloadedRef.current.delete(file.path); // Allow retry on failure
+        })
+        .finally(() => {
+          next();
+        });
+    };
+
+    // Kick off up to 5 concurrent requests
+    for (let i = 0; i < Math.min(5, matchedFiles.length); i++) {
+      next();
+    }
   }, [folderPrefix, files, fileContents, onLoadFileContent]);
 
   // Extract all rows (notes) and their properties
@@ -732,29 +758,49 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   };
 
   return (
-    <div className="flex-1 w-full h-full flex flex-col bg-background overflow-hidden relative select-text text-foreground animate-fade-in">
+    <div className="flex-1 w-full h-full flex flex-col bg-background overflow-hidden relative select-text text-foreground animate-fade-in animate-duration-200">
       {/* 1. Header Toolbar */}
-      <header className="h-14 bg-card border-b border-border flex items-center justify-between px-6 shrink-0 z-10 select-none">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/25">
+      <header className="h-14 bg-card border-b border-border flex items-center justify-between px-4 sm:px-6 shrink-0 z-10 select-none gap-4">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/25 shrink-0">
             <Database size={15} />
           </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-foreground">
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-bold text-foreground truncate">
               {filePath.split('/').pop()}
             </span>
-            <span className="text-[0.6rem] text-muted-foreground font-semibold">
+            <span className="text-[0.6rem] text-muted-foreground font-semibold truncate">
               Obsidian Base View ({filteredAndSortedRows.length} rows matched)
             </span>
           </div>
         </div>
 
-        {/* Action Toggle controls */}
-        <div className="flex items-center gap-2">
+        {/* Center/Right controls: Folder input & Save status */}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Source Folder edit form */}
+          <form onSubmit={handleUpdateSourceFolder} className="flex items-center gap-1.5">
+            <Folders size={12} className="text-primary shrink-0" />
+            <input
+              type="text"
+              value={sourceFolderVal}
+              onChange={(e) => setSourceFolderVal(e.target.value)}
+              placeholder="Source folder..."
+              className="h-7.5 bg-muted/50 border border-border text-foreground px-2.5 rounded-xl text-[0.72rem] focus:outline-none focus:border-primary transition-all w-24 sm:w-36 font-semibold"
+            />
+            {sourceFolderVal !== folder && (
+              <button
+                type="submit"
+                className="h-7.5 px-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[0.65rem] font-bold rounded-xl cursor-pointer transition-all shrink-0"
+              >
+                Update
+              </button>
+            )}
+          </form>
+
           {/* Save Status indicators */}
           {saveStatus !== 'idle' && (
             <div className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[0.65rem] font-bold border",
+              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[0.65rem] font-bold border shrink-0",
               saveStatus === 'saving' && "bg-primary/10 border-primary/20 text-primary animate-pulse-soft",
               saveStatus === 'saved' && "bg-accent/10 border-accent/20 text-accent",
               saveStatus === 'error' && "bg-destructive/10 border-destructive/20 text-destructive"
@@ -766,39 +812,11 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
               ) : (
                 <X size={10} />
               )}
-              <span>
+              <span className="hidden sm:inline">
                 {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : errorMessage || 'Error'}
               </span>
             </div>
           )}
-
-          {/* Table vs Code view toggle */}
-          <div className="flex items-center bg-muted/40 p-1 rounded-xl border border-border">
-            <button
-              onClick={() => setViewMode('table')}
-              className={cn(
-                "h-7 px-3 rounded-lg text-[0.68rem] font-bold flex items-center gap-1.5 transition-all cursor-pointer",
-                viewMode === 'table'
-                  ? "bg-card text-foreground shadow-xs border border-border/80"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Eye size={12} />
-              <span>Table View</span>
-            </button>
-            <button
-              onClick={() => setViewMode('yaml')}
-              className={cn(
-                "h-7 px-3 rounded-lg text-[0.68rem] font-bold flex items-center gap-1.5 transition-all cursor-pointer",
-                viewMode === 'yaml'
-                  ? "bg-card text-foreground shadow-xs border border-border/80"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Code size={12} />
-              <span>Source (YAML)</span>
-            </button>
-          </div>
         </div>
       </header>
 
@@ -831,241 +849,12 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
           /* Visual Table Database View */
           <div className="w-full h-full flex flex-col overflow-hidden bg-background">
             
-            {/* View Sub-header: Folder configuration & Filters panel */}
-            <div className="p-4 bg-card/30 border-b border-border/50 flex flex-wrap items-center justify-between gap-3 shrink-0 select-none">
-              <div className="flex items-center gap-4 flex-wrap">
-                {/* Source Folder edit form */}
-                <form onSubmit={handleUpdateSourceFolder} className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5 text-[0.7rem] font-bold text-muted-foreground uppercase tracking-wider">
-                    <Folders size={13} className="text-primary" />
-                    <span>Source Folder:</span>
-                  </div>
-                  <input
-                    type="text"
-                    value={sourceFolderVal}
-                    onChange={(e) => setSourceFolderVal(e.target.value)}
-                    placeholder="e.g. Projects"
-                    className="h-8 bg-muted/50 border border-border text-foreground px-3 rounded-xl text-xs focus:outline-none focus:border-primary transition-all w-40"
-                  />
-                  {sourceFolderVal !== folder && (
-                    <button
-                      type="submit"
-                      className="h-8 px-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[0.65rem] font-bold rounded-xl cursor-pointer transition-all"
-                    >
-                      Update
-                    </button>
-                  )}
-                </form>
-
-                {/* Filters control button */}
-                <div className="relative">
-                  <button
-                    ref={filterButtonRef}
-                    onClick={() => setIsAddingFilter(!isAddingFilter)}
-                    className="h-8 px-3 rounded-xl border border-border bg-muted/30 text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <Filter size={12} className="text-primary" />
-                    <span>Add Filter</span>
-                  </button>
-
-                  {isAddingFilter && (
-                    <div 
-                      ref={filterDropdownRef}
-                      className="absolute top-full left-0 mt-2 w-72 bg-[#12131a] border border-border rounded-xl shadow-2xl p-4 flex flex-col gap-3 z-30 animate-in fade-in zoom-in-95 duration-100"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-foreground">Create Filter</span>
-                        <button onClick={() => setIsAddingFilter(false)} className="text-muted-foreground hover:text-foreground" type="button">✕</button>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Property</label>
-                        <select
-                          value={filterProp}
-                          onChange={(e) => setFilterProp(e.target.value)}
-                          className="w-full bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none"
-                        >
-                          {availableProperties.map(p => (
-                            <option key={p} value={p}>{p}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Operator</label>
-                        <select
-                          value={filterOp}
-                          onChange={(e) => setFilterOp(e.target.value)}
-                          className="w-full bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none"
-                        >
-                          <option value="contains">contains</option>
-                          <option value="equals">equals</option>
-                          <option value="not_equals">does not equal</option>
-                          <option value="is_empty">is empty</option>
-                          <option value="is_not_empty">is not empty</option>
-                        </select>
-                      </div>
-
-                      {filterOp !== 'is_empty' && filterOp !== 'is_not_empty' && (
-                        <div className="flex flex-col gap-2">
-                          <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Value</label>
-                          <input
-                            type="text"
-                            value={filterVal}
-                            onChange={(e) => setFilterVal(e.target.value)}
-                            placeholder="Value..."
-                            className="w-full bg-muted border border-border rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none"
-                          />
-                        </div>
-                      )}
-
-                      <button
-                        onClick={handleAddFilter}
-                        type="button"
-                        className="w-full h-8 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg mt-1 cursor-pointer transition-all"
-                      >
-                        Apply Filter
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Properties control button */}
-                <div className="relative">
-                  <button
-                    ref={propertiesButtonRef}
-                    onClick={() => setIsPropertiesDropdownOpen(!isPropertiesDropdownOpen)}
-                    className="h-8 px-3 rounded-xl border border-border bg-muted/30 text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <SlidersHorizontal size={12} className="text-primary" />
-                    <span>Properties</span>
-                  </button>
-
-                  {isPropertiesDropdownOpen && (
-                    <div 
-                      ref={propertiesDropdownRef}
-                      className="absolute top-full left-0 mt-2 w-72 bg-[#18181f] border border-border/60 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 z-30 animate-in fade-in zoom-in-95 duration-100 text-foreground"
-                    >
-                      {/* Search Bar */}
-                      <div className="relative flex items-center">
-                        <Search size={12} className="absolute left-3 text-muted-foreground" />
-                        <input
-                          type="text"
-                          value={propertySearchQuery}
-                          onChange={(e) => setPropertySearchQuery(e.target.value)}
-                          placeholder="Find or create..."
-                          className="w-full bg-[#0e0f14] border border-border/80 text-foreground pl-8 pr-3 py-1.5 rounded-xl text-[0.72rem] focus:outline-none focus:border-indigo-500 transition-all font-medium"
-                          autoFocus
-                        />
-                      </div>
-
-                      {/* Create Option */}
-                      {showCreateOption && (
-                        <button
-                          onClick={() => handleCreateCustomProperty(propertySearchQuery)}
-                          className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.04] text-xs font-bold text-accent transition-colors flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Plus size={12} />
-                          <span>Create "{propertySearchQuery.trim()}"</span>
-                        </button>
-                      )}
-
-                      {/* Properties List */}
-                      <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto pr-0.5">
-                        {filteredDropdownProperties.map((prop) => {
-                          return (
-                            <div
-                              key={prop.key}
-                              onClick={() => toggleColumnVisibility(prop.key)}
-                              className="group px-2 py-1.5 hover:bg-white/[0.04] rounded-xl flex items-center justify-between cursor-pointer transition-colors"
-                            >
-                              <div className="flex items-center gap-2.5">
-                                {/* Checkbox */}
-                                <div className={cn(
-                                  "w-4 h-4 rounded-md border flex items-center justify-center transition-all shrink-0",
-                                  prop.checked 
-                                    ? "bg-indigo-600 border-indigo-600 text-white" 
-                                    : "border-border group-hover:border-muted-foreground/60"
-                                )}>
-                                  {prop.checked && <Check size={11} className="stroke-[3]" />}
-                                </div>
-
-                                {/* Property Type Icon */}
-                                <div className="text-muted-foreground/75">
-                                  {prop.icon === 'info' && <Info size={13} />}
-                                  {prop.icon === 'calendar' && <Calendar size={13} />}
-                                  {prop.icon === 'tag' && <Tag size={13} />}
-                                  {prop.icon === 'text' && <AlignLeft size={13} />}
-                                </div>
-
-                                {/* Property Label */}
-                                <span className="text-[0.72rem] font-semibold text-foreground/90 select-none">
-                                  {prop.label}
-                                </span>
-                              </div>
-
-                              {/* Right arrow */}
-                              <span className="text-muted-foreground/35 group-hover:text-muted-foreground/60 transition-colors text-[0.65rem] font-bold pr-1 select-none">
-                                ❯
-                              </span>
-                            </div>
-                          );
-                        })}
-                        {filteredDropdownProperties.length === 0 && !showCreateOption && (
-                          <span className="text-center py-4 text-[0.68rem] text-muted-foreground italic select-none">
-                            No properties found
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Divider */}
-                      <div className="h-px bg-border/60 my-0.5" />
-
-                      {/* Bottom Options */}
-                      <div className="flex flex-col gap-1">
-                        <button
-                          onClick={handleAddFormulaColumn}
-                          className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.04] text-[0.72rem] font-bold text-foreground/90 transition-colors flex items-center gap-2.5 cursor-pointer"
-                        >
-                          <div className="w-5 h-5 rounded-md bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/25 shrink-0 text-[0.65rem] font-mono font-bold">
-                            f
-                          </div>
-                          <span>Add formula</span>
-                        </button>
-                        
-                        <button
-                          onClick={handleHideAllColumns}
-                          className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.04] text-[0.72rem] font-bold text-foreground/90 transition-colors flex items-center gap-2.5 cursor-pointer"
-                        >
-                          <div className="w-5 h-5 rounded-md bg-muted text-muted-foreground flex items-center justify-center shrink-0">
-                            <EyeOff size={11} />
-                          </div>
-                          <span>Hide all</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* View actions: Add row / new note */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowAddRowModal(true)}
-                  className="h-8 px-4 bg-gradient-to-r from-primary to-accent hover:from-primary/95 hover:to-accent/95 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-md shadow-primary/10"
-                >
-                  <PlusCircle size={13} />
-                  <span>Add Row (New Note)</span>
-                </button>
-              </div>
-            </div>
-
             {/* Displaying active filter badges */}
             {(activeView.filters || []).length > 0 && (
-              <div className="px-4 py-2 border-b border-border/40 bg-card/10 flex flex-wrap gap-1.5 items-center select-none">
+              <div className="px-6 py-2 border-b border-border/40 bg-card/10 flex flex-wrap gap-1.5 items-center select-none shrink-0">
                 <span className="text-[0.6rem] font-bold text-muted-foreground uppercase tracking-widest mr-1">Active Filters:</span>
                 {(activeView.filters || []).map((f, idx) => (
-                  <div key={idx} className="flex items-center gap-1 bg-white/[0.04] border border-border px-2.5 py-0.5 rounded-full text-[0.68rem] text-muted-foreground">
+                  <div key={idx} className="flex items-center gap-1 bg-white/[0.04] border border-border px-2.5 py-0.5 rounded-full text-[0.68rem] text-muted-foreground animate-fade-in">
                     <span className="font-semibold text-primary">{f.property}</span>
                     <span>{f.operator}</span>
                     {f.operator !== 'is_empty' && f.operator !== 'is_not_empty' && (
@@ -1260,6 +1049,246 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
           </div>
         )}
+      </div>
+
+      {/* Floating Panel Controls */}
+      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 sm:bottom-6 sm:right-6 flex items-center gap-1.5 z-50 bg-card/65 backdrop-blur-xl border border-border px-3 py-2 rounded-full shadow-2xl animate-fade-in select-none max-w-[calc(100%-2rem)] overflow-x-auto flex-nowrap no-scrollbar">
+        {viewMode === 'table' && (
+          <>
+            <button
+              onClick={() => setShowAddRowModal(true)}
+              className="h-8 px-3 rounded-full bg-gradient-to-r from-primary to-accent hover:from-primary/95 hover:to-accent/95 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all shadow-md shadow-primary/10 shrink-0"
+              title="Add Row (New Note)"
+            >
+              <PlusCircle size={14.5} />
+              <span className="hidden sm:inline">Add Row</span>
+            </button>
+
+            <div className="w-[1px] h-6 bg-border mx-1 shrink-0" />
+
+            {/* Filters control button */}
+            <div className="relative">
+              <button
+                ref={filterButtonRef}
+                onClick={() => setIsAddingFilter(!isAddingFilter)}
+                className={cn(
+                  "w-8 h-8 sm:w-auto sm:px-3 rounded-full flex items-center justify-center gap-1.5 text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer shrink-0",
+                  isAddingFilter && "bg-primary/10 text-accent border border-primary/20"
+                )}
+                title="Filters"
+              >
+                <Filter size={14.5} className="text-primary" />
+                <span className="hidden sm:inline text-xs font-semibold">Filter</span>
+              </button>
+
+              {isAddingFilter && (
+                <div 
+                  ref={filterDropdownRef}
+                  className="absolute bottom-full right-0 mb-2 w-72 bg-[#12131a] border border-border rounded-xl shadow-2xl p-4 flex flex-col gap-3 z-30 animate-in fade-in slide-in-from-bottom-2 duration-100"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-foreground">Create Filter</span>
+                    <button onClick={() => setIsAddingFilter(false)} className="text-muted-foreground hover:text-foreground" type="button">✕</button>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Property</label>
+                    <select
+                      value={filterProp}
+                      onChange={(e) => setFilterProp(e.target.value)}
+                      className="w-full bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none"
+                    >
+                      {availableProperties.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Operator</label>
+                    <select
+                      value={filterOp}
+                      onChange={(e) => setFilterOp(e.target.value)}
+                      className="w-full bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none"
+                    >
+                      <option value="contains">contains</option>
+                      <option value="equals">equals</option>
+                      <option value="not_equals">does not equal</option>
+                      <option value="is_empty">is empty</option>
+                      <option value="is_not_empty">is not empty</option>
+                    </select>
+                  </div>
+
+                  {filterOp !== 'is_empty' && filterOp !== 'is_not_empty' && (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Value</label>
+                      <input
+                        type="text"
+                        value={filterVal}
+                        onChange={(e) => setFilterVal(e.target.value)}
+                        placeholder="Value..."
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none"
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleAddFilter}
+                    type="button"
+                    className="w-full h-8 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg mt-1 cursor-pointer transition-all"
+                  >
+                    Apply Filter
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Properties control button */}
+            <div className="relative">
+              <button
+                ref={propertiesButtonRef}
+                onClick={() => setIsPropertiesDropdownOpen(!isPropertiesDropdownOpen)}
+                className={cn(
+                  "w-8 h-8 sm:w-auto sm:px-3 rounded-full flex items-center justify-center gap-1.5 text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer shrink-0",
+                  isPropertiesDropdownOpen && "bg-primary/10 text-accent border border-primary/20"
+                )}
+                title="Properties"
+              >
+                <SlidersHorizontal size={14.5} className="text-primary" />
+                <span className="hidden sm:inline text-xs font-semibold">Properties</span>
+              </button>
+
+              {isPropertiesDropdownOpen && (
+                <div 
+                  ref={propertiesDropdownRef}
+                  className="absolute bottom-full right-0 mb-2 w-72 bg-[#18181f] border border-border/60 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 z-30 animate-in fade-in slide-in-from-bottom-2 duration-100 text-foreground"
+                >
+                  {/* Search Bar */}
+                  <div className="relative flex items-center">
+                    <Search size={12} className="absolute left-3 text-muted-foreground" />
+                    <input
+                      type="text"
+                      value={propertySearchQuery}
+                      onChange={(e) => setPropertySearchQuery(e.target.value)}
+                      placeholder="Find or create..."
+                      className="w-full bg-[#0e0f14] border border-border/80 text-foreground pl-8 pr-3 py-1.5 rounded-xl text-[0.72rem] focus:outline-none focus:border-indigo-500 transition-all font-medium"
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Create Option */}
+                  {showCreateOption && (
+                    <button
+                      onClick={() => handleCreateCustomProperty(propertySearchQuery)}
+                      className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.04] text-xs font-bold text-accent transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus size={12} />
+                      <span>Create "{propertySearchQuery.trim()}"</span>
+                    </button>
+                  )}
+
+                  {/* Properties List */}
+                  <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto pr-0.5">
+                    {filteredDropdownProperties.map((prop) => {
+                      return (
+                        <div
+                          key={prop.key}
+                          onClick={() => toggleColumnVisibility(prop.key)}
+                          className="group px-2 py-1.5 hover:bg-white/[0.04] rounded-xl flex items-center justify-between cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            {/* Checkbox */}
+                            <div className={cn(
+                              "w-4 h-4 rounded-md border flex items-center justify-center transition-all shrink-0",
+                              prop.checked 
+                                ? "bg-indigo-600 border-indigo-600 text-white" 
+                                : "border-border group-hover:border-muted-foreground/60"
+                            )}>
+                              {prop.checked && <Check size={11} className="stroke-[3]" />}
+                            </div>
+
+                            {/* Property Type Icon */}
+                            <div className="text-muted-foreground/75">
+                              {prop.icon === 'info' && <Info size={13} />}
+                              {prop.icon === 'calendar' && <Calendar size={13} />}
+                              {prop.icon === 'tag' && <Tag size={13} />}
+                              {prop.icon === 'text' && <AlignLeft size={13} />}
+                            </div>
+
+                            {/* Property Label */}
+                            <span className="text-[0.72rem] font-semibold text-foreground/90 select-none">
+                              {prop.label}
+                            </span>
+                          </div>
+
+                          {/* Right arrow */}
+                          <span className="text-muted-foreground/35 group-hover:text-muted-foreground/60 transition-colors text-[0.65rem] font-bold pr-1 select-none">
+                            ❯
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {filteredDropdownProperties.length === 0 && !showCreateOption && (
+                      <span className="text-center py-4 text-[0.68rem] text-muted-foreground italic select-none">
+                        No properties found
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Divider */}
+                  <div className="h-px bg-border/60 my-0.5" />
+
+                  {/* Bottom Options */}
+                  <div className="flex flex-col gap-1">
+                    <button
+                      onClick={handleAddFormulaColumn}
+                      className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.04] text-[0.72rem] font-bold text-foreground/90 transition-colors flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <div className="w-5 h-5 rounded-md bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/25 shrink-0 text-[0.65rem] font-mono font-bold">
+                        f
+                      </div>
+                      <span>Add formula</span>
+                    </button>
+                    
+                    <button
+                      onClick={handleHideAllColumns}
+                      className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.04] text-[0.72rem] font-bold text-foreground/90 transition-colors flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <div className="w-5 h-5 rounded-md bg-muted text-muted-foreground flex items-center justify-center shrink-0">
+                        <EyeOff size={11} />
+                      </div>
+                      <span>Hide all</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="w-[1px] h-6 bg-border mx-1 shrink-0" />
+          </>
+        )}
+
+        {/* View Mode Toggle Buttons */}
+        <button
+          onClick={() => setViewMode('table')}
+          className={cn(
+            "w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer shrink-0",
+            viewMode === 'table' && "bg-primary/10 text-accent border border-primary/20"
+          )}
+          title="Table View"
+        >
+          <Eye size={14.5} />
+        </button>
+        <button
+          onClick={() => setViewMode('yaml')}
+          className={cn(
+            "w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer shrink-0",
+            viewMode === 'yaml' && "bg-primary/10 text-accent border border-primary/20"
+          )}
+          title="Source (YAML)"
+        >
+          <Code size={14.5} />
+        </button>
       </div>
 
       {/* Row Creation Modal popup */}
