@@ -248,7 +248,6 @@ export async function fetchRepositoryTree(
       if (lowerPath.includes('.obsidian/') || lowerPath.startsWith('.obsidian/')) return false;
       if (lowerPath.includes('.gitignore') || lowerPath.startsWith('.gitignore')) return false;
       if (lowerPath.includes('.vault-compat.json') || lowerPath.startsWith('.vault-compat.json')) return false;
-      if (lowerPath.includes('.gitkeep') || lowerPath.startsWith('.gitkeep')) return false;
       return true;
     })
     .map((node) => ({
