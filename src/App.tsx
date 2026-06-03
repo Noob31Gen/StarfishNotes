@@ -25,7 +25,7 @@ import { InitVaultScreen } from './components/InitVaultScreen';
 import { Sidebar } from './components/Sidebar';
 import { cn } from './utils/cn';
 import { resolveVaultFilePath } from './utils/pathResolver';
-import { getLocalFile, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase } from './services/storage';
+import { getLocalFile, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase, clearAllLocalFiles, clearStorageCrypto } from './services/storage';
 
 // Initialize offline storage crypto callbacks to avoid circular dependencies
 offlineStorage.initCrypto(encryptToken, decryptToken);
@@ -764,6 +764,9 @@ export default function App() {
 
       localStorage.setItem('starfishnotes-is-offline', 'true');
       localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, storageMode);
+      if (storageMode === 'session') {
+        sessionStorage.setItem('starfishnotes_session_active', 'true');
+      }
       setMasterPassphrase(activeKey);
       offlineStorage.setPassphrase(activeKey);
       setStoragePassphrase(activeKey);
@@ -1224,6 +1227,52 @@ export default function App() {
       const mode = (localStorage.getItem(STORAGE_KEYS.STORAGE_MODE) || 'memory') as StorageMode;
       setStorageMode(mode);
 
+      // 1. If mode is memory, we never restore session on mount (volatile React state lost on F5/close).
+      // Purge all credentials, local files, and offline vault to guarantee a clean state.
+      if (mode === 'memory') {
+        purgeCredentials();
+        localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, 'memory');
+        clearStorageCrypto();
+        clearStoragePassphrase();
+        try {
+          await clearAllLocalFiles();
+          await offlineStorage.purgeVault();
+        } catch (e) {
+          console.error('Failed to purge memory-mode storage on mount:', e);
+        }
+        setIsOffline(false);
+        setAuthMode('github');
+        setIsAuthenticated(false);
+        return;
+      }
+
+      // 2. If mode is session:
+      if (mode === 'session') {
+        const isSessionActive = offlineFlag
+          ? sessionStorage.getItem('starfishnotes_session_active') === 'true'
+          : !!sessionStorage.getItem(STORAGE_KEYS.PLAINTEXT_PAT);
+
+        if (!isSessionActive) {
+          // No active session in sessionStorage -> tab was closed or new session.
+          // Purge everything to guarantee confidentiality.
+          purgeCredentials();
+          localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, 'session');
+          clearStorageCrypto();
+          clearStoragePassphrase();
+          try {
+            await clearAllLocalFiles();
+            await offlineStorage.purgeVault();
+          } catch (e) {
+            console.error('Failed to purge session-mode storage on mount:', e);
+          }
+          setIsOffline(false);
+          setAuthMode('github');
+          setIsAuthenticated(false);
+          return;
+        }
+      }
+
+      // 3. Normal session restoration for plain, encrypted, keychain, or active session
       if (offlineFlag) {
         setIsOffline(true);
         setAuthMode('local');
@@ -1254,40 +1303,72 @@ export default function App() {
       const cachedRepo = localStorage.getItem(STORAGE_KEYS.REPO_NAME) || '';
       const cachedBranch = localStorage.getItem(STORAGE_KEYS.BRANCH_NAME) || 'main';
 
-      setStorageMode(mode);
-
       if (cachedRepo) {
         setRepoName(cachedRepo);
         setBranchName(cachedBranch);
       }
 
-      // Check if sessionStorage contains a cached decrypted token (surviving page reload F5!)
-      const token = await retrieveTokenSecurely(undefined, false);
-      if (token) {
-        if (mode === 'plain') {
-          try {
-            const activeKey = await getOrCreateSystemVaultPassphrase();
-            setMasterPassphrase(activeKey);
-          } catch (e) {
-            console.error('Failed to load system key on session restore:', e);
+      try {
+        const token = await retrieveTokenSecurely(undefined, false);
+        if (token) {
+          if (mode === 'plain') {
+            try {
+              const activeKey = await getOrCreateSystemVaultPassphrase();
+              setMasterPassphrase(activeKey);
+            } catch (e) {
+              console.error('Failed to load system key on session restore:', e);
+            }
           }
+          setGithubToken(token);
+          setIsAuthenticated(true);
+          // Direct auto-connect since token is readily decrypted in session memory
+          autoConnectRef.current(token, cachedRepo, cachedBranch);
+        } else if (mode === 'encrypted' && localStorage.getItem(STORAGE_KEYS.ENCRYPTED_PAT)) {
+          // Encrypted token exists in localStorage, but decryption key is missing in sessionStorage
+          // Prompt user to enter passphrase to unlock the app!
+          setShowLockScreen(true);
+        } else if (mode === 'keychain') {
+          // Native keychain mode stored, but silent retrieval failed on page load.
+          // Show Lock Screen to prompt user interaction under user gesture!
+          setShowLockScreen(true);
         }
-        setGithubToken(token);
-        setIsAuthenticated(true);
-        // Direct auto-connect since token is readily decrypted in session memory
-        autoConnectRef.current(token, cachedRepo, cachedBranch);
-      } else if (mode === 'encrypted' && localStorage.getItem(STORAGE_KEYS.ENCRYPTED_PAT)) {
-        // Encrypted token exists in localStorage, but decryption key is missing in sessionStorage
-        // Prompt user to enter passphrase to unlock the app!
-        setShowLockScreen(true);
-      } else if (mode === 'keychain') {
-        // Native keychain mode stored, but silent retrieval failed on page load.
-        // Show Lock Screen to prompt user interaction under user gesture!
-        setShowLockScreen(true);
+      } catch (e) {
+        // Stale/corrupted data caused a decryption error — auto-purge everything
+        // so the user gets a clean auth screen instead of a broken state.
+        console.error('Session restore failed due to stale data, auto-purging:', e);
+        purgeCredentials();
+        clearStorageCrypto();
+        clearStoragePassphrase();
+        clearAllLocalFiles().catch(err => console.error('Failed to clear stale file cache:', err));
+        offlineStorage.purgeVault().catch(err => console.error('Failed to purge stale vault:', err));
       }
     };
     checkSession();
   }, [autoConnectRef, refreshFilesOfflineRef]);
+
+  // Cleanup handler: purge volatile caches when tab is closed or navigated away
+  useEffect(() => {
+    const handlePageHide = () => {
+      const mode = (localStorage.getItem(STORAGE_KEYS.STORAGE_MODE) || 'memory') as StorageMode;
+
+      if (mode === 'memory') {
+        // Memory mode promises "wiped on F5" — purge everything on page hide
+        purgeCredentials();
+        // Note: async operations in pagehide are best-effort (browser may not wait)
+        // but idb-keyval clear() and purgeVault() use microtask-based promises
+        // that typically complete before the page is discarded.
+        clearAllLocalFiles().catch(() => {});
+        offlineStorage.purgeVault().catch(() => {});
+      } else if (mode === 'session') {
+        // Session mode: browser clears sessionStorage on tab close,
+        // but idb-keyval file cache persists — clean it up.
+        clearAllLocalFiles().catch(() => {});
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, []);
 
   // autoConnect function declaration migrated to stable top position
 
@@ -1423,11 +1504,19 @@ export default function App() {
     }
   };
 
-  // 4. Log out manager
+  // 4. Log out manager — comprehensive purge of ALL storage layers
   const handleLogout = () => {
+    // 1. Nuke all starfishnotes* keys from localStorage + sessionStorage
     purgeCredentials();
-    localStorage.removeItem('starfishnotes-is-offline');
+    // 2. Wipe IndexedDB offline vault (files + meta stores including system_cryptokey & vault_verification)
+    offlineStorage.purgeVault().catch(e => console.error('Failed to purge offline vault:', e));
     offlineStorage.clearPassphrase();
+    // 3. Wipe idb-keyval file cache (file_* and file_hash_* entries)
+    clearAllLocalFiles().catch(e => console.error('Failed to clear local file cache:', e));
+    // 4. Reset module-level crypto state to prevent stale handles
+    clearStorageCrypto();
+    clearStoragePassphrase();
+    // 5. Reset all React state
     setIsOffline(false);
     setAuthMode('github');
     setIsAuthenticated(false);

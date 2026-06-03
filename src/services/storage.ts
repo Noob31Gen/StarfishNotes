@@ -1,4 +1,4 @@
-import { get, set, keys, del } from 'idb-keyval';
+import { get, set, keys, del, clear } from 'idb-keyval';
 
 export interface LocalFile {
     content: string;
@@ -120,4 +120,22 @@ export async function getAllLocalFilePaths(): Promise<string[]> {
     }
 
     return paths;
+}
+
+/**
+ * Clears all cached files from the idb-keyval store.
+ * Wipes every file_* and file_hash_* entry in one shot.
+ */
+export async function clearAllLocalFiles(): Promise<void> {
+    await clear();
+}
+
+/**
+ * Resets module-level crypto state (encrypt/decrypt fns + passphrase).
+ * Call on logout to prevent stale crypto handles from lingering.
+ */
+export function clearStorageCrypto(): void {
+    encryptFn = null;
+    decryptFn = null;
+    passphrase = null;
 }

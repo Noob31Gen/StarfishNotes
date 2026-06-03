@@ -353,15 +353,29 @@ export async function retrieveTokenSecurely(passphrase?: string, interactive = f
 }
 
 /**
- * Completely purges all stored credentials (log out)
+ * Completely purges all stored credentials and app state (log out).
+ * Iterates by prefix to catch every starfishnotes* key — current and future.
  */
 export function purgeCredentials(): void {
-  localStorage.removeItem(STORAGE_KEYS.ENCRYPTED_PAT);
-  localStorage.removeItem(STORAGE_KEYS.PLAINTEXT_PAT);
-  localStorage.removeItem(STORAGE_KEYS.STORAGE_MODE);
-  localStorage.removeItem(STORAGE_KEYS.REPO_NAME);
-  localStorage.removeItem(STORAGE_KEYS.BRANCH_NAME);
-  sessionStorage.removeItem(STORAGE_KEYS.PLAINTEXT_PAT);
+  // Collect and remove ALL starfishnotes-prefixed keys from localStorage
+  const lsKeysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith('starfishnotes')) {
+      lsKeysToRemove.push(key);
+    }
+  }
+  lsKeysToRemove.forEach(key => localStorage.removeItem(key));
+
+  // Collect and remove ALL starfishnotes-prefixed keys from sessionStorage
+  const ssKeysToRemove: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const key = sessionStorage.key(i);
+    if (key && key.startsWith('starfishnotes')) {
+      ssKeysToRemove.push(key);
+    }
+  }
+  ssKeysToRemove.forEach(key => sessionStorage.removeItem(key));
 
   if ('PasswordCredential' in window && navigator.credentials.preventSilentAccess) {
     // Prevents automatic login in future until explicitly triggered
