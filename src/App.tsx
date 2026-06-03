@@ -606,7 +606,7 @@ export default function App() {
         }
 
         if (!seed) {
-          const hasVerification = await offlineStorage.getMeta('vault_verification');
+          const hasVerification = await offlineStorage.getMeta<string>('vault_verification');
           if (hasVerification) {
             const credential = await navigator.credentials.get({
               password: true,
@@ -635,7 +635,7 @@ export default function App() {
         activeKey = await getOrCreateSystemVaultPassphrase();
       }
 
-      const verification = await offlineStorage.getMeta('vault_verification');
+      const verification = await offlineStorage.getMeta<string>('vault_verification');
       if (verification) {
         if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
           try {
@@ -1287,7 +1287,7 @@ export default function App() {
           }
         }
 
-        const verification = await offlineStorage.getMeta('vault_verification');
+        const verification = await offlineStorage.getMeta<string>('vault_verification');
         if (verification) {
           try {
             const dec = await decryptToken(verification, activeKey);

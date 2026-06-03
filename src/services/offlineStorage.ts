@@ -271,8 +271,7 @@ class OfflineStorageService {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public async getMeta(key: string): Promise<any | null> {
+  public async getMeta<T = unknown>(key: string): Promise<T | null> {
     const db = await this.initDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction('meta', 'readonly');
@@ -280,7 +279,7 @@ class OfflineStorageService {
       const request = store.get(key);
 
       request.onsuccess = () => {
-        resolve(request.result ? request.result.value : null);
+        resolve(request.result ? (request.result.value as T) : null);
       };
 
       request.onerror = () => {
@@ -289,8 +288,7 @@ class OfflineStorageService {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public async saveMeta(key: string, value: any): Promise<void> {
+  public async saveMeta<T = unknown>(key: string, value: T): Promise<void> {
     const db = await this.initDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction('meta', 'readwrite');

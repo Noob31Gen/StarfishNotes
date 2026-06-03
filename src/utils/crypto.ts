@@ -37,9 +37,9 @@ function bufToStr(buf: ArrayBuffer): string {
  * Retrieve or generate a non-extractable 256-bit AES-GCM key stored in IndexedDB meta store
  */
 async function getOrCreateSystemKey(): Promise<CryptoKey> {
-  const existingKey = await offlineStorage.getMeta('system_cryptokey');
+  const existingKey = await offlineStorage.getMeta<CryptoKey>('system_cryptokey');
   if (existingKey) {
-    return existingKey as CryptoKey;
+    return existingKey;
   }
 
   const newKey = await window.crypto.subtle.generateKey(
