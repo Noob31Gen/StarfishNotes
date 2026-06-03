@@ -549,7 +549,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           "h-full bg-card border-r border-border flex flex-col z-[1000] fixed top-0 left-0 md:relative md:top-auto md:left-auto transition-transform md:translate-x-0",
           isMobileSidebarOpen ? "translate-x-0 w-full min-w-full md:w-[280px] md:min-w-[280px]" : "-translate-x-full md:translate-x-0",
           isSidebarCollapsed && "overflow-hidden border-r-0 md:w-0!",
-          !isResizingSidebar && "transition-all duration-300 ease-in-out"
+          !isResizingSidebar && "transition-transform md:transition-all duration-300 ease-in-out"
         )}
       >
         <div className="h-[60px] px-5 flex items-center justify-between border-b border-border select-none">

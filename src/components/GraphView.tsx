@@ -58,6 +58,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const dragStartScreenRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const mouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const hoverNodeRef = useRef<Node | null>(null);
+  const initialPinchDistance = useRef<number | null>(null);
+  const initialPinchZoom = useRef<number>(0.5);
 
   // Collapsible settings & physics filters states
   const [showCanvas, setShowCanvas] = useState(true);
@@ -741,6 +743,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
   };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 2) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      initialPinchDistance.current = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+      initialPinchZoom.current = zoomRef.current;
+      return;
+    }
+
     if (e.touches.length !== 1) return;
     const touch = e.touches[0];
     const { x, y } = screenToWorld(touch.clientX, touch.clientY);
@@ -766,6 +776,21 @@ export const GraphView: React.FC<GraphViewProps> = ({
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 2 && initialPinchDistance.current !== null) {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+      const scale = dist / initialPinchDistance.current;
+      let newZoom = initialPinchZoom.current * scale;
+      newZoom = Math.max(0.25, Math.min(newZoom, 2.5));
+      zoomRef.current = newZoom;
+      setZoom(newZoom);
+      return;
+    }
+
     if (e.touches.length !== 1) return;
     const touch = e.touches[0];
     const { x, y } = screenToWorld(touch.clientX, touch.clientY);
@@ -791,6 +816,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   };
 
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    initialPinchDistance.current = null;
     if (dragNodeRef.current) {
       const touch = e.changedTouches[0];
       if (touch) {
