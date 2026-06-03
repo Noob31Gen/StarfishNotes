@@ -133,11 +133,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
   }, [searchHighlight]);
 
   useEffect(() => {
+    // Filter out internal system files (.gitkeep and .vault-compat.json)
+    const graphFiles = files.filter(f => f.name !== '.gitkeep' && f.name !== '.vault-compat.json');
+
     // 1. Scan for Links & compile Ghost Notes
     const currentLinks: Link[] = [];
     const ghostNotesMap = new Map<string, { id: string; name: string }>();
 
-    files.forEach(file => {
+    graphFiles.forEach(file => {
       if (file.path.endsWith('.md')) {
         const content = fileContents[file.path] || '';
 
@@ -155,7 +158,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
 
           // Match against name OR full path
-          const targetFile = files.find(f => {
+          const targetFile = graphFiles.find(f => {
             const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
             const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
 
@@ -216,7 +219,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
           const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
 
-          const targetFile = files.find(f => {
+          const targetFile = graphFiles.find(f => {
             const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
             const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
 
@@ -270,7 +273,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
                 const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
 
-                const targetFile = files.find(f => {
+                const targetFile = graphFiles.find(f => {
                   const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
                   const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
                   return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget) || cleanName === targetFilename;
@@ -293,12 +296,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const cy = containerRef.current ? containerRef.current.clientHeight / 2 : window.innerHeight / 2;
 
     // 2. Build Base Nodes
-    const baseNodes: Node[] = files.map((file, idx) => {
+    const baseNodes: Node[] = graphFiles.map((file, idx) => {
       const isCanvas = file.path.endsWith('.canvas');
       const isBase = file.path.endsWith('.base');
       const isCurrentActive = file.path === activeFilePath;
       const existing = nodesRef.current.find(n => n.id === file.path);
-      const angle = (idx / files.length) * 2 * Math.PI;
+      const angle = graphFiles.length > 0 ? (idx / graphFiles.length) * 2 * Math.PI : 0;
       const radius = 220;
 
       return {

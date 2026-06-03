@@ -650,7 +650,11 @@ export default function App() {
     setIsLoadingFile(true);
     try {
       await offlineStorage.deleteFile(path);
-      setFiles(prev => prev.filter(f => f.path !== path));
+      const gitkeepFile = await ensureGitkeepForEmptyParent(path, files);
+      setFiles(prev => {
+        const filtered = prev.filter(f => f.path !== path);
+        return gitkeepFile ? [gitkeepFile, ...filtered] : filtered;
+      });
       setFileContents(prev => {
         const updated = { ...prev };
         delete updated[path];
@@ -1634,6 +1638,65 @@ export default function App() {
     }
   };
 
+  const ensureGitkeepForEmptyParent = async (deletedFilePath: string, currentFiles: VaultFile[]): Promise<VaultFile | null> => {
+    if (!deletedFilePath.includes('/')) return null;
+    const parentFolder = deletedFilePath.substring(0, deletedFilePath.lastIndexOf('/'));
+    const prefix = `${parentFolder}/`;
+    
+    // Check if there are any files remaining in this folder (excluding .gitkeep)
+    const remainingFiles = currentFiles.filter(f => 
+      f.path.startsWith(prefix) && 
+      f.path !== deletedFilePath &&
+      f.name !== '.gitkeep'
+    );
+
+    if (remainingFiles.length === 0) {
+      const gitkeepPath = `${prefix}.gitkeep`;
+      const hasGitkeep = currentFiles.some(f => f.path === gitkeepPath);
+      
+      if (!hasGitkeep) {
+        console.log(`Folder "${parentFolder}" became empty. Creating .gitkeep placeholder...`);
+        try {
+          if (isOffline) {
+            const sha = 'offline-sha-' + Date.now();
+            let content = '';
+            if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
+              if (masterPassphrase) {
+                content = await encryptToken('', masterPassphrase);
+              }
+            }
+            await offlineStorage.saveFile({
+              path: gitkeepPath,
+              name: '.gitkeep',
+              type: 'text',
+              content,
+              size: 0,
+              sha
+            });
+            return {
+              path: gitkeepPath,
+              name: '.gitkeep',
+              type: 'blob',
+              sha
+            };
+          } else {
+            const commitMessage = `create folder placeholder at "${gitkeepPath}" via StarfishNotes`;
+            const result = await commitFileContent(githubToken, repoName, branchName, gitkeepPath, "", null, commitMessage);
+            return {
+              path: gitkeepPath,
+              name: '.gitkeep',
+              type: 'blob',
+              sha: result.sha
+            };
+          }
+        } catch (e) {
+          console.error(`Failed to automatically create .gitkeep in ${parentFolder}:`, e);
+        }
+      }
+    }
+    return null;
+  };
+
   const handleConfirmDelete = async () => {
     if (isOffline) {
       await handleConfirmDeleteOffline();
@@ -1646,7 +1709,11 @@ export default function App() {
     try {
       await deleteFile(githubToken, repoName, branchName, path, sha);
 
-      setFiles(prev => prev.filter(f => f.path !== path));
+      const gitkeepFile = await ensureGitkeepForEmptyParent(path, files);
+      setFiles(prev => {
+        const filtered = prev.filter(f => f.path !== path);
+        return gitkeepFile ? [gitkeepFile, ...filtered] : filtered;
+      });
 
       // Clear contents cache
       setFileContents(prev => {
@@ -1937,6 +2004,13 @@ export default function App() {
         await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
       }
 
+      let gitkeepFile: VaultFile | null = null;
+      const oldFolder = oldPath.includes('/') ? oldPath.substring(0, oldPath.lastIndexOf('/')) : '';
+      const newFolder = newPath.includes('/') ? newPath.substring(0, newPath.lastIndexOf('/')) : '';
+      if (oldFolder !== newFolder) {
+        gitkeepFile = await ensureGitkeepForEmptyParent(oldPath, files);
+      }
+
       const newFile: VaultFile = {
         path: newPath,
         name: newPath.split('/').pop() || '',
@@ -1944,7 +2018,11 @@ export default function App() {
         sha
       };
 
-      setFiles(prev => [newFile, ...prev.filter(f => f.path !== oldPath)]);
+      setFiles(prev => {
+        const filtered = prev.filter(f => f.path !== oldPath);
+        const listWithNew = [newFile, ...filtered];
+        return gitkeepFile ? [gitkeepFile, ...listWithNew] : listWithNew;
+      });
       setFileContents(prev => {
         const updated = { ...prev };
         updated[newPath] = content;
