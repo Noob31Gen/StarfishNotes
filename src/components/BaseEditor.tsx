@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Database, Eye, Code, Plus, ArrowUpDown, 
@@ -8,6 +7,49 @@ import { parseYaml, stringifyYaml } from '../utils/yaml';
 import { parseFrontmatter, updateFrontmatter } from '../utils/frontmatter';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
+
+interface BaseSource {
+  folder: string;
+}
+
+interface BaseColumn {
+  property: string;
+  visible?: boolean;
+  width?: number;
+}
+
+interface BaseSort {
+  property: string;
+  direction: 'asc' | 'desc';
+}
+
+interface BaseFilter {
+  property: string;
+  operator: string;
+  value: string;
+}
+
+interface BaseView {
+  id: string;
+  name: string;
+  type: string;
+  columns?: BaseColumn[];
+  sort?: BaseSort[];
+  filters?: BaseFilter[];
+}
+
+interface BaseConfig {
+  version: number;
+  source: BaseSource;
+  views: BaseView[];
+}
+
+interface BaseRow {
+  path: string;
+  name: string;
+  sha: string | null;
+  properties: Record<string, unknown>;
+}
 
 interface BaseEditorProps {
   filePath: string;
@@ -41,44 +83,42 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
 
   // Parsed Config state
-  const [config, setConfig] = useState<any>(() => {
+  const [config, setConfig] = useState<BaseConfig>(() => {
+    let parsed: BaseConfig | null = null;
     try {
-      return parseYaml(initialContent) || { version: 1, source: { folder: '' }, views: [] };
+      parsed = parseYaml(initialContent) as BaseConfig;
     } catch (e) {
       console.error('Failed to parse base file config:', e);
-      return { version: 1, source: { folder: '' }, views: [] };
     }
-  });
-
-  // Ensure config has at least one table view
-  useEffect(() => {
-    if (!config.views || config.views.length === 0) {
-      const defaultView = {
+    if (!parsed || typeof parsed !== 'object') {
+      parsed = { version: 1, source: { folder: '' }, views: [] };
+    }
+    if (!parsed.views || parsed.views.length === 0) {
+      parsed.views = [{
         id: 'view_1',
         name: 'Default View',
         type: 'table',
         columns: [{ property: 'file.name', visible: true, width: 200 }],
         sort: [],
         filters: []
-      };
-      setConfig((prev: any) => ({
-        ...prev,
-        views: [defaultView]
-      }));
+      }];
     }
-  }, [config]);
+    return parsed;
+  });
 
-  const activeView = config.views?.[0] || {
-    id: 'view_1',
-    name: 'Default View',
-    type: 'table',
-    columns: [{ property: 'file.name', visible: true, width: 200 }],
-    sort: [],
-    filters: []
-  };
+  const activeView = useMemo<BaseView>(() => {
+    return config.views?.[0] || {
+      id: 'view_1',
+      name: 'Default View',
+      type: 'table',
+      columns: [{ property: 'file.name', visible: true, width: 200 }],
+      sort: [],
+      filters: []
+    };
+  }, [config.views]);
 
   // Sync YAML text editor changes when config object changes
-  const saveConfig = async (newConfig: any) => {
+  const saveConfig = async (newConfig: BaseConfig) => {
     setConfig(newConfig);
     const newYaml = stringifyYaml(newConfig);
     setYamlContent(newYaml);
@@ -88,9 +128,9 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       setSha(result.sha);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch (e: any) {
+    } catch (e) {
       setSaveStatus('error');
-      setErrorMessage(e.message || 'Failed to save base config');
+      setErrorMessage(e instanceof Error ? e.message : 'Failed to save base config');
     }
   };
 
@@ -98,15 +138,15 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   const handleYamlSave = async () => {
     setSaveStatus('saving');
     try {
-      const parsed = parseYaml(yamlContent);
+      const parsed = parseYaml(yamlContent) as BaseConfig;
       setConfig(parsed);
       const result = await onSave(yamlContent, sha);
       setSha(result.sha);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch (e: any) {
+    } catch (e) {
       setSaveStatus('error');
-      setErrorMessage(e.message || 'Failed to save base YAML content');
+      setErrorMessage(e instanceof Error ? e.message : 'Failed to save base YAML content');
     }
   };
 
@@ -132,7 +172,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   }, [folderPrefix, files, fileContents, onLoadFileContent]);
 
   // Extract all rows (notes) and their properties
-  const allRows = useMemo(() => {
+  const allRows = useMemo<BaseRow[]>(() => {
     const matchedFiles = files.filter(f => {
       if (!f.path.endsWith('.md')) return false;
       return folderPrefix ? f.path.startsWith(folderPrefix) : true;
@@ -150,7 +190,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
         properties: {
           'file.name': cleanName,
           ...frontmatter
-        } as Record<string, any>
+        }
       };
     });
   }, [files, folderPrefix, fileContents]);
@@ -209,17 +249,17 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       await onSaveFile(rowPath, updatedContent, row.sha);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch (e: any) {
+    } catch (e) {
       setSaveStatus('error');
-      setErrorMessage(e.message || 'Failed to update note property');
+      setErrorMessage(e instanceof Error ? e.message : 'Failed to update note property');
     }
   };
 
   // Add/Remove/Toggle Column config
   const toggleColumnVisibility = (colKey: string) => {
     const currentCols = activeView.columns || [];
-    const matchedIdx = currentCols.findIndex((c: any) => c.property === colKey);
-    let newCols = [...currentCols];
+    const matchedIdx = currentCols.findIndex((c) => c.property === colKey);
+    const newCols = [...currentCols];
 
     if (matchedIdx !== -1) {
       newCols[matchedIdx] = {
@@ -244,7 +284,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     if (!cleanKey) return;
 
     const currentCols = activeView.columns || [];
-    if (currentCols.some((c: any) => c.property === cleanKey)) {
+    if (currentCols.some((c) => c.property === cleanKey)) {
       setIsAddingCol(false);
       setNewColName('');
       return;
@@ -282,7 +322,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
   const handleRemoveFilter = (index: number) => {
     const currentFilters = activeView.filters || [];
-    const newFilters = currentFilters.filter((_: any, i: number) => i !== index);
+    const newFilters = currentFilters.filter((_, i) => i !== index);
 
     const updatedViews = [...config.views];
     updatedViews[0] = { ...activeView, filters: newFilters };
@@ -292,7 +332,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   // Sorting Config
   const handleSortCycle = (colKey: string) => {
     const currentSort = activeView.sort || [];
-    const matchIdx = currentSort.findIndex((s: any) => s.property === colKey);
+    const matchIdx = currentSort.findIndex((s) => s.property === colKey);
     let newSort = [...currentSort];
 
     if (matchIdx !== -1) {
@@ -300,7 +340,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       if (currentDir === 'asc') {
         newSort[matchIdx] = { property: colKey, direction: 'desc' };
       } else {
-        newSort = newSort.filter((_: any, i: number) => i !== matchIdx);
+        newSort = newSort.filter((_, i) => i !== matchIdx);
       }
     } else {
       newSort.push({ property: colKey, direction: 'asc' });
@@ -317,7 +357,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
     // Apply Filters
     const filters = activeView.filters || [];
-    filters.forEach((f: any) => {
+    filters.forEach((f) => {
       rows = rows.filter(row => {
         const val = row.properties[f.property];
         const valStr = val === undefined || val === null ? '' : String(val).toLowerCase();
@@ -371,7 +411,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   // Columns to show
   const visibleColumns = useMemo(() => {
     const configCols = activeView.columns || [];
-    return configCols.filter((c: any) => c.visible !== false);
+    return configCols.filter((c) => c.visible !== false);
   }, [activeView]);
 
   // Row creation handlers
@@ -391,8 +431,8 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       return;
     }
 
-    const initialProps: Record<string, any> = {};
-    activeView.columns?.forEach((col: any) => {
+    const initialProps: Record<string, unknown> = {};
+    activeView.columns?.forEach((col) => {
       if (col.property !== 'file.name') {
         initialProps[col.property] = '';
       }
@@ -412,9 +452,9 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       setShowAddRowModal(false);
       setNewRowName('');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch (e: any) {
+    } catch (e) {
       setSaveStatus('error');
-      setErrorMessage(e.message || 'Failed to create database row');
+      setErrorMessage(e instanceof Error ? e.message : 'Failed to create database row');
     }
   };
 
@@ -638,7 +678,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
             {(activeView.filters || []).length > 0 && (
               <div className="px-4 py-2 border-b border-border/40 bg-card/10 flex flex-wrap gap-1.5 items-center select-none">
                 <span className="text-[0.6rem] font-bold text-muted-foreground uppercase tracking-widest mr-1">Active Filters:</span>
-                {(activeView.filters || []).map((f: any, idx: number) => (
+                {(activeView.filters || []).map((f, idx) => (
                   <div key={idx} className="flex items-center gap-1 bg-white/[0.04] border border-border px-2.5 py-0.5 rounded-full text-[0.68rem] text-muted-foreground">
                     <span className="font-semibold text-primary">{f.property}</span>
                     <span>{f.operator}</span>
@@ -663,9 +703,9 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                 <thead className="bg-[#0b0c10] border-b border-border/80 sticky top-0 z-20 select-none">
                   <tr>
                     {/* Header Columns */}
-                    {visibleColumns.map((col: any) => {
-                      const isSorting = (activeView.sort || []).some((s: any) => s.property === col.property);
-                      const sortDir = (activeView.sort || []).find((s: any) => s.property === col.property)?.direction;
+                    {visibleColumns.map((col) => {
+                      const isSorting = (activeView.sort || []).some((s) => s.property === col.property);
+                      const sortDir = (activeView.sort || []).find((s) => s.property === col.property)?.direction;
 
                       return (
                         <th
@@ -734,7 +774,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                         key={row.path}
                         className="hover:bg-white/[0.02] transition-colors"
                       >
-                        {visibleColumns.map((col: any) => {
+                        {visibleColumns.map((col) => {
                           const colKey = col.property;
                           const cellVal = row.properties[colKey];
                           const isEditing = editingCell?.rowPath === row.path && editingCell?.colKey === colKey;
@@ -748,7 +788,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                                   className="text-primary hover:text-accent font-bold text-left truncate transition-colors hover:underline flex items-center gap-2 cursor-pointer w-full"
                                 >
                                   <FileText size={13} className="text-primary/70 shrink-0" />
-                                  <span className="truncate">{cellVal}</span>
+                                  <span className="truncate">{cellVal as string}</span>
                                 </button>
                               </td>
                             );
@@ -770,7 +810,9 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                                   {/* Smart select dropdown if unique values already exist, otherwise text input */}
                                   {getUniqueColumnValues(colKey).length > 0 ? (
                                     <select
-                                      ref={editInputRef as any}
+                                      ref={(el) => {
+                                        editInputRef.current = el;
+                                      }}
                                       value={editingValue}
                                       onChange={(e) => setEditingValue(e.target.value)}
                                       onBlur={() => handleCellSave(row.path, colKey, editingValue)}
@@ -790,7 +832,9 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                                   {/* Text input for direct entry */}
                                   {getUniqueColumnValues(colKey).length === 0 || editingValue === '' ? (
                                     <input
-                                      ref={editInputRef as any}
+                                      ref={(el) => {
+                                        editInputRef.current = el;
+                                      }}
                                       type="text"
                                       value={editingValue}
                                       onChange={(e) => setEditingValue(e.target.value)}

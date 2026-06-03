@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Self-contained light YAML parser and stringifier for StarfishNotes (.base and note frontmatter)
 
-export function parseYaml(yaml: string): any {
+export function parseYaml(yaml: string): unknown {
   const lines = yaml.split(/\r?\n/).map(line => {
     let inDoubleQuotes = false;
     let inSingleQuotes = false;
@@ -28,7 +27,7 @@ export function parseYaml(yaml: string): any {
     return match ? match[1].length : 0;
   }
 
-  function parseValue(val: string): any {
+  function parseValue(val: string): unknown {
     val = val.trim();
     if (!val) return null;
     if (val === 'true') return true;
@@ -54,9 +53,9 @@ export function parseYaml(yaml: string): any {
     return val;
   }
 
-  function parseBlock(parentIndent: number): any {
-    let currentObj: any = null;
-    let currentArray: any[] = [];
+  function parseBlock(parentIndent: number): unknown {
+    let currentObj: Record<string, unknown> | null = null;
+    const currentArray: unknown[] = [];
     let isArray = false;
 
     while (lineIdx < lines.length) {
@@ -146,7 +145,7 @@ export function parseYaml(yaml: string): any {
   return parseBlock(0) || {};
 }
 
-export function stringifyYaml(obj: any, indent = 0): string {
+export function stringifyYaml(obj: unknown, indent = 0): string {
   const spaces = ' '.repeat(indent);
   if (obj === null) return 'null';
   if (typeof obj === 'boolean') return obj ? 'true' : 'false';
@@ -163,11 +162,10 @@ export function stringifyYaml(obj: any, indent = 0): string {
     return obj.map(item => {
       if (typeof item === 'object' && item !== null) {
         const inner = stringifyYaml(item, indent + 2).trimStart();
-        const firstNewLine = inner.indexOf('\n');
-        if (firstNewLine === -1) {
+        const firstNewLineIdx = inner.indexOf('\n');
+        if (firstNewLineIdx === -1) {
           return `${spaces}- ${inner}`;
         } else {
-          const firstNewLineIdx = inner.indexOf('\n');
           const firstLine = inner.substring(0, firstNewLineIdx);
           const rest = inner.substring(firstNewLineIdx + 1);
           return `${spaces}- ${firstLine}\n${rest}`;
@@ -176,8 +174,8 @@ export function stringifyYaml(obj: any, indent = 0): string {
       return `${spaces}- ${stringifyYaml(item, indent + 2).trimStart()}`;
     }).join('\n');
   }
-  if (typeof obj === 'object') {
-    return Object.entries(obj).map(([key, val]) => {
+  if (typeof obj === 'object' && obj !== null) {
+    return Object.entries(obj as Record<string, unknown>).map(([key, val]) => {
       if (val === null || val === undefined) {
         return `${spaces}${key}: null`;
       }

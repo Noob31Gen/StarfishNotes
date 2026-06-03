@@ -237,7 +237,7 @@ export default function App() {
             const stored = await offlineStorage.getFile(file.path);
             if (stored) {
               let text = stored.content;
-              if (storageMode === 'encrypted' || storageMode === 'keychain') {
+              if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
                 const activeKey = masterPassphrase;
                 if (activeKey) {
                   try {
@@ -298,7 +298,7 @@ export default function App() {
       if (file) {
         let text = file.content;
         const mode = storageMode;
-        if (mode === 'encrypted' || mode === 'keychain') {
+        if (mode === 'encrypted' || mode === 'keychain' || mode === 'plain') {
           const decryptionKey = providedKey || masterPassphrase;
           if (decryptionKey) {
             text = await decryptToken(file.content, decryptionKey);
@@ -323,7 +323,7 @@ export default function App() {
       if (file) {
         let text = file.content;
         const mode = storageMode;
-        if (mode === 'encrypted' || mode === 'keychain') {
+        if (mode === 'encrypted' || mode === 'keychain' || mode === 'plain') {
           const decryptionKey = providedKey || masterPassphrase;
           if (decryptionKey) {
             text = await decryptToken(file.content, decryptionKey);
@@ -346,7 +346,7 @@ export default function App() {
       if (file) {
         let base64 = file.content;
         const mode = storageMode;
-        if (mode === 'encrypted' || mode === 'keychain') {
+        if (mode === 'encrypted' || mode === 'keychain' || mode === 'plain') {
           const decryptionKey = providedKey || masterPassphrase;
           if (decryptionKey) {
             base64 = await decryptToken(file.content, decryptionKey);
@@ -414,7 +414,7 @@ export default function App() {
 
       let savedContent = base64;
       const mode = storageMode;
-      if (mode === 'encrypted' || mode === 'keychain') {
+      if (mode === 'encrypted' || mode === 'keychain' || mode === 'plain') {
         if (masterPassphrase) {
           savedContent = await encryptToken(base64, masterPassphrase);
         }
@@ -460,7 +460,7 @@ export default function App() {
   const handleSaveFileOffline = async (path: string, content: string) => {
     let savedContent = content;
     const mode = storageMode;
-    if (mode === 'encrypted' || mode === 'keychain') {
+    if (mode === 'encrypted' || mode === 'keychain' || mode === 'plain') {
       if (masterPassphrase) {
         savedContent = await encryptToken(content, masterPassphrase);
       }
@@ -520,7 +520,7 @@ export default function App() {
 
       let savedContent = initialText;
       const mode = storageMode;
-      if (mode === 'encrypted' || mode === 'keychain') {
+      if (mode === 'encrypted' || mode === 'keychain' || mode === 'plain') {
         if (masterPassphrase) {
           savedContent = await encryptToken(initialText, masterPassphrase);
         }
@@ -931,7 +931,7 @@ export default function App() {
       const file = await offlineStorage.getFile(path);
       if (!file) throw new Error(`File not found in offline storage: ${path}`);
       let content = file.content;
-      if (storageMode === 'encrypted' || storageMode === 'keychain') {
+      if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
         if (masterPassphrase) {
           content = await decryptToken(file.content, masterPassphrase);
         }
@@ -1060,7 +1060,7 @@ export default function App() {
 
         let contentToUpload = fileData.content;
         // Decrypt if storage is encrypted
-        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+        if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
           if (masterPassphrase) {
             contentToUpload = await decryptToken(fileData.content, masterPassphrase);
           }
@@ -1530,7 +1530,7 @@ export default function App() {
           const file = await offlineStorage.getFile(oldPath);
           if (file) {
             content = file.content;
-            if (storageMode === 'encrypted' || storageMode === 'keychain') {
+            if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
               if (masterPassphrase) {
                 content = await decryptToken(file.content, masterPassphrase);
               }
@@ -1548,7 +1548,7 @@ export default function App() {
       if (isOffline) {
         sha = 'offline-sha-' + Date.now();
         let savedContent = content;
-        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+        if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
           if (masterPassphrase) {
             savedContent = await encryptToken(content, masterPassphrase);
           }
@@ -1605,7 +1605,7 @@ export default function App() {
       if (isOffline) {
         const sha = 'offline-sha-' + Date.now();
         let content = '';
-        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+        if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
           if (masterPassphrase) {
             content = await encryptToken('', masterPassphrase);
           }
@@ -1643,7 +1643,7 @@ export default function App() {
             const file = await offlineStorage.getFile(oldPath);
             if (file) {
               content = file.content;
-              if (storageMode === 'encrypted' || storageMode === 'keychain') {
+              if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
                 if (masterPassphrase) {
                   content = await decryptToken(file.content, masterPassphrase);
                 }
@@ -1664,7 +1664,7 @@ export default function App() {
       if (isOffline) {
         sha = 'offline-sha-' + Date.now();
         let savedContent = content;
-        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+        if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
           if (masterPassphrase) {
             savedContent = await encryptToken(content, masterPassphrase);
           }
@@ -1717,7 +1717,7 @@ export default function App() {
             const file = await offlineStorage.getFile(oldPath);
             if (file) {
               content = file.content;
-              if (storageMode === 'encrypted' || storageMode === 'keychain') {
+              if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
                 if (masterPassphrase) {
                   content = await decryptToken(file.content, masterPassphrase);
                 }
@@ -1738,7 +1738,7 @@ export default function App() {
       if (isOffline) {
         sha = 'offline-sha-' + Date.now();
         let savedContent = content;
-        if (storageMode === 'encrypted' || storageMode === 'keychain') {
+        if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
           if (masterPassphrase) {
             savedContent = await encryptToken(content, masterPassphrase);
           }
@@ -1862,7 +1862,7 @@ export default function App() {
               const sha = 'offline-sha-' + Date.now();
               (async () => {
                 let savedContent = initialText;
-                if (storageMode === 'encrypted' || storageMode === 'keychain') {
+                if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
                   if (masterPassphrase) {
                     savedContent = await encryptToken(initialText, masterPassphrase);
                   }

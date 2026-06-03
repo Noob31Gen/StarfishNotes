@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { parseYaml, stringifyYaml } from './yaml';
 
 export interface ParsedFrontmatter {
-  frontmatter: Record<string, any>;
+  frontmatter: Record<string, unknown>;
   body: string;
 }
 
@@ -19,7 +18,10 @@ export function parseFrontmatter(content: string): ParsedFrontmatter {
       const isNewLine = /^\r?\n/.test(bodyPart);
       if (isNewLine) {
         try {
-          const frontmatter = parseYaml(yamlPart) || {};
+          const parsed = parseYaml(yamlPart);
+          const frontmatter = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+            ? (parsed as Record<string, unknown>)
+            : {};
           return { frontmatter, body: bodyPart.replace(/^\r?\n/, '') };
         } catch {
           // ignore parsing error and return empty
@@ -33,7 +35,7 @@ export function parseFrontmatter(content: string): ParsedFrontmatter {
 /**
  * Serializes frontmatter and raw body back to a Markdown string.
  */
-export function stringifyFrontmatter(frontmatter: Record<string, any>, body: string): string {
+export function stringifyFrontmatter(frontmatter: Record<string, unknown>, body: string): string {
   if (!frontmatter || Object.keys(frontmatter).length === 0) {
     return body;
   }
@@ -47,7 +49,7 @@ export function stringifyFrontmatter(frontmatter: Record<string, any>, body: str
 /**
  * Updates a markdown file's frontmatter properties and returns the updated file contents.
  */
-export function updateFrontmatter(content: string, updates: Record<string, any>): string {
+export function updateFrontmatter(content: string, updates: Record<string, unknown>): string {
   const { frontmatter, body } = parseFrontmatter(content);
   const newFrontmatter = { ...frontmatter };
   

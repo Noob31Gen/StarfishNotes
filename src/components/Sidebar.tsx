@@ -132,7 +132,11 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
         className={cn(
           "group flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-xs font-medium border border-transparent transition-all duration-150 hover:bg-white/[0.04] hover:text-foreground relative",
           isActive
-            ? "bg-primary/10 text-accent font-semibold border-primary/10 shadow-xs"
+            ? isCanvas
+              ? "bg-teal-500/10 text-teal-300 font-semibold border-teal-500/15 shadow-xs"
+              : isBase
+                ? "bg-rose-500/10 text-rose-300 font-semibold border-rose-500/15 shadow-xs"
+                : "bg-purple-500/10 text-purple-300 font-semibold border-purple-500/15 shadow-xs"
             : "text-muted-foreground/85"
         )}
         onClick={() => {
@@ -150,28 +154,35 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
           <Image
             className={cn(
               "w-3.5 h-3.5 shrink-0 transition-colors",
-              isActive ? "text-accent" : "text-muted-foreground/60"
+              isActive ? "text-purple-300" : "text-muted-foreground/60"
             )}
           />
         ) : node.path.toLowerCase().endsWith('.pdf') ? (
           <Paperclip
             className={cn(
               "w-3.5 h-3.5 shrink-0 transition-colors",
-              isActive ? "text-accent" : "text-muted-foreground/60"
+              isActive ? "text-purple-300" : "text-muted-foreground/60"
             )}
           />
         ) : isBase ? (
           <Database
             className={cn(
               "w-3.5 h-3.5 shrink-0 transition-colors",
-              isActive ? "text-accent" : "text-muted-foreground/60"
+              isActive ? "text-rose-400 font-bold" : "text-rose-500/80"
+            )}
+          />
+        ) : isCanvas ? (
+          <FileText
+            className={cn(
+              "w-3.5 h-3.5 shrink-0 transition-colors",
+              isActive ? "text-teal-400 font-bold" : "text-teal-500/80"
             )}
           />
         ) : (
           <FileText
             className={cn(
               "w-3.5 h-3.5 shrink-0 transition-colors",
-              isActive ? "text-accent" : "text-muted-foreground/60"
+              isActive ? "text-purple-400 font-bold" : "text-purple-500/80"
             )}
           />
         )}
@@ -179,12 +190,12 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
           {node.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').replace(/\.base$/, '')}
         </span>
         {isCanvas && (
-          <span className="text-[0.55rem] bg-secondary/15 text-secondary px-1 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
+          <span className="text-[0.55rem] bg-teal-500/15 text-teal-400 px-1 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
             Board
           </span>
         )}
         {isBase && (
-          <span className="text-[0.55rem] bg-indigo-500/15 text-indigo-400 px-1 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
+          <span className="text-[0.55rem] bg-rose-500/15 text-rose-400 px-1 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
             Base
           </span>
         )}
@@ -302,9 +313,9 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
             <ChevronRight size={13} className="text-muted-foreground/50 shrink-0" />
           )}
           {isOpen ? (
-            <FolderOpen size={14} className="text-primary/80 shrink-0" />
+            <FolderOpen size={14} className="text-blue-400 shrink-0" />
           ) : (
-            <Folder size={14} className="text-primary/70 shrink-0" />
+            <Folder size={14} className="text-blue-500/80 shrink-0" />
           )}
           <span className="truncate">{node.name}</span>
         </div>
@@ -584,7 +595,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }}
               className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
             >
-              <Plus className="w-3.5 h-3.5 text-accent shrink-0" />
+              <Plus className="w-3.5 h-3.5 text-purple-400 shrink-0" />
               <span className="truncate flex-1">Create New Note</span>
             </div>
             <div
@@ -594,7 +605,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }}
               className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
             >
-              <Plus className="w-3.5 h-3.5 text-secondary shrink-0" />
+              <Plus className="w-3.5 h-3.5 text-teal-400 shrink-0" />
               <span className="truncate flex-1">Create New Board</span>
             </div>
             <div
@@ -604,7 +615,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }}
               className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
             >
-              <Plus className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <Plus className="w-3.5 h-3.5 text-rose-500 shrink-0" />
               <span className="truncate flex-1">Create New Base</span>
             </div>
             <div
@@ -614,7 +625,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }}
               className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
             >
-              <Plus className="w-3.5 h-3.5 text-primary shrink-0" />
+              <Plus className="w-3.5 h-3.5 text-blue-500 shrink-0" />
               <span className="truncate flex-1">Create New Folder</span>
             </div>
             <div
@@ -671,6 +682,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   filteredFiles.map((file) => {
                     const isActive = file.path === activeFilePath;
                     const isCanvas = file.path.endsWith('.canvas');
+                    const isBase = file.path.endsWith('.base');
                     return (
                       <div
                         key={file.path}
@@ -678,7 +690,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         className={cn(
                           "group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-medium border border-transparent transition-all duration-200 hover:bg-border/40 hover:text-foreground relative",
                           isActive
-                            ? "bg-primary/10 text-accent font-semibold border-primary/20 shadow-xs"
+                            ? isCanvas
+                              ? "bg-teal-500/10 text-teal-300 font-semibold border-teal-500/15 shadow-xs"
+                              : isBase
+                                ? "bg-rose-500/10 text-rose-300 font-semibold border-rose-500/15 shadow-xs"
+                                : "bg-purple-500/10 text-purple-300 font-semibold border-purple-500/15 shadow-xs"
                             : "text-muted-foreground/85"
                         )}
                         onClick={() => {
@@ -696,27 +712,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <Image
                             className={cn(
                               "w-3.5 h-3.5 shrink-0 transition-colors",
-                              isActive ? "text-accent" : "text-muted-foreground/60"
+                              isActive ? "text-purple-300" : "text-muted-foreground/60"
                             )}
                           />
                         ) : file.path.toLowerCase().endsWith('.pdf') ? (
                           <Paperclip
                             className={cn(
                               "w-3.5 h-3.5 shrink-0 transition-colors",
-                              isActive ? "text-accent" : "text-muted-foreground/60"
+                              isActive ? "text-purple-300" : "text-muted-foreground/60"
+                            )}
+                          />
+                        ) : isBase ? (
+                          <Database
+                            className={cn(
+                              "w-3.5 h-3.5 shrink-0 transition-colors",
+                              isActive ? "text-rose-400 font-bold" : "text-rose-500/80"
+                            )}
+                          />
+                        ) : isCanvas ? (
+                          <FileText
+                            className={cn(
+                              "w-3.5 h-3.5 shrink-0 transition-colors",
+                              isActive ? "text-teal-400 font-bold" : "text-teal-500/80"
                             )}
                           />
                         ) : (
                           <FileText
                             className={cn(
                               "w-3.5 h-3.5 shrink-0 transition-colors",
-                              isActive ? "text-accent" : "text-muted-foreground/60"
+                              isActive ? "text-purple-400 font-bold" : "text-purple-500/80"
                             )}
                           />
                         )}
                         <div className="flex-1 flex flex-col min-w-0">
                           <span className="truncate text-foreground font-semibold">
-                            {file.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '')}
+                            {file.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').replace(/\.base$/, '')}
                           </span>
                           {file.path.includes('/') && (
                             <span className="truncate text-[0.625rem] text-muted-foreground/50 font-medium">
@@ -725,8 +755,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           )}
                         </div>
                         {isCanvas && (
-                          <span className="text-[0.55rem] bg-secondary/15 text-secondary px-1.5 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
+                          <span className="text-[0.55rem] bg-teal-500/15 text-teal-400 px-1.5 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
                             Board
+                          </span>
+                        )}
+                        {isBase && (
+                          <span className="text-[0.55rem] bg-rose-500/15 text-rose-400 px-1.5 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
+                            Base
                           </span>
                         )}
 

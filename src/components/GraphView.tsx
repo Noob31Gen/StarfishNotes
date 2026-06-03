@@ -5,7 +5,7 @@ import { cn } from '../utils/cn';
 interface Node {
   id: string; // The full file path
   name: string; // Just the file name
-  type: 'md' | 'canvas' | 'ghost';
+  type: 'md' | 'canvas' | 'base' | 'ghost';
   x: number;
   y: number;
   vx: number;
@@ -287,6 +287,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     // 2. Build Base Nodes
     const baseNodes: Node[] = files.map((file, idx) => {
       const isCanvas = file.path.endsWith('.canvas');
+      const isBase = file.path.endsWith('.base');
       const isCurrentActive = file.path === activeFilePath;
       const existing = nodesRef.current.find(n => n.id === file.path);
       const angle = (idx / files.length) * 2 * Math.PI;
@@ -294,18 +295,24 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
       return {
         id: file.path,
-        name: file.name.replace(/\.md$/, '').replace(/\.canvas$/, ''),
-        type: isCanvas ? 'canvas' : 'md',
+        name: file.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.base$/, ''),
+        type: isCanvas ? 'canvas' : isBase ? 'base' : 'md',
         x: existing ? existing.x : cx + Math.cos(angle) * radius,
         y: existing ? existing.y : cy + Math.sin(angle) * radius,
         vx: existing ? existing.vx : 0,
         vy: existing ? existing.vy : 0,
         radius: isCurrentActive ? 9 : 6,
         color: isCurrentActive
-          ? '#c084fc'
+          ? isCanvas
+            ? '#2dd4bf'
+            : isBase
+              ? '#f87171'
+              : '#c084fc'
           : isCanvas
-            ? '#22d3ee'
-            : '#8b5cf6',
+            ? '#0d9488' // Premium teal
+            : isBase
+              ? '#ef4444' // Premium Red
+              : '#8b5cf6', // Premium Purple
       };
     });
 
@@ -971,16 +978,20 @@ export const GraphView: React.FC<GraphViewProps> = ({
           Map Legend
         </span>
         <div className="flex items-center gap-2.5">
-          <div className="w-2.5 h-2.5 bg-primary rounded-full shrink-0 glow-primary/20" />
+          <div className="w-2.5 h-2.5 bg-[#8b5cf6] rounded-full shrink-0 shadow-[0_0_6px_#8b5cf6]" />
           <span>Markdown Note</span>
         </div>
         <div className="flex items-center gap-2.5">
-          <div className="w-2.5 h-2.5 bg-secondary rounded-full shrink-0 glow-secondary/20" />
+          <div className="w-2.5 h-2.5 bg-[#0d9488] rounded-full shrink-0 shadow-[0_0_6px_#0d9488]" />
           <span>Obsidian Canvas</span>
         </div>
         <div className="flex items-center gap-2.5">
-          <div className="w-2.5 h-2.5 bg-purple-400 rounded-full shrink-0 shadow-[0_0_8px_var(--accent)]" />
-          <span className="text-accent">Active Note</span>
+          <div className="w-2.5 h-2.5 bg-[#ef4444] rounded-full shrink-0 shadow-[0_0_6px_#ef4444]" />
+          <span>Obsidian Base</span>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <div className="w-2.5 h-2.5 bg-[#c084fc] rounded-full shrink-0 shadow-[0_0_8px_#c084fc]" />
+          <span>Active Note</span>
         </div>
         <div className="flex items-center gap-2.5">
           <div className="w-2.5 h-2.5 rounded-full border-2 border-[#475569] bg-[rgba(71,85,105,0.15)] shrink-0" />
