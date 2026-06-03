@@ -956,7 +956,7 @@ export const Editor: React.FC<EditorProps> = ({
             onKeyDown={handleTextareaKeyDown}
             onPaste={handleTextareaPaste}
             onBlur={handleAutoSave}
-            placeholder="Start writing notes in Markdown... Use [[GraphviewLinks]] to connect notes!"
+            placeholder={`# ${filePath.split('/').pop()?.replace(/\.md$/, '').replace(/\.txt$/, '') || 'Untitled Note'}\n\nStart typing notes in Markdown... Use [[Links]] to connect notes!`}
             className="w-full h-full border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] p-6 pb-32 resize-none outline-none focus:ring-0 select-text overflow-y-auto"
           />
 

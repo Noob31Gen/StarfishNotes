@@ -881,7 +881,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     });
 
     const initialContent = updateFrontmatter(
-      `# ${cleanName}\n\nStart typing here...`,
+      "",
       initialProps
     );
 

@@ -583,52 +583,81 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
-          {/* Quick Creator lists matching note items visual layout */}
-          <div className="flex flex-col gap-0.5">
+          {/* Premium Grid-Based Creator */}
+          <div className="flex flex-col gap-2.5">
             <span className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 mb-1 select-none">
-              Quick Actions
+              New
             </span>
-            <div
-              onClick={() => {
-                createNewFile('.md');
-                setIsMobileSidebarOpen(false);
-              }}
-              className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
-            >
-              <Plus className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-              <span className="truncate flex-1">Create New Note</span>
+            
+            <div className="grid grid-cols-2 gap-2">
+              {/* Note */}
+              <button
+                type="button"
+                onClick={() => {
+                  createNewFile('.md');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className="group flex flex-col items-center justify-center p-3 rounded-2xl bg-muted/20 border border-border/40 hover:border-purple-500/40 hover:bg-purple-500/5 hover:shadow-xs transition-all text-center cursor-pointer"
+                title="Create New Markdown Note"
+              >
+                <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <FileText size={16} />
+                </div>
+                <span className="text-xs font-semibold text-muted-foreground group-hover:text-foreground transition-colors mt-2">Note</span>
+              </button>
+
+              {/* Canvas */}
+              <button
+                type="button"
+                onClick={() => {
+                  createNewFile('.canvas');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className="group flex flex-col items-center justify-center p-3 rounded-2xl bg-muted/20 border border-border/40 hover:border-teal-500/40 hover:bg-teal-500/5 hover:shadow-xs transition-all text-center cursor-pointer"
+                title="Create New Canvas Board"
+              >
+                <div className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-400 flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Compass size={16} />
+                </div>
+                <span className="text-xs font-semibold text-muted-foreground group-hover:text-foreground transition-colors mt-2">Canvas</span>
+              </button>
+
+              {/* Base */}
+              <button
+                type="button"
+                onClick={() => {
+                  createNewFile('.base');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className="group flex flex-col items-center justify-center p-3 rounded-2xl bg-muted/20 border border-border/40 hover:border-rose-500/40 hover:bg-rose-500/5 hover:shadow-xs transition-all text-center cursor-pointer"
+                title="Create New Database Base"
+              >
+                <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Database size={16} />
+                </div>
+                <span className="text-xs font-semibold text-muted-foreground group-hover:text-foreground transition-colors mt-2">Base</span>
+              </button>
+
+              {/* Folder */}
+              <button
+                type="button"
+                onClick={() => {
+                  onCreateFolderClick('/');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className="group flex flex-col items-center justify-center p-3 rounded-2xl bg-muted/20 border border-border/40 hover:border-blue-500/40 hover:bg-blue-500/5 hover:shadow-xs transition-all text-center cursor-pointer"
+                title="Create New Folder"
+              >
+                <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <FolderPlus size={16} />
+                </div>
+                <span className="text-xs font-semibold text-muted-foreground group-hover:text-foreground transition-colors mt-2">Folder</span>
+              </button>
             </div>
-            <div
-              onClick={() => {
-                createNewFile('.canvas');
-                setIsMobileSidebarOpen(false);
-              }}
-              className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
-            >
-              <Plus className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-              <span className="truncate flex-1">Create New Board</span>
-            </div>
-            <div
-              onClick={() => {
-                createNewFile('.base');
-                setIsMobileSidebarOpen(false);
-              }}
-              className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
-            >
-              <Plus className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-              <span className="truncate flex-1">Create New Base</span>
-            </div>
-            <div
-              onClick={() => {
-                onCreateFolderClick('/');
-                setIsMobileSidebarOpen(false);
-              }}
-              className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
-            >
-              <Plus className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span className="truncate flex-1">Create New Folder</span>
-            </div>
-            <div
+
+            {/* Attachment Button Below Grid */}
+            <button
+              type="button"
               onClick={() => {
                 const input = document.createElement('input');
                 input.type = 'file';
@@ -641,12 +670,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 input.click();
                 setIsMobileSidebarOpen(false);
               }}
-              className="group flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold border border-transparent transition-all duration-150 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+              className="group w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-muted/30 border border-border/40 hover:border-emerald-500/40 hover:bg-emerald-500/5 hover:shadow-xs transition-all cursor-pointer text-xs font-semibold text-muted-foreground hover:text-foreground mt-1"
               title="Upload file attachment (max 5MB)"
             >
-              <Paperclip className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              <span className="truncate flex-1">Upload Attachment</span>
-            </div>
+              <Paperclip className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform shrink-0" />
+              <span>Upload Attachment</span>
+            </button>
           </div>
 
           {/* Fuzzy Path Filter Search */}

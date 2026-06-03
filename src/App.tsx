@@ -589,7 +589,7 @@ export default function App() {
     try {
       const cleanFileName = finalPath.split('/').pop() || finalPath;
       const initialText = isText
-        ? `# ${cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '')}\n\nStart typing here...`
+        ? ''
         : extension === '.canvas'
           ? JSON.stringify({ nodes: [], edges: [] }, null, 2)
           : `version: 1\nsource:\n  folder: "Projects"\nviews:\n  - id: view_table_1\n    name: "All Active Projects"\n    type: table\n    columns:\n      - property: file.name\n        visible: true\n        width: 200\n`;
@@ -733,8 +733,7 @@ export default function App() {
         }
         const offlineFiles = await offlineStorage.getFilesList();
         if (offlineFiles.length === 0) {
-          const welcomeContent = `# Welcome to your Local Offline Vault! 🚀\n\nThis is your secure, private note-taking space stored entirely inside your browser.\n\n### Offline Vault Details\n- **IndexedDB Storage**: Your notes are kept locally on this device, bypassing any cloud servers.\n- **Zero Account Required**: Use all features—including infinite canvases and graph visualization—with full privacy.\n- **Storage Protection**: Encrypted using AES-GCM or native OS keychain as configured.\n\n### Warning Alert\nClearing your browser's site data, cookies, or database cache will permanently erase your offline notes. Make sure to **Secure Storage** using the button on the login screen to request browser protection.\n`;
-
+          const welcomeContent = '';
           let welcomeContentToSave = welcomeContent;
           if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
             welcomeContentToSave = await encryptToken(welcomeContent, activeKey);
@@ -1437,7 +1436,7 @@ export default function App() {
       await initializeVault(githubToken, repoName, branchName);
 
       // Create initial Welcome note in vault
-      const welcomeContent = `# Welcome to StarfishNotes! 🚀\n\nThis is your secure, serverless note-taking space linked to GitHub.\n\n### App Features\n- **Vault Syncing:** All edits are committed directly to your GitHub repository.\n- **Graph View:** Click the **Link Map** tab to visualize connected notes.\n- **Infinite Canvas:** Create canvas boards (\`.canvas\` files) to map notes visually!\n\n### How to Link Notes\nType double brackets like this: [[Welcome]] to link back to this note! Open the split preview to see active graphview-links in action.\n`;
+      const welcomeContent = '';
 
       await commitFileContent(githubToken, repoName, branchName, 'Welcome.md', welcomeContent, null, 'chore: create initial Welcome.md note');
 
@@ -1508,7 +1507,7 @@ export default function App() {
     try {
       const cleanFileName = finalPath.split('/').pop() || finalPath;
       const initialText = isText
-        ? `# ${cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '')}\n\nStart typing here...`
+        ? ''
         : extension === '.canvas'
           ? JSON.stringify({ nodes: [], edges: [] }, null, 2)
           : `version: 1\nsource:\n  folder: "Projects"\nviews:\n  - id: view_table_1\n    name: "All Active Projects"\n    type: table\n    columns:\n      - property: file.name\n        visible: true\n        width: 200\n`;
@@ -1924,14 +1923,13 @@ export default function App() {
             const ext = activeFilePath.substring(activeFilePath.lastIndexOf('.')).toLowerCase();
             let initialText = '';
             if (ext === '.md' || ext === '.txt') {
-              const noteTitle = cleanFileName.replace(/\.md$/, '').replace(/\.txt$/, '');
-              initialText = `# ${noteTitle}\n\nCreated from Link Map. Start typing here...`;
+              initialText = '';
             } else if (ext === '.csv') {
               initialText = `Header1,Header2,Header3\nValue1,Value2,Value3`;
             } else if (ext === '.tsv') {
               initialText = `Header1\tHeader2\tHeader3\nValue1\tValue2\tValue3`;
             } else {
-              initialText = `// Created from Link Map. Start typing here...\n`;
+              initialText = '';
             }
 
             if (isOffline) {
