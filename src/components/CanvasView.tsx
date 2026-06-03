@@ -118,7 +118,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   useEffect(() => {
     if (isAddNoteOpen && addNoteButtonRef.current) {
       const rect = addNoteButtonRef.current.getBoundingClientRect();
-      const popupWidth = 200;
+      const popupWidth = 240;
       const rawLeft = rect.left + rect.width / 2 - popupWidth / 2;
       const left = Math.max(8, Math.min(rawLeft, window.innerWidth - popupWidth - 8));
       setNotePopupCoords({
@@ -229,7 +229,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       nodes: JSON.parse(JSON.stringify(nextNodes)),
       edges: JSON.parse(JSON.stringify(nextEdges))
     };
-    
+
     setHistory(prev => {
       const currentHistory = prev.slice(0, historyIndex + 1);
       if (currentHistory.length > 0) {
@@ -363,12 +363,12 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       html = html.replace(/<img src="([^"]+)"([^>]*)>/g, (_match, src, rest) => {
         const altMatch = rest.match(/alt="([^"]+)"/);
         const alt = altMatch ? altMatch[1] : '';
-        
+
         const srcClean = src.trim();
         const extIndex = srcClean.lastIndexOf('.');
         const ext = extIndex !== -1 ? srcClean.substring(extIndex).toLowerCase() : '';
         const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
-        
+
         if (imageExtensions.includes(ext) || srcClean.startsWith('data:image/')) {
           const cached = vaultImages[srcClean] || Object.entries(vaultImages).find(([k]) => k.endsWith(srcClean))?.[1];
           return `<img src="${cached || srcClean}"${rest}>`;
@@ -662,7 +662,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         pushState(nodesRef.current, edgesRef.current);
         performAutoSave();
       }
-      
+
       dragNodeId.current = null;
       touchDragNodeId.current = null;
       dragResizeNodeId.current = null;
@@ -1852,10 +1852,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                                   const allowed = ['.md', '.txt', '.canvas', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf'];
                                   return allowed.some(ext => lower.endsWith(ext)) && f.name.toLowerCase().includes(noteSearchQuery.toLowerCase());
                                 }).length === 0 && (
-                                  <span className="text-[0.65rem] text-muted-foreground/50 italic p-2 text-center select-none">
-                                    No notes found
-                                  </span>
-                                )}
+                                    <span className="text-[0.65rem] text-muted-foreground/50 italic p-2 text-center select-none">
+                                      No notes found
+                                    </span>
+                                  )}
                               </div>
                             </div>
                           )}
@@ -2108,48 +2108,66 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         <>
           <div
             className="fixed inset-0 z-40 bg-transparent cursor-default"
-            onClick={() => setIsAddNoteOpen(false)}
+            onClick={() => {
+              setIsAddNoteOpen(false);
+              setNoteSearchQuery('');
+            }}
           />
-          <div 
+          <div
             style={{ left: `${notePopupCoords.left}px`, bottom: `${notePopupCoords.bottom}px` }}
-            className="fixed w-[200px] bg-[#12131a] border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5 z-50 animate-in fade-in zoom-in-95 duration-100 max-h-[180px] overflow-y-auto select-none animate-fade-in"
+            className="fixed w-[240px] bg-[#12131a] border border-border rounded-xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 max-h-[300px] overflow-hidden select-none animate-fade-in"
           >
-            <span className="text-[0.6rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-2.5 py-1 select-none">
+            <span className="text-[0.6rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 py-0.5 select-none">
               Select Note
             </span>
-            <div className="h-[1px] bg-border my-0.5 select-none" />
-            {files.filter(f => {
-              const lower = f.path.toLowerCase();
-              if (lower.includes('.obsidian/') || lower.startsWith('.obsidian/')) return false;
-              if (f.name === '.gitkeep' || f.name === '.vault-compat.json') return false;
-              const allowed = ['.md', '.txt', '.canvas'];
-              return allowed.some(ext => lower.endsWith(ext));
-            }).length === 0 ? (
-              <span className="text-[0.65rem] text-muted-foreground/60 italic p-2 text-center select-none">
-                No notes found.
-              </span>
-            ) : (
-              files.filter(f => {
+            <div className="h-[1px] bg-border/60 my-0.5 select-none" />
+
+            <div className="relative flex items-center px-1 py-1 border-b border-border/40 pb-1.5 shrink-0">
+              <input
+                type="text"
+                value={noteSearchQuery}
+                onChange={(e) => setNoteSearchQuery(e.target.value)}
+                placeholder="Search notes..."
+                className="w-full bg-muted/30 border border-border/40 text-foreground px-2 py-1 rounded-md text-[0.7rem] focus:outline-none focus:border-primary/60 transition-all duration-150"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 pr-0.5 max-h-[160px]">
+              {files.filter(f => {
                 const lower = f.path.toLowerCase();
                 if (lower.includes('.obsidian/') || lower.startsWith('.obsidian/')) return false;
                 if (f.name === '.gitkeep' || f.name === '.vault-compat.json') return false;
                 const allowed = ['.md', '.txt', '.canvas'];
-                return allowed.some(ext => lower.endsWith(ext));
-              }).map(f => (
-                <button
-                  key={f.path}
-                  type="button"
-                  onClick={() => {
-                    addNewCard('file', f.path);
-                    setIsAddNoteOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2.5 rounded-lg text-xs text-muted-foreground hover:bg-white/[0.04] hover:text-foreground hover:border-border/40 transition-premium cursor-pointer font-medium border border-transparent truncate"
-                  title={f.name}
-                >
-                  {f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '')}
-                </button>
-              ))
-            )}
+                return allowed.some(ext => lower.endsWith(ext)) && f.name.toLowerCase().includes(noteSearchQuery.toLowerCase());
+              }).length === 0 ? (
+                <span className="text-[0.65rem] text-muted-foreground/60 italic p-2 text-center select-none">
+                  No notes found.
+                </span>
+              ) : (
+                files.filter(f => {
+                  const lower = f.path.toLowerCase();
+                  if (lower.includes('.obsidian/') || lower.startsWith('.obsidian/')) return false;
+                  if (f.name === '.gitkeep' || f.name === '.vault-compat.json') return false;
+                  const allowed = ['.md', '.txt', '.canvas'];
+                  return allowed.some(ext => lower.endsWith(ext)) && f.name.toLowerCase().includes(noteSearchQuery.toLowerCase());
+                }).map(f => (
+                  <button
+                    key={f.path}
+                    type="button"
+                    onClick={() => {
+                      addNewCard('file', f.path);
+                      setIsAddNoteOpen(false);
+                      setNoteSearchQuery('');
+                    }}
+                    className="w-full text-left px-2 py-1.5 rounded-md text-[0.7rem] font-semibold text-muted-foreground hover:bg-white/[0.04] hover:text-foreground cursor-pointer transition-premium flex items-center border border-transparent font-medium"
+                    title={f.name}
+                  >
+                    {f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '')}
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         </>
       )}
@@ -2160,7 +2178,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
             className="fixed inset-0 z-40 bg-transparent cursor-default"
             onClick={() => setIsAddImageOpen(false)}
           />
-          <div 
+          <div
             style={{ left: `${imagePopupCoords.left}px`, bottom: `${imagePopupCoords.bottom}px` }}
             className="fixed w-[250px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 max-h-[300px] overflow-hidden select-none animate-fade-in"
           >
@@ -2269,11 +2287,11 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       )}
 
       {activeDragResizeState !== 'idle' && (
-        <div 
+        <div
           className={cn(
             "fixed inset-0 z-[1000] bg-transparent select-none",
             activeDragResizeState === 'dragging' ? "cursor-grabbing" : "cursor-se-resize"
-          )} 
+          )}
         />
       )}
 
