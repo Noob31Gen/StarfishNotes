@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings, Download } from 'lucide-react';
+import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings, Download, Paperclip } from 'lucide-react';
 import JSZip from 'jszip';
 import {
   validateRepository, checkVaultCompatibility, initializeVault,
@@ -2032,15 +2032,7 @@ export default function App() {
               onFetchBinaryFile={loadBinaryFile}
               onUploadAttachment={(file, folderPath) => uploadAttachment(file, folderPath, false)}
             />
-          ) : activeFilePath && (
-            activeFilePath.toLowerCase().endsWith('.png') ||
-            activeFilePath.toLowerCase().endsWith('.jpg') ||
-            activeFilePath.toLowerCase().endsWith('.jpeg') ||
-            activeFilePath.toLowerCase().endsWith('.gif') ||
-            activeFilePath.toLowerCase().endsWith('.webp') ||
-            activeFilePath.toLowerCase().endsWith('.svg') ||
-            activeFilePath.toLowerCase().endsWith('.pdf')
-          ) ? (
+          ) : activeFilePath ? (
             <div className="flex-1 w-full h-full flex flex-col bg-background select-text overflow-y-auto items-center p-8">
               <div className="max-w-3xl w-full bg-card/40 border border-border rounded-2xl p-6 shadow-xl flex flex-col gap-6 items-center">
                 <div className="w-full flex items-center justify-between border-b border-border/80 pb-4">
@@ -2060,30 +2052,55 @@ export default function App() {
                 </div>
 
                 <div className="w-full flex items-center justify-center min-h-[300px] border border-dashed border-border/80 rounded-xl bg-background/50 overflow-hidden relative p-4">
-                  {vaultImages[activeFilePath] ? (
-                    activeFilePath.toLowerCase().endsWith('.pdf') ? (
-                      <embed
-                        src={vaultImages[activeFilePath]}
-                        type="application/pdf"
-                        className="w-full h-[500px] rounded-lg"
-                      />
+                  {[
+                    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
+                  ].some(ext => activeFilePath.toLowerCase().endsWith(ext)) ? (
+                    vaultImages[activeFilePath] ? (
+                      activeFilePath.toLowerCase().endsWith('.pdf') ? (
+                        <embed
+                          src={vaultImages[activeFilePath]}
+                          type="application/pdf"
+                          className="w-full h-[500px] rounded-lg"
+                        />
+                      ) : (
+                        <img
+                          src={vaultImages[activeFilePath]}
+                          alt={activeFilePath.split('/').pop()}
+                          className="max-h-[500px] max-w-full object-contain rounded-lg shadow-lg select-none animate-fade-in"
+                        />
+                      )
                     ) : (
-                      <img
-                        src={vaultImages[activeFilePath]}
-                        alt={activeFilePath.split('/').pop()}
-                        className="max-h-[500px] max-w-full object-contain rounded-lg shadow-lg select-none animate-fade-in"
-                      />
+                      <div className="flex flex-col gap-2 items-center justify-center text-muted-foreground text-xs">
+                        <RefreshCw className="w-5 h-5 animate-spin text-primary" />
+                        <span>Loading attachment...</span>
+                        {activeFile && (
+                          <button
+                            onClick={() => loadBinaryFile(activeFilePath, activeFile.sha)}
+                            className="mt-2 text-primary font-semibold hover:underline"
+                          >
+                            Click to retry loading
+                          </button>
+                        )}
+                      </div>
                     )
                   ) : (
-                    <div className="flex flex-col gap-2 items-center justify-center text-muted-foreground text-xs">
-                      <RefreshCw className="w-5 h-5 animate-spin text-primary" />
-                      <span>Loading attachment...</span>
+                    <div className="flex flex-col gap-3 items-center justify-center text-muted-foreground p-6 text-center select-none animate-fade-in">
+                      <div className="w-12 h-12 rounded-2xl bg-muted border border-border flex items-center justify-center text-muted-foreground">
+                        <Paperclip className="w-6 h-6 text-primary animate-pulse-soft" />
+                      </div>
+                      <span className="text-xs font-bold text-foreground">
+                        No Preview Available
+                      </span>
+                      <span className="text-[0.7rem] text-muted-foreground max-w-[280px] leading-relaxed">
+                        This attachment type ({activeFilePath.substring(activeFilePath.lastIndexOf('.'))}) cannot be previewed directly in the browser.
+                      </span>
                       {activeFile && (
                         <button
-                          onClick={() => loadBinaryFile(activeFilePath, activeFile.sha)}
-                          className="mt-2 text-primary font-semibold hover:underline"
+                          onClick={() => handleDownloadFile(activeFilePath, activeFile.name, activeFile.sha)}
+                          className="mt-2 bg-primary hover:bg-primary/90 text-white text-xs font-semibold py-1.5 px-4 rounded-xl transition-all cursor-pointer shadow-lg shadow-primary/10 flex items-center gap-1.5"
                         >
-                          Click to retry loading
+                          <Download size={12} />
+                          Download Attachment
                         </button>
                       )}
                     </div>
