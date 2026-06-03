@@ -253,7 +253,7 @@ export default function App() {
     setIsLoadingTree(true);
     try {
       const offlineFiles = await offlineStorage.getFilesList();
-      
+
       const mappedFiles: VaultFile[] = offlineFiles.map(f => ({
         path: f.path,
         name: f.name,
@@ -338,7 +338,7 @@ export default function App() {
             base64 = await decryptToken(file.content, decryptionKey);
           }
         }
-        
+
         const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
         let mime = 'application/octet-stream';
         if (ext === '.png') mime = 'image/png';
@@ -373,7 +373,7 @@ export default function App() {
     const parentPath = finalFolder && finalFolder !== '/'
       ? (finalFolder.endsWith('/') ? finalFolder : `${finalFolder}/`)
       : '';
-    
+
     const finalPath = `${parentPath}${file.name}`;
 
     let finalPathResolved = finalPath;
@@ -381,7 +381,7 @@ export default function App() {
     const dotIndex = file.name.lastIndexOf('.');
     const baseName = dotIndex !== -1 ? file.name.substring(0, dotIndex) : file.name;
     const ext = dotIndex !== -1 ? file.name.substring(dotIndex) : '';
-    
+
     while (files.some(f => f.path === finalPathResolved)) {
       finalPathResolved = `${parentPath}${baseName} ${counter}${ext}`;
       counter++;
@@ -640,7 +640,7 @@ export default function App() {
         const offlineFiles = await offlineStorage.getFilesList();
         if (offlineFiles.length === 0) {
           const welcomeContent = `# Welcome to your Local Offline Vault! 🚀\n\nThis is your secure, private note-taking space stored entirely inside your browser.\n\n### Offline Vault Details\n- **IndexedDB Storage**: Your notes are kept locally on this device, bypassing any cloud servers.\n- **Zero Account Required**: Use all features—including infinite canvases and graph visualization—with full privacy.\n- **Storage Protection**: Encrypted using AES-GCM or native OS keychain as configured.\n\n### Warning Alert\nClearing your browser's site data, cookies, or database cache will permanently erase your offline notes. Make sure to **Secure Storage** using the button on the login screen to request browser protection.\n`;
-          
+
           let welcomeContentToSave = welcomeContent;
           if (storageMode === 'encrypted' || storageMode === 'keychain') {
             welcomeContentToSave = await encryptToken(welcomeContent, activeKey);
@@ -664,7 +664,7 @@ export default function App() {
       setIsAuthenticated(true);
       setRepoName('Local Vault');
       setBranchName('offline');
-      
+
       await refreshFilesOffline();
 
     } catch (e: unknown) {
@@ -829,7 +829,7 @@ export default function App() {
     const parentPath = finalFolder && finalFolder !== '/'
       ? (finalFolder.endsWith('/') ? finalFolder : `${finalFolder}/`)
       : '';
-    
+
     const finalPath = `${parentPath}${file.name}`;
 
     // Resolve name collision locally
@@ -838,7 +838,7 @@ export default function App() {
     const dotIndex = file.name.lastIndexOf('.');
     const baseName = dotIndex !== -1 ? file.name.substring(0, dotIndex) : file.name;
     const ext = dotIndex !== -1 ? file.name.substring(dotIndex) : '';
-    
+
     while (files.some(f => f.path === finalPathResolved)) {
       finalPathResolved = `${parentPath}${baseName} ${counter}${ext}`;
       counter++;
@@ -967,11 +967,11 @@ export default function App() {
     try {
       const zip = new JSZip();
       const filesToZip = files.filter(f => f.name !== '.gitkeep' && f.name !== '.vault-compat.json');
-      
+
       for (let i = 0; i < filesToZip.length; i++) {
         const file = filesToZip[i];
         setBulkDownloadStatus(`Packing (${i + 1}/${filesToZip.length}): ${file.name}...`);
-        
+
         try {
           const { data } = await getFileContentAndType(file.path, file.sha);
           const buffer = await data.arrayBuffer();
@@ -983,7 +983,7 @@ export default function App() {
 
       setBulkDownloadStatus('Generating ZIP...');
       const content = await zip.generateAsync({ type: 'blob' });
-      
+
       const zipName = `${(repoName || 'local_vault').replace(new RegExp('[\\\\/:*?"<>|]', 'g'), '_')}_vault.zip`;
       const url = URL.createObjectURL(content);
       const a = document.createElement('a');
@@ -993,7 +993,7 @@ export default function App() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      
+
       setBulkDownloadStatus(null);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to generate bulk ZIP download.';
@@ -1070,7 +1070,7 @@ export default function App() {
 
       // 5. Transition mode to online/github
       setPublishStatus('Finalizing transition to GitHub mode...');
-      
+
       // Save credentials secure or in localstorage based on storageMode
       await saveTokenSecurely(publishToken.trim(), storageMode, masterPassphrase);
       localStorage.setItem(STORAGE_KEYS.REPO_NAME, publishRepo.trim());
@@ -1503,7 +1503,7 @@ export default function App() {
           }
         }
         const isBinary = !isTextFile(oldPath) && !oldPath.toLowerCase().endsWith('.canvas');
-        
+
         await offlineStorage.saveFile({
           path: newPath,
           name: cleanNewName + extension,
@@ -2669,7 +2669,7 @@ export default function App() {
       {showSettingsModal && (
         <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
           <div className="w-full max-w-lg bg-card/95 backdrop-blur-2xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-5 animate-in fade-in zoom-in-95 duration-200 text-foreground">
-            
+
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-border/60 pb-3 select-none">
               <div className="flex items-center gap-2">
@@ -2687,14 +2687,14 @@ export default function App() {
 
             {/* Scrollable Content */}
             <div className="flex flex-col gap-5 max-h-[420px] overflow-y-auto pr-1 no-scrollbar select-text">
-              
+
               {/* Category 1: Attachment Storage */}
               <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl">
                 <h4 className="text-[0.72rem] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5 select-none">
                   <Folder size={11.5} />
                   Attachment Settings
                 </h4>
-                
+
                 {/* Folder Path */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-wider">
@@ -2829,7 +2829,7 @@ export default function App() {
                     }}
                     className="bg-destructive/15 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer shrink-0"
                   >
-                    Logout & Purge
+                    Logout & Purge Local Data
                   </button>
                 </div>
               </div>
