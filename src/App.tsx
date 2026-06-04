@@ -18,6 +18,7 @@ import { CanvasView } from './components/CanvasView';
 import { BaseEditor } from './components/BaseEditor';
 import { offlineStorage } from './services/offlineStorage';
 import { ConflictResolutionModal } from './components/ConflictResolutionModal';
+import { SearchModal } from './components/SearchModal';
 
 // Split modular components
 import { AuthScreen } from './components/AuthScreen';
@@ -236,8 +237,11 @@ export default function App() {
   }, []);
   const [fileContents, setFileContents] = useState<Record<string, string>>({}); // path -> text
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [activeFileTargetLine, setActiveFileTargetLine] = useState<number | undefined>(undefined);
 
   const handleOpenNote = useCallback((path: string | null) => {
+    setActiveFileTargetLine(undefined); // Reset target line on normal open
     if (!path) {
       setActiveFilePath(null);
       setActiveFileHasRemoteUpdate(false);
@@ -257,6 +261,11 @@ export default function App() {
       }
     })();
   }, [files, setActiveFileHasRemoteUpdate]);
+
+  const handleOpenNoteWithLine = useCallback((path: string | null, lineIndex?: number) => {
+    handleOpenNote(path);
+    setActiveFileTargetLine(lineIndex);
+  }, [handleOpenNote]);
   const [isLoadingTree, setIsLoadingTree] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -2753,6 +2762,7 @@ export default function App() {
         activeFilePath={activeFilePath}
         setActiveFilePath={handleOpenNote}
         setViewTab={setViewTab}
+        onOpenSearch={() => setShowSearchModal(true)}
         onDeleteClick={(path, sha) => setPendingDeleteFile({ path, sha })}
         onRenameClick={(path, name, sha) => {
           setPendingRenameFile({ path, name, sha });
@@ -2989,6 +2999,8 @@ export default function App() {
               vaultImages={vaultImages}
               onFetchBinaryFile={loadBinaryFile}
               onUploadAttachment={(file, folderPath) => uploadAttachment(file, folderPath, false)}
+              initialSearchLineIndex={activeFileTargetLine}
+              onClearTargetLine={() => setActiveFileTargetLine(undefined)}
             />
           ) : activeFilePath ? (
             <div className="flex-1 w-full h-full flex flex-col bg-background select-text overflow-y-auto items-center p-8">
@@ -3540,6 +3552,18 @@ export default function App() {
         onKeepRemote={resolveKeepRemote}
         onKeepAllLocal={resolveAllLocal}
         onKeepAllRemote={resolveAllRemote}
+      />
+
+      {/* Global Vault Search Modal */}
+      <SearchModal
+        isOpen={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        files={files}
+        fileContents={fileContents}
+        onOpenNote={handleOpenNoteWithLine}
+        onPrefetchAll={preloadAllVaultFiles}
+        prefetchStatus={prefetchStatus}
+        prefetchProgress={prefetchProgress}
       />
 
       {/* Settings Modal */}

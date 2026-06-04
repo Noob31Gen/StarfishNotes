@@ -428,6 +428,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   hasConflicts: boolean;
   onOpenConflictResolution: () => void;
+  onOpenSearch: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -463,6 +464,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenSettings,
   hasConflicts,
   onOpenConflictResolution,
+  onOpenSearch,
 }) => {
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [activeMenuPath, setActiveMenuPath] = useState<string | null>(null);
@@ -563,6 +565,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <div className="flex items-center gap-1">
+            <button
+              onClick={onOpenSearch}
+              className="w-8 h-8 flex items-center justify-center rounded-full text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer"
+              title="Global Content Search"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+
             {isMobileSidebarOpen ? (
               <button
                 onClick={() => setIsMobileSidebarOpen(false)}

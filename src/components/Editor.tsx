@@ -18,6 +18,8 @@ interface EditorProps {
   vaultImages: Record<string, string>;
   onFetchBinaryFile: (path: string, sha: string) => Promise<void>;
   onUploadAttachment: (file: File, folderPath?: string) => Promise<{ path: string; name: string }>;
+  initialSearchLineIndex?: number;
+  onClearTargetLine?: () => void;
 }
 
 function parseCSV(text: string, delimiter: string = ','): string[][] {
@@ -113,6 +115,8 @@ export const Editor: React.FC<EditorProps> = ({
   vaultImages,
   onFetchBinaryFile,
   onUploadAttachment,
+  initialSearchLineIndex,
+  onClearTargetLine,
 }) => {
   const [content, setContent] = useState(initialContent);
   const [sha, setSha] = useState(initialSha);
@@ -746,17 +750,38 @@ export const Editor: React.FC<EditorProps> = ({
   useEffect(() => {
     // Restore cursor position after content is loaded
     const timer = setTimeout(() => {
-      const savedState = restoreEditorState(vaultId, filePath);
-      if (textareaRef.current && savedState.cursorPos !== undefined) {
-        textareaRef.current.setSelectionRange(savedState.cursorPos, savedState.cursorPos);
-        textareaRef.current.focus();
-      }
-      if (textareaRef.current && savedState.scrollPos !== undefined) {
-        textareaRef.current.scrollTop = savedState.scrollPos;
+      if (initialSearchLineIndex !== undefined && textareaRef.current) {
+        const textarea = textareaRef.current;
+        const lines = initialContent.split('\n');
+        let charIndex = 0;
+        for (let i = 0; i < Math.min(initialSearchLineIndex, lines.length); i++) {
+          charIndex += lines[i].length + 1; // +1 for the newline character
+        }
+        
+        textarea.setSelectionRange(charIndex, charIndex);
+        textarea.focus();
+        
+        // Scroll to approximate line position
+        const linePercentage = initialSearchLineIndex / Math.max(1, lines.length);
+        const targetScroll = Math.max(0, textarea.scrollHeight * linePercentage - (textarea.clientHeight / 2));
+        textarea.scrollTop = targetScroll;
+        
+        if (onClearTargetLine) {
+          onClearTargetLine();
+        }
+      } else {
+        const savedState = restoreEditorState(vaultId, filePath);
+        if (textareaRef.current && savedState.cursorPos !== undefined) {
+          textareaRef.current.setSelectionRange(savedState.cursorPos, savedState.cursorPos);
+          textareaRef.current.focus();
+        }
+        if (textareaRef.current && savedState.scrollPos !== undefined) {
+          textareaRef.current.scrollTop = savedState.scrollPos;
+        }
       }
     }, 0);
     return () => clearTimeout(timer);
-  }, [filePath, vaultId]);
+  }, [filePath, vaultId, initialSearchLineIndex, onClearTargetLine, initialContent]);
 
   // Configure marked with custom options
   useEffect(() => {
