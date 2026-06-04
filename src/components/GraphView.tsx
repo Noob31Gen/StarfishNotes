@@ -546,21 +546,42 @@ export const GraphView: React.FC<GraphViewProps> = ({
           ctx.moveTo(s.x, s.y);
           ctx.lineTo(t.x, t.y);
 
-          if (isHighlighted) {
-            ctx.strokeStyle = 'rgba(192, 132, 252, 0.75)';
-            ctx.lineWidth = 2.0;
+          if (hoverNodeRef.current) {
+            if (isHighlighted) {
+              ctx.strokeStyle = 'rgba(192, 132, 252, 0.95)';
+              ctx.lineWidth = 2.2;
+              ctx.globalAlpha = 1.0;
+            } else {
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+              ctx.lineWidth = 0.8;
+              ctx.globalAlpha = 0.15;
+            }
           } else {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
             ctx.lineWidth = 1.1;
+            ctx.globalAlpha = 1.0;
           }
 
           ctx.stroke();
         }
       });
+      ctx.globalAlpha = 1.0; // Reset global alpha
 
       // Draw Nodes
       nodes.forEach(node => {
         const isHovered = hoverNodeRef.current && hoverNodeRef.current.id === node.id;
+        const isRelated = !hoverNodeRef.current || isHovered || linksRef.current.some(
+          l => (l.source === node.id && l.target === hoverNodeRef.current!.id) ||
+               (l.source === hoverNodeRef.current!.id && l.target === node.id)
+        );
+
+        ctx.save();
+        if (!isRelated) {
+          ctx.globalAlpha = 0.15;
+        } else {
+          ctx.globalAlpha = 1.0;
+        }
+
         const isActive = node.id === activeFilePath;
         const isSearched = searchHighlightRef.current && node.name.toLowerCase().includes(searchHighlightRef.current.toLowerCase());
 
@@ -568,20 +589,20 @@ export const GraphView: React.FC<GraphViewProps> = ({
         if (isHovered || isActive || isSearched) {
           ctx.save();
           ctx.shadowBlur = isSearched ? 25 : 18;
-          ctx.shadowColor = isSearched ? '#f43f5e' : node.color;
+          ctx.shadowColor = isSearched ? '#10b981' : node.color;
         }
 
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.radius, 0, 2 * Math.PI);
 
         if (node.type === 'ghost') {
-          ctx.strokeStyle = node.color;
+          ctx.strokeStyle = isSearched ? '#10b981' : node.color;
           ctx.lineWidth = 1.8;
           ctx.stroke();
           ctx.fillStyle = 'rgba(71, 85, 105, 0.15)';
           ctx.fill();
         } else {
-          ctx.fillStyle = node.color;
+          ctx.fillStyle = isSearched ? '#10b981' : node.color;
           ctx.fill();
         }
 
@@ -590,7 +611,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           // Render ring border
           ctx.beginPath();
           ctx.arc(node.x, node.y, node.radius + (isSearched ? 5.5 : 3.5), 0, 2 * Math.PI);
-          ctx.strokeStyle = isSearched ? 'rgba(244, 63, 94, 0.45)' : 'rgba(255, 255, 255, 0.15)';
+          ctx.strokeStyle = isSearched ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.15)';
           ctx.lineWidth = isSearched ? 1.5 : 0.9;
           ctx.stroke();
         }
@@ -601,11 +622,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
             ? 'bold 11px Inter, sans-serif'
             : '500 10px Inter, sans-serif';
           ctx.fillStyle = isSearched
-            ? '#f43f5e'
+            ? '#10b981'
             : (isHovered ? '#ffffff' : (node.type === 'ghost' ? 'rgba(241, 245, 249, 0.4)' : 'rgba(241, 245, 249, 0.65)'));
           ctx.textAlign = 'center';
           ctx.fillText(node.name, node.x, node.y - node.radius - 6);
         }
+
+        ctx.restore();
       });
 
       ctx.restore();
