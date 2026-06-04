@@ -425,6 +425,8 @@ export const Editor: React.FC<EditorProps> = ({
     } else {
       let targetTop = -1;
       let targetElement: HTMLElement | null = null;
+      let targetElementHeight = 26;
+      let targetLocalLineIndex = currentLineIndex - windowStartLine;
 
       const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
       const isCSV = ext === '.csv' || ext === '.tsv';
@@ -437,30 +439,58 @@ export const Editor: React.FC<EditorProps> = ({
           const targetRowIdx = currentLineIndex - windowStartLine;
           if (rows[targetRowIdx]) {
             targetElement = rows[targetRowIdx] as HTMLElement;
+            targetElementHeight = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
           }
         }
       } else if (isPlainCode) {
         const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
         if (lineEl) {
           targetElement = lineEl as HTMLElement;
+          targetElementHeight = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
+        }
+      } else {
+        // Case 3: Markdown semantic block matching
+        const blocks = previewContainer.querySelectorAll('h1, h2, h3, h4, h5, h6, p, pre, table, blockquote, li');
+        const vLines = isWindowingMode ? virtualLines : content.split('\n');
+        
+        // Scan downwards from currentLineIndex to find a line with text to match
+        for (let offset = 0; offset < 20; offset++) {
+          const lineIdx = currentLineIndex + offset;
+          if (lineIdx >= vLines.length) break;
+          const rawLine = vLines[lineIdx];
+          const cleanLine = rawLine.replace(/[#*`~_\-|[\]]/g, '').trim().toLowerCase();
+          if (cleanLine.length > 3) {
+            const searchStr = cleanLine.substring(0, 30);
+            for (let b = 0; b < blocks.length; b++) {
+              const blockText = blocks[b].textContent || '';
+              const cleanBlockText = blockText.trim().toLowerCase();
+              if (cleanBlockText.includes(searchStr)) {
+                targetElement = blocks[b] as HTMLElement;
+                targetElementHeight = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
+                targetLocalLineIndex = lineIdx - windowStartLine;
+                break;
+              }
+            }
+            if (targetElement) break;
+          }
         }
       }
 
       if (targetElement) {
         targetTop = targetElement.getBoundingClientRect().top - previewContainer.getBoundingClientRect().top + previewContainer.scrollTop;
         
-        const localLineIndex = currentLineIndex - windowStartLine;
+        const localLineIndex = targetLocalLineIndex;
         let lineTop = 0;
-        for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
-          lineTop += windowLineHeights[i];
+        const heights = isWindowingMode ? windowLineHeights : [];
+        for (let i = 0; i < Math.min(localLineIndex, heights.length); i++) {
+          lineTop += heights[i];
         }
         const relativeScrollTop = editorViewport.scrollTop - (windowStartLine * 24);
         const editorLineScrollOffset = Math.max(0, relativeScrollTop - lineTop);
-        const editorLineHeight = windowLineHeights[localLineIndex] || 24;
+        const editorLineHeight = (isWindowingMode ? windowLineHeights[localLineIndex] : 24) || 24;
         const proportion = Math.min(1, editorLineScrollOffset / editorLineHeight);
         
-        const targetHeight = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
-        const previewOffset = proportion * targetHeight;
+        const previewOffset = proportion * targetElementHeight;
         targetTop += previewOffset;
       }
 
@@ -475,7 +505,7 @@ export const Editor: React.FC<EditorProps> = ({
         }
       }
     }
-  }, [filePath, windowStartLine, windowLineHeights, getTopVisibleLineIndex]);
+  }, [filePath, windowStartLine, windowLineHeights, getTopVisibleLineIndex, isWindowingMode, virtualLines, content]);
 
   const handleEditorScroll = (e: React.UIEvent<HTMLDivElement | HTMLTextAreaElement>) => {
     const editorViewport = e.currentTarget;
@@ -606,21 +636,58 @@ export const Editor: React.FC<EditorProps> = ({
               matchedLineIndex = parseInt(dataLineAttr, 10);
             }
           }
+        } else {
+          // Case 3: Markdown semantic block matching
+          const blocks = previewContainer.querySelectorAll('h1, h2, h3, h4, h5, h6, p, pre, table, blockquote, li');
+          const containerTop = previewContainer.getBoundingClientRect().top;
+          let matchedBlock: HTMLElement | null = null;
+
+          for (let i = 0; i < blocks.length; i++) {
+            const block = blocks[i] as HTMLElement;
+            const relativeTop = block.getBoundingClientRect().top - containerTop;
+            const height = block.getBoundingClientRect().height || block.clientHeight || 26;
+            if (relativeTop + height > 0) {
+              matchedBlock = block;
+              break;
+            }
+          }
+
+          if (matchedBlock) {
+            const blockText = matchedBlock.textContent || '';
+            const cleanBlockText = blockText.replace(/[#*`~_\-|[\]]/g, '').trim().toLowerCase();
+            if (cleanBlockText.length > 3) {
+              const searchStr = cleanBlockText.substring(0, 30);
+              const vLines = isWindowingMode ? virtualLines : content.split('\n');
+              for (let i = 0; i < vLines.length; i++) {
+                const lineText = vLines[i].replace(/[#*`~_\-|[\]]/g, '').trim().toLowerCase();
+                if (lineText.includes(searchStr)) {
+                  matchedLineIndex = windowStartLine + i;
+                  targetElement = matchedBlock;
+                  break;
+                }
+              }
+            }
+          }
         }
 
         if (targetElement) {
           const containerTop = previewContainer.getBoundingClientRect().top;
           let targetScrollTop = windowStartLine * 24;
           const localLineIndex = matchedLineIndex - windowStartLine;
-          for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
-            targetScrollTop += windowLineHeights[i];
+          
+          if (isWindowingMode) {
+            for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
+              targetScrollTop += windowLineHeights[i];
+            }
+          } else {
+            targetScrollTop = matchedLineIndex * 24;
           }
 
           const height = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
           const relativeTop = targetElement.getBoundingClientRect().top - containerTop;
           const previewLineScrollOffset = Math.max(0, -relativeTop);
           const proportion = previewLineScrollOffset / height;
-          const editorLineHeight = windowLineHeights[localLineIndex] || 24;
+          const editorLineHeight = (isWindowingMode ? windowLineHeights[localLineIndex] : 24) || 24;
           const editorLineScrollOffset = proportion * editorLineHeight;
           targetScrollTop += editorLineScrollOffset;
 
@@ -630,7 +697,7 @@ export const Editor: React.FC<EditorProps> = ({
             textareaRef.current.scrollTop = targetScrollTop;
           }
         } else {
-          // Percentage-based fallback (like for standard markdown files)
+          // Percentage-based fallback (like for standard markdown files with no matched block)
           const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
           if (maxPreviewScroll > 0) {
             const percentage = previewContainer.scrollTop / maxPreviewScroll;
