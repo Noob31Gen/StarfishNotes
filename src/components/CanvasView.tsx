@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Minus, Trash2, FileText, Type, Save, RefreshCw, Link2, ChevronDown, Compass, Eye, Edit2, Undo2, Redo2, Image, Paperclip } from 'lucide-react';
+import { Plus, Minus, Trash2, FileText, Type, Save, RefreshCw, Link2, ChevronDown, Compass, Eye, Edit2, Undo2, Redo2, Image, Paperclip, Search } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { safeParseJson } from '../utils/json';
 import { marked } from 'marked';
@@ -1961,20 +1961,21 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                           </button>
 
                           {activeLinkSelectorCardId === node.id && (
-                            <div className="absolute top-full left-0 w-full mt-1 bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 z-50 animate-in fade-in zoom-in-95 duration-100 min-w-[180px]">
+                            <div className="absolute top-full left-0 w-full mt-1 bg-[#18181f]/95 backdrop-blur-xl border border-border/60 rounded-2xl shadow-2xl p-2.5 flex flex-col gap-2 z-50 animate-in fade-in slide-in-from-top-2 duration-100 min-w-[180px]">
 
-                              <div className="relative flex items-center px-1 py-1 border-b border-border/40 pb-1.5">
+                              <div className="relative flex items-center shrink-0">
+                                <Search size={11} className="absolute left-2.5 text-muted-foreground" />
                                 <input
                                   type="text"
                                   value={noteSearchQuery}
                                   onChange={(e) => setNoteSearchQuery(e.target.value)}
                                   placeholder="Search notes..."
-                                  className="w-full bg-muted/30 border border-border/40 text-foreground px-2 py-1 rounded-md text-[0.7rem] focus:outline-none focus:border-primary/60 transition-all duration-150"
+                                  className="w-full bg-[#0e0f14] border border-border/80 text-foreground pl-7 pr-2.5 py-1 rounded-xl text-[0.68rem] focus:outline-none focus:border-indigo-500 transition-all font-medium"
                                   onClick={(e) => e.stopPropagation()}
                                 />
                               </div>
 
-                              <div className="max-h-[140px] overflow-y-auto flex flex-col gap-0.5 mt-1 pr-0.5">
+                              <div className="max-h-[140px] overflow-y-auto flex flex-col gap-0.5 pr-0.5">
                                 {files
                                   .filter(f => {
                                     const lower = f.path.toLowerCase();
@@ -1996,7 +1997,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                                           setActiveLinkSelectorCardId(null);
                                           setNoteSearchQuery('');
                                         }}
-                                        className="w-full text-left px-2 py-1.5 rounded-md text-[0.7rem] font-semibold text-muted-foreground hover:bg-white/[0.04] hover:text-foreground cursor-pointer transition-premium flex items-center gap-1.5 border border-transparent"
+                                        className="w-full text-left px-2 py-1.5 rounded-xl text-[0.7rem] font-semibold text-foreground/90 hover:bg-white/[0.04] cursor-pointer transition-colors duration-100 flex items-center gap-1.5 border border-transparent hover:border-border/10"
                                       >
                                         {isImg ? (
                                           <Image className="w-3 h-3 text-muted-foreground/60 shrink-0" />
@@ -2016,7 +2017,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                                   const allowed = ['.md', '.txt', '.canvas', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf'];
                                   return allowed.some(ext => lower.endsWith(ext)) && f.name.toLowerCase().includes(noteSearchQuery.toLowerCase());
                                 }).length === 0 && (
-                                    <span className="text-[0.65rem] text-muted-foreground/50 italic p-2 text-center select-none">
+                                    <span className="text-center py-3 text-[0.65rem] text-muted-foreground italic select-none">
                                       No notes found
                                     </span>
                                   )}
@@ -2060,52 +2061,54 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
               )}
 
               {showSuggestions && editingNodeIds[node.id] && (
-                <div className="absolute top-[100%] left-0 w-[240px] mt-1 bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5 z-[1000] max-h-[160px] overflow-y-auto select-none">
-                  <div className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-2 py-1 select-none border-b border-border/40 pb-1 mb-1 flex justify-between items-center">
+                <div className="absolute top-[100%] left-0 w-[240px] mt-1 bg-[#18181f]/95 backdrop-blur-xl border border-border/60 rounded-2xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-[1000] max-h-[160px] overflow-y-auto select-none animate-in fade-in slide-in-from-top-1 duration-100">
+                  <div className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 pb-1.5 select-none border-b border-border/40 flex justify-between items-center">
                     <span>Suggestions</span>
                     <span className="text-[0.55rem] lowercase tracking-normal font-semibold font-sans text-muted-foreground/55">enter to link</span>
                   </div>
-                  {filteredSuggestions.map((path, idx) => {
-                    const isSelectedSug = suggestionIndex === idx;
-                    const name = path.split('/').pop()?.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '') || '';
-                    const dir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : null;
-                    return (
-                      <button
-                        key={path}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const targetTextarea = document.querySelector(`textarea[placeholder="Enter markdown text..."]`) as HTMLTextAreaElement | null;
-                          if (targetTextarea) {
-                            insertSuggestion(node.id, path, node.text || '', targetTextarea);
-                          }
-                        }}
-                        onMouseEnter={() => setSuggestionIndex(idx)}
-                        className={cn(
-                          "w-full text-left px-2.5 py-2 rounded-lg text-xs transition-premium cursor-pointer font-semibold flex items-center justify-between border border-transparent",
-                          isSelectedSug
-                            ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent font-semibold"
-                            : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground"
-                        )}
-                      >
-                        <span className="flex items-center gap-2 truncate">
-                          <FileText className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">{name}</span>
-                        </span>
-                        {dir && (
-                          <span className="text-[0.55rem] font-semibold font-sans text-muted-foreground/45 shrink-0 select-none ml-2">
-                            {dir}
+                  <div className="flex flex-col gap-0.5">
+                    {filteredSuggestions.map((path, idx) => {
+                      const isSelectedSug = suggestionIndex === idx;
+                      const name = path.split('/').pop()?.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '') || '';
+                      const dir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : null;
+                      return (
+                        <button
+                          key={path}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const targetTextarea = document.querySelector(`textarea[placeholder="Enter markdown text..."]`) as HTMLTextAreaElement | null;
+                            if (targetTextarea) {
+                              insertSuggestion(node.id, path, node.text || '', targetTextarea);
+                            }
+                          }}
+                          onMouseEnter={() => setSuggestionIndex(idx)}
+                          className={cn(
+                            "w-full text-left px-2 py-1.5 rounded-xl text-[0.7rem] transition-colors duration-100 cursor-pointer font-semibold flex items-center justify-between border border-transparent hover:border-border/10",
+                            isSelectedSug
+                              ? "bg-indigo-600/15 text-accent font-semibold"
+                              : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                          )}
+                        >
+                          <span className="flex items-center gap-2 truncate">
+                            <FileText className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{name}</span>
                           </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                  {filteredSuggestions.length === 0 && (
-                    <span className="text-[0.65rem] text-muted-foreground/50 italic p-2 text-center select-none">
-                      No matching notes
-                    </span>
-                  )}
+                          {dir && (
+                            <span className="text-[0.55rem] font-semibold font-sans text-muted-foreground/45 shrink-0 select-none ml-2">
+                              {dir}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {filteredSuggestions.length === 0 && (
+                      <span className="text-center py-3 text-[0.65rem] text-muted-foreground italic select-none">
+                        No matching notes
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -2133,16 +2136,13 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
               setIsAddImageOpen(false);
             }}
             className={cn(
-              "w-auto lg:w-[125px] h-8 px-2.5 lg:px-3.5 rounded-full text-xs font-semibold text-muted-foreground hover:bg-border/60 hover:text-foreground border border-transparent focus:outline-none transition-all cursor-pointer flex items-center justify-center lg:justify-between text-left shrink-0",
+              "h-8 px-2.5 lg:px-3.5 rounded-full text-xs font-semibold text-muted-foreground hover:bg-border/60 hover:text-foreground border border-transparent focus:outline-none transition-all cursor-pointer flex items-center gap-1.5 justify-center shrink-0",
               isAddNoteOpen && "bg-primary/10 text-accent border-primary/20"
             )}
             title="Add Linked Note"
           >
-            <div className="flex items-center gap-1.5 truncate">
-              <FileText size={13} className="shrink-0" />
-              <span className="hidden lg:inline truncate">Add Note</span>
-            </div>
-            <ChevronDown className={`hidden lg:block w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${isAddNoteOpen ? 'transform rotate-180' : ''}`} />
+            <FileText size={13} className="text-blue-400 shrink-0" />
+            <span className="hidden lg:inline truncate">Add Note</span>
           </button>
         </div>
 
@@ -2155,16 +2155,13 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
               setIsAddNoteOpen(false);
             }}
             className={cn(
-              "w-auto lg:w-[130px] h-8 px-2.5 lg:px-3.5 rounded-full text-xs font-semibold text-muted-foreground hover:bg-border/60 hover:text-foreground border border-transparent focus:outline-none transition-all cursor-pointer flex items-center justify-center lg:justify-between text-left shrink-0",
+              "h-8 px-2.5 lg:px-3.5 rounded-full text-xs font-semibold text-muted-foreground hover:bg-border/60 hover:text-foreground border border-transparent focus:outline-none transition-all cursor-pointer flex items-center gap-1.5 justify-center shrink-0",
               isAddImageOpen && "bg-primary/10 text-accent border-primary/20"
             )}
             title="Add Media / Attachment Card"
           >
-            <div className="flex items-center gap-1.5 truncate">
-              <Image size={13} className="shrink-0" />
-              <span className="hidden lg:inline truncate">Add Image/PDF</span>
-            </div>
-            <ChevronDown className={`hidden lg:block w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${isAddImageOpen ? 'transform rotate-180' : ''}`} />
+            <Image size={13} className="text-blue-400 shrink-0" />
+            <span className="hidden lg:inline truncate">Add Image/PDF</span>
           </button>
         </div>
 
@@ -2284,26 +2281,39 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
             }}
           />
           <div
-            style={{ left: `${notePopupCoords.left}px`, bottom: `${notePopupCoords.bottom}px` }}
-            className="fixed w-[240px] bg-[#12131a] border border-border rounded-xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 max-h-[300px] overflow-hidden select-none animate-fade-in"
+            style={{ 
+              left: window.innerWidth < 640 ? undefined : `${notePopupCoords.left}px`, 
+              bottom: `${notePopupCoords.bottom}px` 
+            }}
+            className="fixed left-4 right-4 sm:left-auto sm:right-auto sm:w-72 bg-[#18181f]/95 backdrop-blur-xl border border-border/60 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 z-50 text-foreground text-left normal-case font-normal duration-100 select-none animate-in fade-in slide-in-from-bottom-2 max-h-[300px] overflow-hidden"
           >
-            <span className="text-[0.6rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 py-0.5 select-none">
-              Select Note
-            </span>
-            <div className="h-[1px] bg-border/60 my-0.5 select-none" />
+            <div className="flex items-center justify-between">
+              <span className="text-[0.72rem] font-bold text-foreground/90">Select Note</span>
+              <button 
+                onClick={() => {
+                  setIsAddNoteOpen(false);
+                  setNoteSearchQuery('');
+                }} 
+                className="text-muted-foreground/60 hover:text-foreground transition-colors" 
+                type="button"
+              >
+                ✕
+              </button>
+            </div>
 
-            <div className="relative flex items-center px-1 py-1 border-b border-border/40 pb-1.5 shrink-0">
+            <div className="relative flex items-center shrink-0">
+              <Search size={12} className="absolute left-3 text-muted-foreground" />
               <input
                 type="text"
                 value={noteSearchQuery}
                 onChange={(e) => setNoteSearchQuery(e.target.value)}
                 placeholder="Search notes..."
-                className="w-full bg-muted/30 border border-border/40 text-foreground px-2 py-1 rounded-md text-[0.7rem] focus:outline-none focus:border-primary/60 transition-all duration-150"
+                className="w-full bg-[#0e0f14] border border-border/80 text-foreground pl-8 pr-3 py-1.5 rounded-xl text-[0.72rem] focus:outline-none focus:border-indigo-500 transition-all font-medium"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
 
-            <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 pr-0.5 max-h-[160px]">
+            <div className="flex flex-col gap-0.5 max-h-[160px] overflow-y-auto pr-0.5">
               {files.filter(f => {
                 const lower = f.path.toLowerCase();
                 if (lower.includes('.obsidian/') || lower.startsWith('.obsidian/')) return false;
@@ -2311,8 +2321,8 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                 const allowed = ['.md', '.txt', '.canvas'];
                 return allowed.some(ext => lower.endsWith(ext)) && f.name.toLowerCase().includes(noteSearchQuery.toLowerCase());
               }).length === 0 ? (
-                <span className="text-[0.65rem] text-muted-foreground/60 italic p-2 text-center select-none">
-                  No notes found.
+                <span className="text-center py-4 text-[0.68rem] text-muted-foreground italic select-none">
+                  No notes found
                 </span>
               ) : (
                 files.filter(f => {
@@ -2330,10 +2340,11 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                       setIsAddNoteOpen(false);
                       setNoteSearchQuery('');
                     }}
-                    className="w-full text-left px-2 py-1.5 rounded-md text-[0.7rem] font-semibold text-muted-foreground hover:bg-white/[0.04] hover:text-foreground cursor-pointer transition-premium flex items-center border border-transparent font-medium"
+                    className="w-full text-left px-2 py-1.5 hover:bg-white/[0.04] text-[0.72rem] font-semibold text-foreground/90 rounded-xl transition-all duration-100 flex items-center gap-2 cursor-pointer border border-transparent hover:border-border/10"
                     title={f.name}
                   >
-                    {f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '')}
+                    <FileText className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                    <span className="truncate">{f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '')}</span>
                   </button>
                 ))
               )}
@@ -2349,13 +2360,22 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
             onClick={() => setIsAddImageOpen(false)}
           />
           <div
-            style={{ left: `${imagePopupCoords.left}px`, bottom: `${imagePopupCoords.bottom}px` }}
-            className="fixed w-[250px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 max-h-[300px] overflow-hidden select-none animate-fade-in"
+            style={{ 
+              left: window.innerWidth < 640 ? undefined : `${imagePopupCoords.left}px`, 
+              bottom: `${imagePopupCoords.bottom}px` 
+            }}
+            className="fixed left-4 right-4 sm:left-auto sm:right-auto sm:w-72 bg-[#18181f]/95 backdrop-blur-xl border border-border/60 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 z-50 text-foreground text-left normal-case font-normal duration-100 select-none animate-in fade-in slide-in-from-bottom-2 max-h-[300px] overflow-hidden"
           >
-            <span className="text-[0.6rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 py-0.5 select-none">
-              Add Media Card
-            </span>
-            <div className="h-[1px] bg-border/60 my-0.5 select-none" />
+            <div className="flex items-center justify-between">
+              <span className="text-[0.72rem] font-bold text-foreground/90">Add Media Card</span>
+              <button 
+                onClick={() => setIsAddImageOpen(false)} 
+                className="text-muted-foreground/60 hover:text-foreground transition-colors" 
+                type="button"
+              >
+                ✕
+              </button>
+            </div>
 
             {onUploadAttachment && (
               <>
@@ -2382,7 +2402,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                     };
                     input.click();
                   }}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 rounded-lg text-xs font-semibold cursor-pointer transition-all duration-150 shrink-0"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/30 rounded-xl text-xs font-semibold cursor-pointer transition-all duration-150 shrink-0"
                 >
                   {isUploadingMedia ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -2397,18 +2417,19 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
               </>
             )}
 
-            <div className="relative flex items-center px-1 py-1 border-b border-border/40 pb-1.5 shrink-0">
+            <div className="relative flex items-center shrink-0">
+              <Search size={12} className="absolute left-3 text-muted-foreground" />
               <input
                 type="text"
                 value={mediaSearchQuery}
                 onChange={(e) => setMediaSearchQuery(e.target.value)}
                 placeholder="Search images/PDFs..."
-                className="w-full bg-muted/30 border border-border/40 text-foreground px-2 py-1 rounded-md text-[0.7rem] focus:outline-none focus:border-primary/60 transition-all duration-150"
+                className="w-full bg-[#0e0f14] border border-border/80 text-foreground pl-8 pr-3 py-1.5 rounded-xl text-[0.72rem] focus:outline-none focus:border-indigo-500 transition-all font-medium"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
 
-            <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 pr-0.5 max-h-[140px]">
+            <div className="flex flex-col gap-0.5 max-h-[140px] overflow-y-auto pr-0.5">
               {files.filter(f => {
                 const lower = f.path.toLowerCase();
                 if (lower.includes('.obsidian/') || lower.startsWith('.obsidian/')) return false;
@@ -2416,7 +2437,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                 const allowed = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.pdf'];
                 return allowed.some(ext => lower.endsWith(ext)) && f.name.toLowerCase().includes(mediaSearchQuery.toLowerCase());
               }).length === 0 ? (
-                <span className="text-[0.65rem] text-muted-foreground/50 italic p-2 text-center select-none">
+                <span className="text-center py-4 text-[0.68rem] text-muted-foreground italic select-none">
                   No media files found
                 </span>
               ) : (
@@ -2438,13 +2459,13 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                         setIsAddImageOpen(false);
                         setMediaSearchQuery('');
                       }}
-                      className="w-full text-left px-2 py-1.5 rounded-md text-[0.7rem] font-semibold text-muted-foreground hover:bg-white/[0.04] hover:text-foreground cursor-pointer transition-premium flex items-center gap-1.5 border border-transparent truncate font-medium"
+                      className="w-full text-left px-2.5 py-1.5 hover:bg-white/[0.04] text-[0.72rem] font-semibold text-foreground/90 rounded-xl transition-all duration-100 flex items-center gap-2 cursor-pointer border border-transparent hover:border-border/10 truncate"
                       title={f.name}
                     >
                       {isImg ? (
-                        <Image className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                        <Image className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                       ) : (
-                        <Paperclip className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                        <Paperclip className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                       )}
                       <span className="truncate">{cleanName}</span>
                     </button>
