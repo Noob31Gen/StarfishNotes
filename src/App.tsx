@@ -1238,14 +1238,22 @@ export default function App() {
         return;
       }
 
-      const byteCharacters = atob(base64);
-      const len = Math.min(byteCharacters.length, 1024);
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = byteCharacters.charCodeAt(i);
+      let isBinary = false;
+      let isBase64 = true;
+      try {
+        const byteCharacters = atob(base64);
+        const len = Math.min(byteCharacters.length, 1024);
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = byteCharacters.charCodeAt(i);
+        }
+        isBinary = isBinaryBytes(bytes);
+      } catch {
+        // If atob fails, it means the content is not valid base64 (e.g. plain text).
+        // Since binary files are always base64-encoded, this must be a text file.
+        isBinary = false;
+        isBase64 = false;
       }
-
-      const isBinary = isBinaryBytes(bytes);
 
       if (isBinary) {
         registerDetectedTextFile(path, false);
@@ -1272,7 +1280,7 @@ export default function App() {
         registerDetectedTextFile(path, true);
         setDetectedTextFiles(prev => ({ ...prev, [path]: true }));
 
-        const text = safeB64Decode(base64);
+        const text = isBase64 ? safeB64Decode(base64) : base64;
         setFileContents(prev => ({
           ...prev,
           [path]: text
