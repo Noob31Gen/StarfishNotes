@@ -11,6 +11,7 @@ This was created as an alternative to Obsidian on web.
 - Fully client side application with offline app and note caching. Only connects to github to sync.
 - Supports local-only mode without github login.
 - Includes background and foreground conflict handling for remote updates and idle tab detection.
+- Supports content search.
 
 (I am aware of many of the bugs and am attempting to fix it. This project was created partly with AI assistance (Claude Opus/Gemini.))
 
