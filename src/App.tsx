@@ -314,6 +314,13 @@ export default function App() {
                   }
                 }
               }
+              if (stored.type === 'blob') {
+                try {
+                  text = safeB64Decode(text);
+                } catch {
+                  // fallback
+                }
+              }
               contents[file.path] = text;
             }
           } else {
@@ -443,6 +450,13 @@ export default function App() {
             text = await decryptToken(file.content, decryptionKey);
           }
         }
+        if (file.type === 'blob') {
+          try {
+            text = safeB64Decode(text);
+          } catch {
+            // fallback
+          }
+        }
         setFileContents(prev => ({
           ...prev,
           [path]: text
@@ -466,6 +480,13 @@ export default function App() {
           const decryptionKey = providedKey || masterPassphrase;
           if (decryptionKey) {
             text = await decryptToken(file.content, decryptionKey);
+          }
+        }
+        if (file.type === 'blob') {
+          try {
+            text = safeB64Decode(text);
+          } catch {
+            // fallback
           }
         }
         setFileContents(prev => ({
@@ -551,11 +572,24 @@ export default function App() {
         reader.readAsDataURL(file);
       });
 
-      let savedContent = base64;
+      const isText = isTextFile(finalPathResolved);
+      let contentToSave = base64;
+      let fileType: 'text' | 'blob' = 'blob';
+
+      if (isText) {
+        try {
+          contentToSave = safeB64Decode(base64);
+          fileType = 'text';
+        } catch {
+          // fallback
+        }
+      }
+
+      let savedContent = contentToSave;
       const mode = storageMode;
       if (mode === 'encrypted' || mode === 'keychain' || mode === 'plain') {
         if (masterPassphrase) {
-          savedContent = await encryptToken(base64, masterPassphrase);
+          savedContent = await encryptToken(contentToSave, masterPassphrase);
         }
       }
 
@@ -563,18 +597,25 @@ export default function App() {
       await offlineStorage.saveFile({
         path: finalPathResolved,
         name: finalPathResolved.split('/').pop() || file.name,
-        type: 'blob',
+        type: fileType,
         content: savedContent,
         size: file.size,
         sha
       });
 
-      const mime = file.type || 'application/octet-stream';
-      const dataUrl = `data:${mime};base64,${base64}`;
-      setVaultImages(prev => ({
-        ...prev,
-        [finalPathResolved]: dataUrl
-      }));
+      if (isText) {
+        setFileContents(prev => ({
+          ...prev,
+          [finalPathResolved]: contentToSave
+        }));
+      } else {
+        const mime = file.type || 'application/octet-stream';
+        const dataUrl = `data:${mime};base64,${base64}`;
+        setVaultImages(prev => ({
+          ...prev,
+          [finalPathResolved]: dataUrl
+        }));
+      }
 
       const newFile: VaultFile = {
         path: finalPathResolved,
@@ -1296,12 +1337,26 @@ export default function App() {
         `upload attachment ${finalPathResolved}`
       );
 
-      const mime = file.type || 'application/octet-stream';
-      const dataUrl = `data:${mime};base64,${base64}`;
-      setVaultImages(prev => ({
-        ...prev,
-        [finalPathResolved]: dataUrl
-      }));
+      const isText = isTextFile(finalPathResolved);
+      if (isText) {
+        try {
+          const decodedText = safeB64Decode(base64);
+          await saveLocalFile(finalPathResolved, { content: decodedText, sha: commitResult.sha });
+          setFileContents(prev => ({
+            ...prev,
+            [finalPathResolved]: decodedText
+          }));
+        } catch {
+          // fallback
+        }
+      } else {
+        const mime = file.type || 'application/octet-stream';
+        const dataUrl = `data:${mime};base64,${base64}`;
+        setVaultImages(prev => ({
+          ...prev,
+          [finalPathResolved]: dataUrl
+        }));
+      }
 
       const newFile: VaultFile = {
         path: finalPathResolved,
@@ -1477,6 +1532,14 @@ export default function App() {
         }
 
         const isBinaryFileNode = !isTextFile(fileRecord.path) && !fileRecord.path.toLowerCase().endsWith('.canvas');
+
+        if (fileData.type === 'blob' && !isBinaryFileNode) {
+          try {
+            contentToUpload = safeB64Decode(contentToUpload);
+          } catch {
+            // fallback
+          }
+        }
 
         let resultSha = '';
         if (isBinaryFileNode) {

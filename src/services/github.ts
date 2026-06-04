@@ -34,10 +34,22 @@ export function isBinaryBytes(bytes: Uint8Array): boolean {
   return false; // No null bytes -> text
 }
 
-const runtimeDetectedTextFiles: Record<string, boolean> = {};
+const runtimeDetectedTextFiles: Record<string, boolean> = (() => {
+  try {
+    const saved = localStorage.getItem('starfishnotes_detected_text_files');
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+})();
 
 export function registerDetectedTextFile(path: string, isText: boolean): void {
   runtimeDetectedTextFiles[path] = isText;
+  try {
+    localStorage.setItem('starfishnotes_detected_text_files', JSON.stringify(runtimeDetectedTextFiles));
+  } catch (e) {
+    console.error('Failed to save detected text files registry:', e);
+  }
 }
 
 export function isTextFile(path: string): boolean {
