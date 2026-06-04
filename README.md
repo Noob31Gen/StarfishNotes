@@ -3,6 +3,7 @@
 This was created as an alternative to Obsidian on web.
 
 - Notes are saved as Markdown with non-invasive Preview.
+- Supports LaTeX math rendering and Mermaid.js diagrams.
 - App primarily made to sync to github.
 - Fully compatible with .canvas and .base files and includes a fully featured editor.
 - Supports links and graph view for links.
