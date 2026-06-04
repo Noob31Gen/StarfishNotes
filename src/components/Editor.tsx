@@ -418,6 +418,7 @@ export const Editor: React.FC<EditorProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
   const isEditingFromPreviewRef = useRef(false);
+  const hasRestoredRef = useRef(false);
 
   // Track original content to see if there are unsaved changes
   const originalContent = useRef(initialContent);
@@ -452,6 +453,11 @@ export const Editor: React.FC<EditorProps> = ({
       setSavedContent(initialContent);
     }
   }
+
+  // Reset cursor restoration tracker when active file changes
+  useEffect(() => {
+    hasRestoredRef.current = false;
+  }, [filePath]);
 
   // 2. Commit-phase synchronization for REFS
   useEffect(() => {
@@ -766,10 +772,12 @@ export const Editor: React.FC<EditorProps> = ({
         const targetScroll = Math.max(0, textarea.scrollHeight * linePercentage - (textarea.clientHeight / 2));
         textarea.scrollTop = targetScroll;
         
+        hasRestoredRef.current = true; // Mark as restored since we jump to search match
         if (onClearTargetLine) {
           onClearTargetLine();
         }
-      } else {
+      } else if (!hasRestoredRef.current) {
+        hasRestoredRef.current = true; // Mark as restored
         const savedState = restoreEditorState(vaultId, filePath);
         if (textareaRef.current && savedState.cursorPos !== undefined) {
           textareaRef.current.setSelectionRange(savedState.cursorPos, savedState.cursorPos);
