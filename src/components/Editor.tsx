@@ -478,36 +478,40 @@ export const Editor: React.FC<EditorProps> = ({
         let targetElement: HTMLElement | null = null;
         let containerOffset = 0;
 
-        // Try to find a table row
-        const table = previewContainer.querySelector('table');
-        if (table) {
-          const rows = table.querySelectorAll('tbody tr');
-          const targetRowIdx = currentLineIndex - windowStartLine;
-          if (rows[targetRowIdx]) {
-            targetElement = rows[targetRowIdx] as HTMLElement;
-            containerOffset = table.offsetTop;
-          }
+        if (editorViewport.scrollTop === 0) {
+          previewContainer.scrollTop = 0;
         } else {
-          // Try to find a preview line (for code blocks or text files)
-          const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
-          if (lineEl) {
-            targetElement = lineEl as HTMLElement;
-            const pre = previewContainer.querySelector('pre');
-            if (pre) {
-              containerOffset = pre.offsetTop;
+          // Try to find a table row
+          const table = previewContainer.querySelector('table');
+          if (table) {
+            const rows = table.querySelectorAll('tbody tr');
+            const targetRowIdx = currentLineIndex - windowStartLine;
+            if (rows[targetRowIdx]) {
+              targetElement = rows[targetRowIdx] as HTMLElement;
+              containerOffset = table.offsetTop;
+            }
+          } else {
+            // Try to find a preview line (for code blocks or text files)
+            const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
+            if (lineEl) {
+              targetElement = lineEl as HTMLElement;
+              const pre = previewContainer.querySelector('pre');
+              if (pre) {
+                containerOffset = pre.offsetTop;
+              }
             }
           }
-        }
 
-        if (targetElement) {
-          previewContainer.scrollTop = targetElement.offsetTop + containerOffset;
-        } else {
-          // Fallback to percentage-based scroll sync
-          const maxEditorScroll = editorViewport.scrollHeight - editorViewport.clientHeight;
-          if (maxEditorScroll > 0) {
-            const percentage = editorViewport.scrollTop / maxEditorScroll;
-            const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
-            previewContainer.scrollTop = percentage * maxPreviewScroll;
+          if (targetElement) {
+            previewContainer.scrollTop = targetElement.offsetTop + containerOffset;
+          } else {
+            // Fallback to percentage-based scroll sync
+            const maxEditorScroll = editorViewport.scrollHeight - editorViewport.clientHeight;
+            if (maxEditorScroll > 0) {
+              const percentage = editorViewport.scrollTop / maxEditorScroll;
+              const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
+              previewContainer.scrollTop = percentage * maxPreviewScroll;
+            }
           }
         }
       }
@@ -528,63 +532,71 @@ export const Editor: React.FC<EditorProps> = ({
       }
       isScrollingPreviewRef.current = true;
 
-      const table = previewContainer.querySelector('table');
-      const lines = previewContainer.querySelectorAll('.preview-line');
-
-      if (table || lines.length > 0) {
-        let matchedLineIndex = windowStartLine;
-        const scrollTop = previewContainer.scrollTop;
-
-        if (table) {
-          const rows = table.querySelectorAll('tbody tr');
-          let matchedRowIdx = 0;
-          for (let i = 0; i < rows.length; i++) {
-            const rowElement = rows[i] as HTMLElement;
-            if (rowElement.offsetTop + table.offsetTop >= scrollTop) {
-              matchedRowIdx = i;
-              break;
-            }
-          }
-          matchedLineIndex = windowStartLine + matchedRowIdx;
-        } else {
-          const pre = previewContainer.querySelector('pre');
-          const containerOffset = pre ? pre.offsetTop : 0;
-          let matchedLineOffset = 0;
-          for (let i = 0; i < lines.length; i++) {
-            const lineElement = lines[i] as HTMLElement;
-            if (lineElement.offsetTop + containerOffset >= scrollTop) {
-              matchedLineOffset = i;
-              break;
-            }
-          }
-          const dataLineAttr = lines[matchedLineOffset]?.getAttribute('data-line');
-          if (dataLineAttr !== null) {
-            matchedLineIndex = parseInt(dataLineAttr, 10);
-          }
-        }
-
-        let targetScrollTop = windowStartLine * 24;
-        const localLineIndex = matchedLineIndex - windowStartLine;
-        for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
-          targetScrollTop += windowLineHeights[i];
-        }
-
+      if (previewContainer.scrollTop === 0) {
         if (isWindowingMode && viewportRef.current) {
-          viewportRef.current.scrollTop = targetScrollTop;
+          viewportRef.current.scrollTop = 0;
         } else if (!isWindowingMode && textareaRef.current) {
           // eslint-disable-next-line react-hooks/immutability
-          textareaRef.current.scrollTop = targetScrollTop;
+          textareaRef.current.scrollTop = 0;
         }
       } else {
-        const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
-        if (maxPreviewScroll > 0) {
-          const percentage = previewContainer.scrollTop / maxPreviewScroll;
+        const table = previewContainer.querySelector('table');
+        const lines = previewContainer.querySelectorAll('.preview-line');
+
+        if (table || lines.length > 0) {
+          let matchedLineIndex = windowStartLine;
+          const scrollTop = previewContainer.scrollTop;
+
+          if (table) {
+            const rows = table.querySelectorAll('tbody tr');
+            let matchedRowIdx = 0;
+            for (let i = 0; i < rows.length; i++) {
+              const rowElement = rows[i] as HTMLElement;
+              if (rowElement.offsetTop + table.offsetTop >= scrollTop) {
+                matchedRowIdx = i;
+                break;
+              }
+            }
+            matchedLineIndex = windowStartLine + matchedRowIdx;
+          } else {
+            const pre = previewContainer.querySelector('pre');
+            const containerOffset = pre ? pre.offsetTop : 0;
+            let matchedLineOffset = 0;
+            for (let i = 0; i < lines.length; i++) {
+              const lineElement = lines[i] as HTMLElement;
+              if (lineElement.offsetTop + containerOffset >= scrollTop) {
+                matchedLineOffset = i;
+                break;
+              }
+            }
+            const dataLineAttr = lines[matchedLineOffset]?.getAttribute('data-line');
+            if (dataLineAttr !== null) {
+              matchedLineIndex = parseInt(dataLineAttr, 10);
+            }
+          }
+
+          let targetScrollTop = windowStartLine * 24;
+          const localLineIndex = matchedLineIndex - windowStartLine;
+          for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
+            targetScrollTop += windowLineHeights[i];
+          }
+
           if (isWindowingMode && viewportRef.current) {
-            const maxEditorScroll = viewportRef.current.scrollHeight - viewportRef.current.clientHeight;
-            viewportRef.current.scrollTop = percentage * maxEditorScroll;
+            viewportRef.current.scrollTop = targetScrollTop;
           } else if (!isWindowingMode && textareaRef.current) {
-            const maxEditorScroll = textareaRef.current.scrollHeight - textareaRef.current.clientHeight;
-            textareaRef.current.scrollTop = percentage * maxEditorScroll;
+            textareaRef.current.scrollTop = targetScrollTop;
+          }
+        } else {
+          const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
+          if (maxPreviewScroll > 0) {
+            const percentage = previewContainer.scrollTop / maxPreviewScroll;
+            if (isWindowingMode && viewportRef.current) {
+              const maxEditorScroll = viewportRef.current.scrollHeight - viewportRef.current.clientHeight;
+              viewportRef.current.scrollTop = percentage * maxEditorScroll;
+            } else if (!isWindowingMode && textareaRef.current) {
+              const maxEditorScroll = textareaRef.current.scrollHeight - textareaRef.current.clientHeight;
+              textareaRef.current.scrollTop = percentage * maxEditorScroll;
+            }
           }
         }
       }
@@ -665,10 +677,10 @@ export const Editor: React.FC<EditorProps> = ({
         const lines = text.split('\n');
         const codeLines = lines.map((line, idx) => {
           const globalLine = startLineOffset + idx;
-          return `<div class="preview-line" data-line="${globalLine}" style="line-height: 26px; min-height: 26px; white-space: pre-wrap; word-break: break-all;">${line || ' '}</div>`;
+          return `<div class="preview-line" data-line="${globalLine}" style="line-height: 26px; min-height: 26px; white-space: pre; word-break: normal;">${line || ' '}</div>`;
         }).join('');
         
-        html = `<pre class="bg-card/30 border border-border rounded-xl p-4 my-4 select-text font-mono text-[0.85rem] leading-[1.6]" style="white-space: pre-wrap; word-break: break-all;"><code class="language-${lang}" style="white-space: pre-wrap; word-break: break-all; display: block;">${codeLines}</code></pre>`;
+        html = `<pre class="bg-card/30 border border-border rounded-xl p-4 overflow-x-auto my-4 select-text font-mono text-[0.85rem] leading-[1.6]"><code class="language-${lang}" style="display: block; white-space: pre; word-break: normal;">${codeLines}</code></pre>`;
       }
       // C. Markdown / Plaintext
       else {
@@ -1138,20 +1150,62 @@ export const Editor: React.FC<EditorProps> = ({
   }, []);
 
   useEffect(() => {
-    if (previewContainerRef.current) {
+    const previewContainer = previewContainerRef.current;
+    if (previewContainer) {
       if (isEditingFromPreviewRef.current) {
         isEditingFromPreviewRef.current = false;
         return;
       }
       if (isWindowingMode) {
         const topSpacer = `<div style="height: ${windowStartLine * 26}px; width: 100%;"></div>`;
-        const bottomSpacer = `<div style="height: ${Math.max(0, virtualLinesRef.current.length - windowEndLine) * 26}px; width: 100%;"></div>`;
-        previewContainerRef.current.innerHTML = topSpacer + renderMarkdown(content, windowStartLine) + bottomSpacer;
+        const bottomSpacer = `<div style="height: ${Math.max(0, virtualLines.length - windowEndLine) * 26}px; width: 100%;"></div>`;
+        previewContainer.innerHTML = topSpacer + renderMarkdown(content, windowStartLine) + bottomSpacer;
+
+        // Sync scroll from editor to preview immediately upon boundary shifting
+        const editorViewport = viewportRef.current;
+        if (editorViewport) {
+          isScrollingEditorRef.current = true;
+          const currentLineIndex = getTopVisibleLineIndex();
+
+          if (editorViewport.scrollTop === 0) {
+            previewContainer.scrollTop = 0;
+          } else {
+            let targetElement: HTMLElement | null = null;
+            let containerOffset = 0;
+
+            const table = previewContainer.querySelector('table');
+            if (table) {
+              const rows = table.querySelectorAll('tbody tr');
+              const targetRowIdx = currentLineIndex - windowStartLine;
+              if (rows[targetRowIdx]) {
+                targetElement = rows[targetRowIdx] as HTMLElement;
+                containerOffset = table.offsetTop;
+              }
+            } else {
+              const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
+              if (lineEl) {
+                targetElement = lineEl as HTMLElement;
+                const pre = previewContainer.querySelector('pre');
+                if (pre) {
+                  containerOffset = pre.offsetTop;
+                }
+              }
+            }
+
+            if (targetElement) {
+              previewContainer.scrollTop = targetElement.offsetTop + containerOffset;
+            }
+          }
+
+          setTimeout(() => {
+            isScrollingEditorRef.current = false;
+          }, 50);
+        }
       } else {
-        previewContainerRef.current.innerHTML = renderMarkdown(content, 0);
+        previewContainer.innerHTML = renderMarkdown(content, 0);
       }
     }
-  }, [content, filePath, viewMode, renderMarkdown, isWindowingMode, windowStartLine, windowEndLine]);
+  }, [content, filePath, viewMode, renderMarkdown, isWindowingMode, windowStartLine, windowEndLine, getTopVisibleLineIndex, virtualLines.length]);
 
   // Unified save orchestration
   const performAutoSave = useCallback(async () => {
