@@ -88,7 +88,8 @@ export default function App() {
   const [isNetworkOffline, setIsNetworkOffline] = useState<boolean>(!navigator.onLine);
   const [showConflictModal, setShowConflictModal] = useState<boolean>(false);
   const [conflictingFiles, setConflictingFiles] = useState<VaultFile[]>([]);
-  const lastActiveTimeRef = useRef<number>(Date.now());
+  const [activeFileHasRemoteUpdate, setActiveFileHasRemoteUpdate] = useState<boolean>(false);
+  const lastActiveTimeRef = useRef<number>(0);
   const [authMode, setAuthMode] = useState<'github' | 'local'>(() => {
     return localStorage.getItem('starfishnotes-is-offline') === 'true' ? 'local' : 'github';
   });
@@ -239,11 +240,23 @@ export default function App() {
   const handleOpenNote = useCallback((path: string | null) => {
     if (!path) {
       setActiveFilePath(null);
+      setActiveFileHasRemoteUpdate(false);
       return;
     }
     const resolvedPath = resolveVaultFilePath(files, path);
     setActiveFilePath(resolvedPath);
-  }, [files]);
+
+    // Check if this newly opened file has remote updates
+    (async () => {
+      const remoteFile = files.find(f => f.path === resolvedPath);
+      const localFile = await getLocalFile(resolvedPath);
+      if (remoteFile && localFile && localFile.sha !== remoteFile.sha) {
+        setActiveFileHasRemoteUpdate(true);
+      } else {
+        setActiveFileHasRemoteUpdate(false);
+      }
+    })();
+  }, [files, setActiveFileHasRemoteUpdate]);
   const [isLoadingTree, setIsLoadingTree] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -990,7 +1003,24 @@ export default function App() {
         setActiveFilePath(defaultNote.path);
       }
 
-      syncVault(token, repo, branch, tree).then(() => {
+      // Check active file remote update status
+      let activeHasRemoteUpdate = false;
+      if (activeFilePath) {
+        const activeFileInTree = tree.find(f => f.path === activeFilePath);
+        const localActiveFile = await getLocalFile(activeFilePath);
+        if (activeFileInTree && localActiveFile && localActiveFile.sha !== activeFileInTree.sha) {
+          activeHasRemoteUpdate = true;
+        }
+      }
+      setActiveFileHasRemoteUpdate(activeHasRemoteUpdate);
+
+      // Collect skipped paths to prevent silent overwriting of active/unsynced files
+      const skippedPaths = [...getUnsyncedFiles()];
+      if (activeFilePath && !skippedPaths.includes(activeFilePath)) {
+        skippedPaths.push(activeFilePath);
+      }
+
+      syncVault(token, repo, branch, tree, skippedPaths).then(() => {
         console.log("Vault sync complete!");
         preloadAllFilesContents(tree);
       }).catch(console.error);
@@ -1579,6 +1609,8 @@ export default function App() {
       lastActiveTimeRef.current = Date.now();
     };
 
+    updateActivity();
+
     window.addEventListener('mousemove', updateActivity, { passive: true });
     window.addEventListener('mousedown', updateActivity, { passive: true });
     window.addEventListener('keydown', updateActivity, { passive: true });
@@ -1950,6 +1982,7 @@ export default function App() {
         return f;
       }));
 
+      setActiveFileHasRemoteUpdate(false);
       return result;
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : '';
@@ -1993,6 +2026,37 @@ export default function App() {
       }
     }
   };
+
+  const resolveActiveKeepLocal = useCallback(async () => {
+    if (!activeFilePath) return;
+    const content = fileContents[activeFilePath] || '';
+    const activeFile = files.find(f => f.path === activeFilePath);
+    try {
+      await handleSaveFile(activeFilePath, content, activeFile?.sha || null);
+      setActiveFileHasRemoteUpdate(false);
+      console.log(`Resolved active conflict: kept local version for ${activeFilePath}`);
+    } catch (err) {
+      console.error(`Failed to resolve active conflict (keep local) for ${activeFilePath}:`, err);
+    }
+  }, [activeFilePath, fileContents, files, handleSaveFile]);
+
+  const resolveActiveKeepRemote = useCallback(async () => {
+    if (!activeFilePath) return;
+    const activeFile = files.find(f => f.path === activeFilePath);
+    if (!activeFile) return;
+    setIsLoadingFile(true);
+    try {
+      const content = await fetchFileContent(githubToken, repoName, activeFilePath, activeFile.sha);
+      await saveLocalFile(activeFilePath, { content, sha: activeFile.sha });
+      setFileContents(prev => ({ ...prev, [activeFilePath]: content }));
+      setActiveFileHasRemoteUpdate(false);
+      console.log(`Resolved active conflict: pulled remote version for ${activeFilePath}`);
+    } catch (err) {
+      console.error(`Failed to resolve active conflict (keep remote) for ${activeFilePath}:`, err);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  }, [activeFilePath, files, githubToken, repoName]);
 
   const createNewFile = async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
     if (isOffline) {
@@ -2817,6 +2881,35 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {activeFileHasRemoteUpdate && (
+          <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-200/90 text-xs px-6 py-2.5 flex items-center justify-between shrink-0 gap-3 select-none animate-fade-in">
+            <div className="flex items-center gap-2">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span className="font-semibold">
+                Warning: A newer version of this file exists on GitHub. Saving will overwrite the remote version.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={resolveActiveKeepRemote}
+                className="px-3 py-1 bg-sky-500/20 border border-sky-500/30 hover:bg-sky-500/30 text-sky-300 text-[0.68rem] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+              >
+                Pull Remote
+              </button>
+              <button
+                type="button"
+                onClick={resolveActiveKeepLocal}
+                className="px-3 py-1 bg-purple-500/20 border border-purple-500/30 hover:bg-purple-500/30 text-purple-300 text-[0.68rem] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+              >
+                Overwrite Remote
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Primary Content Paneling */}
         <div className="flex-1 w-full relative overflow-hidden bg-background">

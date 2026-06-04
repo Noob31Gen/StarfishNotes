@@ -410,13 +410,23 @@ export async function deleteFile(
   }
 }
 
-export async function syncVault(token: string, repo: string, branch: string, remoteTree: VaultFile[]) {
+export async function syncVault(
+  token: string,
+  repo: string,
+  branch: string,
+  remoteTree: VaultFile[],
+  skippedPaths: string[] = []
+) {
   console.log("Checking for updates...");
 
   // 1. Identify which files are missing or have different SHAs
   const changedFiles: VaultFile[] = [];
   for (const remoteFile of remoteTree) {
     if (!isTextFile(remoteFile.path) && !remoteFile.path.endsWith('.canvas')) continue;
+    if (skippedPaths.includes(remoteFile.path)) {
+      console.log(`syncVault: Skipping sync check for protected path: ${remoteFile.path}`);
+      continue;
+    }
 
     const localFile = await getLocalFile(remoteFile.path);
     if (!localFile || localFile.sha !== remoteFile.sha) {
