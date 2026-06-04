@@ -294,8 +294,14 @@ export const Editor: React.FC<EditorProps> = ({
   }, [isWindowingMode, content, measureLineHeights]);
 
   const getTopVisibleLineIndex = useCallback(() => {
-    const viewport = viewportRef.current;
+    const viewport = isWindowingMode ? viewportRef.current : textareaRef.current;
     if (!viewport) return windowStartLine;
+
+    if (!isWindowingMode) {
+      const adjustedScrollTop = Math.max(0, viewport.scrollTop - 24);
+      const estimatedLineHeight = 25;
+      return Math.max(0, Math.floor(adjustedScrollTop / estimatedLineHeight));
+    }
 
     const relativeScrollTop = viewport.scrollTop - (windowStartLine * 24);
     if (relativeScrollTop <= 0) return windowStartLine;
@@ -308,7 +314,7 @@ export const Editor: React.FC<EditorProps> = ({
       }
     }
     return windowEndLine - 1;
-  }, [windowStartLine, windowEndLine, windowLineHeights]);
+  }, [windowStartLine, windowEndLine, windowLineHeights, isWindowingMode]);
 
   // Undo / Redo history state stack
   const [history, setHistory] = useState<string[]>([]);
@@ -481,13 +487,21 @@ export const Editor: React.FC<EditorProps> = ({
         
         const localLineIndex = targetLocalLineIndex;
         let lineTop = 0;
-        const heights = isWindowingMode ? windowLineHeights : [];
-        for (let i = 0; i < Math.min(localLineIndex, heights.length); i++) {
-          lineTop += heights[i];
+        let editorLineHeight: number;
+        if (isWindowingMode) {
+          const heights = windowLineHeights;
+          for (let i = 0; i < Math.min(localLineIndex, heights.length); i++) {
+            lineTop += heights[i];
+          }
+          lineTop += windowStartLine * 24;
+          editorLineHeight = windowLineHeights[localLineIndex] || 24;
+        } else {
+          lineTop = localLineIndex * 25 + 24; // line index * estimated line height + top padding (24px)
+          editorLineHeight = 25;
         }
-        const relativeScrollTop = editorViewport.scrollTop - (windowStartLine * 24);
+
+        const relativeScrollTop = editorViewport.scrollTop;
         const editorLineScrollOffset = Math.max(0, relativeScrollTop - lineTop);
-        const editorLineHeight = (isWindowingMode ? windowLineHeights[localLineIndex] : 24) || 24;
         const proportion = Math.min(1, editorLineScrollOffset / editorLineHeight);
         
         const previewOffset = proportion * targetElementHeight;
@@ -672,22 +686,23 @@ export const Editor: React.FC<EditorProps> = ({
 
         if (targetElement) {
           const containerTop = previewContainer.getBoundingClientRect().top;
-          let targetScrollTop = windowStartLine * 24;
+          let targetScrollTop: number;
           const localLineIndex = matchedLineIndex - windowStartLine;
           
           if (isWindowingMode) {
+            targetScrollTop = windowStartLine * 24;
             for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
               targetScrollTop += windowLineHeights[i];
             }
           } else {
-            targetScrollTop = matchedLineIndex * 24;
+            targetScrollTop = matchedLineIndex * 25 + 24; // line index * estimated line height + top padding (24px)
           }
 
           const height = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
           const relativeTop = targetElement.getBoundingClientRect().top - containerTop;
           const previewLineScrollOffset = Math.max(0, -relativeTop);
           const proportion = previewLineScrollOffset / height;
-          const editorLineHeight = (isWindowingMode ? windowLineHeights[localLineIndex] : 24) || 24;
+          const editorLineHeight = (isWindowingMode ? windowLineHeights[localLineIndex] : 25) || 25;
           const editorLineScrollOffset = proportion * editorLineHeight;
           targetScrollTop += editorLineScrollOffset;
 
