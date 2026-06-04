@@ -598,63 +598,6 @@ export const Editor: React.FC<EditorProps> = ({
           }
         });
 
-        // 3a. Resolve standard markdown links to binary/pdf files in <a> tags
-        html = html.replace(/<a href="([^"]+)"([^>]*)>(.*?)<\/a>/g, (match, href, _rest, innerText) => {
-          const hrefClean = href.trim();
-          const extIndex = hrefClean.lastIndexOf('.');
-          const hrefExt = extIndex !== -1 ? hrefClean.substring(extIndex).toLowerCase() : '';
-          const cleanHref = hrefClean.startsWith('./') ? hrefClean.substring(2) : hrefClean;
-
-          // If the link points to a binary/PDF file (i.e. not a text file)
-          if (!isTextFile(cleanHref)) {
-            const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
-            if (imageExtensions.includes(hrefExt) || hrefClean.startsWith('data:image/')) {
-              const cached = vaultImages[cleanHref] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanHref))?.[1];
-              return `<img src="${cached || cleanHref}" alt="${innerText || cleanHref}" style="max-width: 100%; border-radius: 8px;" />`;
-            } else if (hrefExt === '.pdf') {
-              const cached = vaultImages[cleanHref] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanHref))?.[1];
-              const filename = cleanHref.split('/').pop() || cleanHref;
-              const pdfUrl = cached || hrefClean;
-              return `
-                <div class="pdf-embed-card border border-border bg-card/30 rounded-xl p-4 my-4 flex flex-col sm:flex-row items-center gap-4 max-w-xl mx-auto shadow-sm animate-fade-in" data-attachment="${cleanHref}">
-                  <div class="w-12 h-12 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center shrink-0 border border-red-500/20">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                  </div>
-                  <div class="flex-1 min-w-0 text-center sm:text-left">
-                    <span class="text-sm font-bold text-foreground truncate block">${filename}</span>
-                    <span class="text-[0.65rem] text-muted-foreground block mt-0.5">PDF attachment (embedding restricted by browser security)</span>
-                  </div>
-                  <div class="flex gap-2 shrink-0">
-                    <a href="${pdfUrl}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/95 text-xs font-semibold rounded-lg transition-all cursor-pointer shadow-sm shadow-primary/10 flex items-center justify-center">
-                      Open PDF
-                    </a>
-                    <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${cleanHref}" title="Download PDF">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                    </button>
-                  </div>
-                </div>
-              `;
-            } else {
-              const filename = innerText || cleanHref.split('/').pop() || cleanHref;
-              const displayExt = hrefExt ? hrefExt.substring(1).toUpperCase() : 'FILE';
-              return `
-                <div class="attachment-embed-card border border-border bg-muted/30 rounded-xl p-3 my-2 flex items-center gap-3 animate-fade-in" data-attachment="${cleanHref}">
-                  <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-paperclip"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <span class="text-xs font-bold text-foreground truncate block">${filename}</span>
-                    <span class="text-[0.6rem] text-muted-foreground uppercase font-semibold block">${displayExt} Attachment</span>
-                  </div>
-                  <button class="download-attachment-btn w-8 h-8 rounded-full bg-border/40 hover:bg-border/80 flex items-center justify-center text-foreground transition-all cursor-pointer border border-transparent" data-path="${cleanHref}" title="Download attachment">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                  </button>
-                </div>
-              `;
-            }
-          }
-          return match;
-        });
 
         // 4. Parse Graphview-links: [[Another Note]] or [[Another Note|Display Name]]
         const graphviewLinkRegex = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
