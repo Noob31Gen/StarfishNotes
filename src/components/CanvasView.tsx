@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, Minus, Trash2, FileText, Type, Save, RefreshCw, Link2, ChevronDown, Compass, Eye, Edit2, Undo2, Redo2, Image, Paperclip, Search } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { safeParseJson } from '../utils/json';
-import { marked } from 'marked';
+import md from '../lib/markdownEngine';
 import DOMPurify from 'dompurify';
 import { isTextFile } from '../services/github';
 
@@ -345,7 +345,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       });
 
       // 2. Compile standard Markdown to HTML
-      let html = marked.parse(processedText) as string;
+      let html = md.render(processedText);
 
       // 3. Resolve local vault image paths to base64 Data URLs, or custom iframe for PDFs / attachment cards
       html = html.replace(/<img src="([^"]+)"([^>]*)>/g, (_match, src, rest) => {
@@ -474,8 +474,9 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       });
 
       return DOMPurify.sanitize(html, {
-        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'src', 'type', 'class'],
-        ADD_TAGS: ['embed', 'iframe'],
+        USE_PROFILES: { html: true, mathMl: true, svg: true },
+        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border'],
+        ADD_TAGS: ['embed', 'iframe', 'svg', 'line'],
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|sms|blob|data):|[^&:/?#]*(?:[/?#]|$))/i
       });
     } catch {

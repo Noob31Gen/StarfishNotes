@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Pacifico&family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
+@import "highlight.js/styles/github-dark.css";
 
 /* StarfishNotes - Design System & Modern Styling Core (Tailwind v4) */
 
@@ -340,6 +342,50 @@
 /* Images */
 .markdown-preview img {
   @apply max-w-full h-auto rounded-lg my-4;
+}
+
+/* Footnotes styling */
+.markdown-preview .footnote-ref {
+  @apply text-accent font-semibold hover:text-primary transition-colors duration-200 ml-0.5;
+}
+
+.markdown-preview .footnotes {
+  @apply border-t border-border/40 mt-10 pt-4 text-sm text-muted-foreground;
+}
+
+.markdown-preview .footnotes-list {
+  @apply list-decimal pl-6 space-y-2;
+}
+
+.markdown-preview .footnote-backref {
+  @apply text-accent hover:text-primary transition-colors duration-200 ml-1 no-underline font-mono;
+}
+
+/* Subscript & Superscript line-height guard */
+.markdown-preview sub,
+.markdown-preview sup {
+  @apply text-[75%] leading-none relative;
+}
+.markdown-preview sub {
+  bottom: -0.25em;
+}
+.markdown-preview sup {
+  top: -0.5em;
+}
+
+/* Highlights (==text==) */
+.markdown-preview mark {
+  @apply bg-primary/20 text-accent font-medium px-1 rounded-sm;
+}
+
+/* Mermaid Diagrams container */
+.markdown-preview .mermaid {
+  @apply flex justify-center my-6 p-4 bg-muted/20 border border-border/60 rounded-xl overflow-x-auto;
+}
+
+/* KaTeX Display Equations centering & padding */
+.markdown-preview .katex-display {
+  @apply my-6 overflow-x-auto overflow-y-hidden py-2;
 }
 
 /* ----------------------------------------------------

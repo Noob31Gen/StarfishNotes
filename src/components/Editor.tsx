@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import { marked } from 'marked';
+import md from '../lib/markdownEngine';
 import DOMPurify from 'dompurify';
 import { Eye, Edit2, Columns, Save, AlertCircle, RefreshCw, FileText, Paperclip, Undo2, Redo2, Image, Copy, Check } from 'lucide-react';
 import { GitConflictError, isTextFile } from '../services/github';
@@ -536,7 +536,7 @@ export const Editor: React.FC<EditorProps> = ({
         });
 
         // 2. Compile standard Markdown to HTML
-        html = marked.parse(processedText) as string;
+        html = md.render(processedText);
 
         // 3. Resolve local vault image paths to base64 Data URLs, or custom iframe for PDFs / attachment cards
         //    Only process local vault paths (from wiki-embeds ![[file]]). Skip external URLs from standard markdown ![alt](url).
@@ -617,6 +617,7 @@ export const Editor: React.FC<EditorProps> = ({
 
       // 5. Bulletproof sanitize through DOMPurify to eliminate any script injection vectors
       return DOMPurify.sanitize(html, {
+        USE_PROFILES: { html: true, mathMl: true, svg: true },
         ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border'],
         ADD_TAGS: ['embed', 'iframe', 'svg', 'line'],
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|sms|blob|data):|[^&:/?#]*(?:[/?#]|$))/i
@@ -953,6 +954,25 @@ export const Editor: React.FC<EditorProps> = ({
       } else {
         previewContainer.innerHTML = renderMarkdown(content, 0);
       }
+
+      // Render any mermaid diagrams found in the preview
+      const mermaidNodes = previewContainer.querySelectorAll('.mermaid');
+      if (mermaidNodes.length > 0) {
+        import('mermaid').then((mermaidLib) => {
+          const m = mermaidLib.default;
+          m.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            securityLevel: 'loose',
+            fontFamily: 'Inter, sans-serif',
+          });
+          m.run({ nodes: mermaidNodes as NodeListOf<HTMLElement> }).catch(() => {
+            // Silently ignore mermaid rendering errors
+          });
+        }).catch(() => {
+          // Ignore import errors
+        });
+      }
     }
   }, [content, filePath, viewMode, renderMarkdown, isWindowingMode, windowStartLine, windowEndLine, virtualLines.length]);
 
@@ -1161,13 +1181,6 @@ export const Editor: React.FC<EditorProps> = ({
     return () => clearTimeout(timer);
   }, [filePath, vaultId, initialSearchLineIndex, onClearTargetLine, initialContent, isWindowingMode]);
 
-  // Configure marked with custom options
-  useEffect(() => {
-    marked.setOptions({
-      breaks: true,
-      gfm: true,
-    });
-  }, []);
 
 
 
