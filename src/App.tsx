@@ -25,7 +25,7 @@ import { InitVaultScreen } from './components/InitVaultScreen';
 import { Sidebar } from './components/Sidebar';
 import { cn } from './utils/cn';
 import { resolveVaultFilePath } from './utils/pathResolver';
-import { getLocalFile, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase, clearAllLocalFiles, clearStorageCrypto } from './services/storage';
+import { getLocalFile, saveLocalFile, getAllLocalFilePaths, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase, clearAllLocalFiles, clearStorageCrypto } from './services/storage';
 
 // Initialize offline storage crypto callbacks to avoid circular dependencies
 offlineStorage.initCrypto(encryptToken, decryptToken);
@@ -57,11 +57,34 @@ function base64ToBlob(base64: string, mimeType: string = 'application/octet-stre
   return new Blob([byteArray], { type: mimeType });
 }
 
+const getUnsyncedFiles = (): string[] => {
+  try {
+    const saved = localStorage.getItem('starfishnotes_unsynced_files');
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+};
+
+const addUnsyncedFile = (path: string) => {
+  const list = getUnsyncedFiles();
+  if (!list.includes(path)) {
+    list.push(path);
+    localStorage.setItem('starfishnotes_unsynced_files', JSON.stringify(list));
+  }
+};
+
+const removeUnsyncedFile = (path: string) => {
+  const list = getUnsyncedFiles().filter(p => p !== path);
+  localStorage.setItem('starfishnotes_unsynced_files', JSON.stringify(list));
+};
+
 export default function App() {
   // Connection and Authentication State
   const [isOffline, setIsOffline] = useState<boolean>(() => {
     return localStorage.getItem('starfishnotes-is-offline') === 'true';
   });
+  const [isNetworkOffline, setIsNetworkOffline] = useState<boolean>(!navigator.onLine);
   const [authMode, setAuthMode] = useState<'github' | 'local'>(() => {
     return localStorage.getItem('starfishnotes-is-offline') === 'true' ? 'local' : 'github';
   });
@@ -790,6 +813,33 @@ export default function App() {
     }
   };
 
+  const loadFilesFromLocalCache = useCallback(async () => {
+    try {
+      const localPaths = await getAllLocalFilePaths();
+      const localTree: VaultFile[] = [];
+      for (const p of localPaths) {
+        const fileData = await getLocalFile(p);
+        if (fileData) {
+          localTree.push({
+            path: p,
+            name: p.split('/').pop() || p,
+            type: 'blob',
+            sha: fileData.sha
+          });
+        }
+      }
+      setFiles(localTree);
+      await preloadAllFilesContents(localTree);
+      
+      if (localTree.length > 0 && !activeFilePath) {
+        const defaultNote = localTree.find(f => f.name === 'Welcome.md') || localTree[0];
+        setActiveFilePath(defaultNote.path);
+      }
+    } catch (e) {
+      console.error('Failed to load local files from cache:', e);
+    }
+  }, [activeFilePath, preloadAllFilesContents]);
+
   const refreshFiles = useCallback(async (
     token: string = githubToken,
     repo: string = repoName,
@@ -801,7 +851,46 @@ export default function App() {
     }
     setIsLoadingTree(true);
     try {
-      const tree = await fetchRepositoryTree(token, repo, branch);
+      let tree = await fetchRepositoryTree(token, repo, branch);
+      setIsNetworkOffline(false);
+
+      // Check and push unsynced files first
+      const unsynced = getUnsyncedFiles();
+      if (unsynced.length > 0) {
+        console.log(`Pushing ${unsynced.length} unsynced local edits to GitHub...`);
+        for (const path of unsynced) {
+          try {
+            const cachedFile = await getLocalFile(path);
+            if (cachedFile) {
+              const fileInTree = tree.find(f => f.path === path);
+              const shaToUse = fileInTree ? fileInTree.sha : (cachedFile.sha.startsWith('offline-') ? null : cachedFile.sha);
+              
+              const pushRes = await commitFileContent(
+                token,
+                repo,
+                branch,
+                path,
+                cachedFile.content,
+                shaToUse,
+                `sync offline edits for ${path}`
+              );
+              await saveLocalFile(path, { content: cachedFile.content, sha: pushRes.sha });
+              removeUnsyncedFile(path);
+              console.log(`Successfully synced ${path} to GitHub.`);
+            }
+          } catch (syncErr) {
+            console.error(`Failed to push offline edits for ${path}:`, syncErr);
+          }
+        }
+        // Refetch tree after pushing
+        try {
+          const updatedTree = await fetchRepositoryTree(token, repo, branch);
+          tree = updatedTree;
+        } catch (treeErr) {
+          console.error('Failed to refetch tree after pushing offline edits:', treeErr);
+        }
+      }
+
       setFiles(tree);
       preloadAllFilesContents(tree);
 
@@ -814,12 +903,22 @@ export default function App() {
         console.log("Vault sync complete!");
         preloadAllFilesContents(tree);
       }).catch(console.error);
-    } catch {
-      // Tree retrieval failed
+    } catch (err: unknown) {
+      console.warn("Tree retrieval failed, checking if it is a network error...", err);
+      const errMsg = err instanceof Error ? err.message : '';
+      const isNetworkError = err instanceof TypeError || errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Failed to fetch');
+      
+      if (isNetworkError) {
+        setIsNetworkOffline(true);
+        console.log("Network error detected. Falling back to local offline cache...");
+        await loadFilesFromLocalCache();
+      } else {
+        console.error("Non-network error in refreshFiles:", err);
+      }
     } finally {
       setIsLoadingTree(false);
     }
-  }, [githubToken, repoName, branchName, activeFilePath, isOffline, refreshFilesOffline, preloadAllFilesContents]);
+  }, [githubToken, repoName, branchName, activeFilePath, isOffline, refreshFilesOffline, preloadAllFilesContents, loadFilesFromLocalCache]);
 
   const checkAndLoadVault = useCallback(async (token: string, repo: string, branch: string) => {
     try {
@@ -852,14 +951,27 @@ export default function App() {
         await checkAndLoadVault(token, repo, branch);
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Auto-connect failed. Please re-enter connection details.';
-      setAuthError(msg);
-      setIsAuthenticated(false);
-      purgeCredentials();
+      const errMsg = e instanceof Error ? e.message : '';
+      const isNetworkError = e instanceof TypeError || errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Failed to fetch');
+      
+      if (isNetworkError) {
+        console.log("Network error on auto-connect. Loading cached notes...");
+        setIsNetworkOffline(true);
+        setIsAuthenticated(true);
+        setIsRepoEmpty(false);
+        setIsVaultChecked(true);
+        setIsVaultCompatible(true);
+        await loadFilesFromLocalCache();
+      } else {
+        const msg = errMsg || 'Auto-connect failed. Please re-enter connection details.';
+        setAuthError(msg);
+        setIsAuthenticated(false);
+        purgeCredentials();
+      }
     } finally {
       setIsConnecting(false);
     }
-  }, [checkAndLoadVault]);
+  }, [checkAndLoadVault, loadFilesFromLocalCache]);
 
   const loadFileContent = useCallback(async (path: string, sha: string) => {
     if (isOffline) {
@@ -1350,6 +1462,26 @@ export default function App() {
     checkSession();
   }, [autoConnectRef, refreshFilesOfflineRef]);
 
+  // Listen to browser network changes
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('Browser online. Triggering network status restoration...');
+      setIsNetworkOffline(false);
+      refreshFiles();
+    };
+    const handleOffline = () => {
+      console.log('Browser offline. Switching to offline-cached mode...');
+      setIsNetworkOffline(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [refreshFiles]);
+
   // Cleanup handler: purge volatile caches when tab is closed or navigated away
   useEffect(() => {
     const handlePageHide = () => {
@@ -1566,22 +1698,64 @@ export default function App() {
     if (isOffline) {
       return handleSaveFileOffline(path, content);
     }
-    const result = await commitFileContent(githubToken, repoName, branchName, path, content, fileSha);
+    try {
+      const result = await commitFileContent(githubToken, repoName, branchName, path, content, fileSha);
 
-    // Update in-memory file structure
-    setFileContents(prev => ({
-      ...prev,
-      [path]: content,
-    }));
+      // Update in-memory file structure
+      setFileContents(prev => ({
+        ...prev,
+        [path]: content,
+      }));
 
-    setFiles(prev => prev.map(f => {
-      if (f.path === path) {
-        return { ...f, sha: result.sha };
+      setFiles(prev => prev.map(f => {
+        if (f.path === path) {
+          return { ...f, sha: result.sha };
+        }
+        return f;
+      }));
+
+      return result;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : '';
+      const isNetworkError = err instanceof TypeError || errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Failed to fetch');
+
+      if (isNetworkError) {
+        console.warn("Network offline during save. Caching note locally...", path);
+        setIsNetworkOffline(true);
+        
+        // 1. Save content locally
+        await saveLocalFile(path, { content, sha: fileSha || 'offline-pending' });
+        
+        // 2. Mark as unsynced
+        addUnsyncedFile(path);
+
+        // 3. Update in-memory file contents
+        setFileContents(prev => ({
+          ...prev,
+          [path]: content,
+        }));
+
+        // 4. Update files tree in state
+        setFiles(prev => {
+          const exists = prev.some(f => f.path === path);
+          if (exists) {
+            return prev.map(f => f.path === path ? { ...f, sha: f.sha || 'offline-pending' } : f);
+          } else {
+            const newFile: VaultFile = {
+              path,
+              name: path.split('/').pop() || path,
+              type: 'blob',
+              sha: 'offline-pending'
+            };
+            return [newFile, ...prev];
+          }
+        });
+
+        return { sha: fileSha || 'offline-pending' };
+      } else {
+        throw err;
       }
-      return f;
-    }));
-
-    return result;
+    }
   };
 
   const createNewFile = async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
@@ -2252,6 +2426,13 @@ export default function App() {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {isNetworkOffline && (
+        <div className="fixed bottom-6 left-6 z-[2000] bg-[#1c1d24]/95 border border-amber-500/30 text-amber-500 text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-fade-in backdrop-blur-xl select-text">
+          <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
+          <span>Offline Mode: Working with cached notes. Edits will sync when connection is restored.</span>
         </div>
       )}
 
