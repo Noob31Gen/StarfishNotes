@@ -618,14 +618,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
         // Draw Labels
         if (zoomRef.current > 0.55 || isHovered || isSearched) {
+          const fontSize = (isHovered || isSearched) ? 20 : 17;
           ctx.font = (isHovered || isSearched)
-            ? 'bold 11px Inter, sans-serif'
-            : '500 10px Inter, sans-serif';
+            ? 'bold 20px Inter, sans-serif'
+            : '500 17px Inter, sans-serif';
           ctx.fillStyle = isSearched
             ? '#10b981'
             : (isHovered ? '#ffffff' : (node.type === 'ghost' ? 'rgba(241, 245, 249, 0.4)' : 'rgba(241, 245, 249, 0.65)'));
           ctx.textAlign = 'center';
-          ctx.fillText(node.name, node.x, node.y - node.radius - 6);
+          ctx.fillText(node.name, node.x, node.y - node.radius - (fontSize - 3));
         }
 
         ctx.restore();

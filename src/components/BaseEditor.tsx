@@ -533,11 +533,10 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
   // Preload file contents for all notes in the database's source folder
   useEffect(() => {
-    // Collect all matched files that need loading and aren't already loading
+    // Collect all matched files (md, canvas, txt) in the entire vault that need loading to calculate complete backlinks
     const matchedFiles = files.filter(f => {
-      if (!f.path.endsWith('.md')) return false;
-      const isMatched = folderPrefix ? f.path.startsWith(folderPrefix) : true;
-      return isMatched && fileContents[f.path] === undefined && !preloadedRef.current.has(f.path);
+      const isLoadable = f.path.endsWith('.md') || f.path.endsWith('.canvas') || f.path.endsWith('.txt');
+      return isLoadable && fileContents[f.path] === undefined && !preloadedRef.current.has(f.path);
     });
 
     if (matchedFiles.length === 0) return;
