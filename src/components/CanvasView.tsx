@@ -539,30 +539,32 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   if (initialContent !== prevProps.initialContent || initialSha !== prevProps.initialSha) {
     setPrevProps({ initialContent, initialSha });
     setSha(initialSha);
-    setSavedContent(initialContent);
-    try {
-      if (initialContent.trim()) {
-        const parsed = safeParseJson<CanvasData>(initialContent, { nodes: [], edges: [] });
-        const incomingNodes = parsed.nodes || [];
-        const incomingEdges = parsed.edges || [];
-        const nodesChanged = JSON.stringify(incomingNodes) !== JSON.stringify(nodes);
-        const edgesChanged = JSON.stringify(incomingEdges) !== JSON.stringify(edges);
+    if (initialContent !== savedContent) {
+      setSavedContent(initialContent);
+      try {
+        if (initialContent.trim()) {
+          const parsed = safeParseJson<CanvasData>(initialContent, { nodes: [], edges: [] });
+          const incomingNodes = parsed.nodes || [];
+          const incomingEdges = parsed.edges || [];
+          const nodesChanged = JSON.stringify(incomingNodes) !== JSON.stringify(nodes);
+          const edgesChanged = JSON.stringify(incomingEdges) !== JSON.stringify(edges);
 
-        if (nodesChanged) setNodes(incomingNodes);
-        if (edgesChanged) setEdges(incomingEdges);
+          if (nodesChanged) setNodes(incomingNodes);
+          if (edgesChanged) setEdges(incomingEdges);
 
-        setSaveStatus('idle');
-        setSelectedNodeId(null);
-      } else {
+          setSaveStatus('idle');
+          setSelectedNodeId(null);
+        } else {
+          if (nodes.length > 0 || edges.length > 0) {
+            setNodes([]);
+            setEdges([]);
+          }
+        }
+      } catch {
         if (nodes.length > 0 || edges.length > 0) {
           setNodes([]);
           setEdges([]);
         }
-      }
-    } catch {
-      if (nodes.length > 0 || edges.length > 0) {
-        setNodes([]);
-        setEdges([]);
       }
     }
   }
@@ -920,10 +922,18 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                 (containerRef.current?.clientHeight || 600) / 2
               );
 
+              let finalX = Math.round(centerWorld.x - 160);
+              let finalY = Math.round(centerWorld.y - 130);
+              const offsetStep = 30;
+              while (nodesRef.current.some(n => n.x === finalX && n.y === finalY)) {
+                finalX += offsetStep;
+                finalY += offsetStep;
+              }
+
               const newNode: CanvasNode = {
                 id: `card_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-                x: Math.round(centerWorld.x - 160),
-                y: Math.round(centerWorld.y - 130),
+                x: finalX,
+                y: finalY,
                 width: 320,
                 height: 260,
                 type: 'file',
@@ -1316,10 +1326,18 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       (containerRef.current?.clientHeight || 600) / 2
     );
 
+    let finalX = Math.round(centerWorld.x - 160);
+    let finalY = Math.round(centerWorld.y - 100);
+    const offsetStep = 30;
+    while (nodes.some(n => n.x === finalX && n.y === finalY)) {
+      finalX += offsetStep;
+      finalY += offsetStep;
+    }
+
     const newNode: CanvasNode = {
       id: `card_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      x: Math.round(centerWorld.x - 160),
-      y: Math.round(centerWorld.y - 100),
+      x: finalX,
+      y: finalY,
       width: 320,
       height: type === 'text' ? 160 : 260,
       type,

@@ -321,6 +321,29 @@ interface BaseEditorProps {
   prefetchProgress?: { loaded: number; total: number };
 }
 
+function parseBaseConfig(content: string): BaseConfig {
+  let parsed: BaseConfig | null = null;
+  try {
+    parsed = parseYaml(content) as BaseConfig;
+  } catch (e) {
+    console.error('Failed to parse base file config:', e);
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    parsed = { version: 1, source: { folder: '' }, views: [] };
+  }
+  if (!parsed.views || parsed.views.length === 0) {
+    parsed.views = [{
+      id: 'view_1',
+      name: 'Default View',
+      type: 'table',
+      columns: [{ property: 'file.name', visible: true, width: 200 }],
+      sort: [],
+      filters: []
+    }];
+  }
+  return parsed;
+}
+
 export const BaseEditor: React.FC<BaseEditorProps> = ({
   filePath,
   initialContent,
@@ -341,6 +364,31 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   const [sha, setSha] = useState<string | null>(initialSha);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Parsed Config state
+  const [config, setConfig] = useState<BaseConfig>(() => parseBaseConfig(initialContent));
+
+  // Render-phase prop synchronization (Strictly tied to filePath & external content updates)
+  const [prevFilePath, setPrevFilePath] = useState(filePath);
+  const [prevInitialContent, setPrevInitialContent] = useState(initialContent);
+
+  if (filePath !== prevFilePath) {
+    setPrevFilePath(filePath);
+    setPrevInitialContent(initialContent);
+    setYamlContent(initialContent);
+    setSha(initialSha);
+    setConfig(parseBaseConfig(initialContent));
+    setSaveStatus('idle');
+    setErrorMessage('');
+  } else if (initialContent !== prevInitialContent) {
+    setPrevInitialContent(initialContent);
+    setSha(initialSha);
+    // Only update active content if the change is external (does not match what we last saved/have in memory)
+    if (initialContent !== yamlContent) {
+      setYamlContent(initialContent);
+      setConfig(parseBaseConfig(initialContent));
+    }
+  }
 
   // Dropdown / UI states & refs
   const [propertiesMenuOpen, setPropertiesMenuOpen] = useState<'header' | 'floating' | null>(null);
@@ -408,29 +456,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     };
   }, [propertiesMenuOpen, isAddingFilter, isFolderSuggestionsOpen, activeFilterSelect]);
 
-  // Parsed Config state
-  const [config, setConfig] = useState<BaseConfig>(() => {
-    let parsed: BaseConfig | null = null;
-    try {
-      parsed = parseYaml(initialContent) as BaseConfig;
-    } catch (e) {
-      console.error('Failed to parse base file config:', e);
-    }
-    if (!parsed || typeof parsed !== 'object') {
-      parsed = { version: 1, source: { folder: '' }, views: [] };
-    }
-    if (!parsed.views || parsed.views.length === 0) {
-      parsed.views = [{
-        id: 'view_1',
-        name: 'Default View',
-        type: 'table',
-        columns: [{ property: 'file.name', visible: true, width: 200 }],
-        sort: [],
-        filters: []
-      }];
-    }
-    return parsed;
-  });
+  // Config state migrated to top of component to prevent TDZ issues during render-phase synchronization
 
   const activeView = useMemo<BaseView>(() => {
     return config.views?.[0] || {

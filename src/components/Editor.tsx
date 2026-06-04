@@ -426,18 +426,27 @@ export const Editor: React.FC<EditorProps> = ({
 
   // Render-phase prop synchronization
   // Add this effect to handle file switching
-  // Render-phase prop synchronization (Strictly tied to filePath)
+  // Render-phase prop synchronization (Strictly tied to filePath & external content updates)
   // 1. Render-phase prop synchronization for STATE
   const [prevFilePath, setPrevFilePath] = useState(filePath);
+  const [prevInitialContent, setPrevInitialContent] = useState(initialContent);
 
   if (filePath !== prevFilePath) {
     setPrevFilePath(filePath);
+    setPrevInitialContent(initialContent);
     setContent(initialContent);
     setSha(initialSha);
     setSavedContent(initialContent);
     setSaveStatus('idle');
     setErrorMessage('');
-    // Removed the ref update from here
+  } else if (initialContent !== prevInitialContent) {
+    setPrevInitialContent(initialContent);
+    setSha(initialSha);
+    // Only update active content if the change is external (does not match what we last saved/have in memory)
+    if (initialContent !== savedContent) {
+      setContent(initialContent);
+      setSavedContent(initialContent);
+    }
   }
 
   // 2. Commit-phase synchronization for REFS

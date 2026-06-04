@@ -3,7 +3,6 @@
  * Performs 100% client-side REST API synchronization with the user's notes repository.
  * Implements robust tree traversal, UTF-8 base64 encoding/decoding, and conflict resolution (SHA checking).
  */
-import JSZip from 'jszip';
 import { getLocalFile, saveLocalFile } from './storage';
 
 export interface VaultFile {
@@ -65,6 +64,113 @@ async function githubRequest(
   }
 
   return response;
+}
+
+/**
+ * GraphQL Query helper
+ */
+async function graphqlRequest(
+  token: string,
+  query: string,
+  variables: Record<string, string> = {}
+): Promise<unknown> {
+  const res = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      Authorization: `bearer ${token}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if (res.status === 401) {
+    throw new Error('Unauthorized: Invalid GitHub token.');
+  }
+
+  if (!res.ok) {
+    throw new Error(`GraphQL request failed: HTTP ${res.status}`);
+  }
+
+  const result = (await res.json()) as {
+    data?: unknown;
+    errors?: Array<{ message: string }>;
+  };
+
+  if (result.errors) {
+    throw new Error(`GraphQL errors: ${result.errors.map((e) => e.message).join(', ')}`);
+  }
+
+  return result.data;
+}
+
+/**
+ * Batch fetch text files from GitHub using GraphQL in batches.
+ * Returns a Map of filePath -> content.
+ */
+async function fetchFilesGraphQL(
+  token: string,
+  repo: string,
+  branch: string,
+  files: VaultFile[],
+  batchSize = 50
+): Promise<Map<string, string>> {
+  const fileContentsMap = new Map<string, string>();
+  const [owner, name] = repo.split('/');
+
+  if (!owner || !name) {
+    throw new Error(`Invalid repository format: ${repo}`);
+  }
+
+  // Process files in batches
+  for (let i = 0; i < files.length; i += batchSize) {
+    const batch = files.slice(i, i + batchSize);
+
+    // Build query variables and definitions
+    const varDefinitions: string[] = [];
+    const selectionFields: string[] = [];
+    const variables: Record<string, string> = { owner, name };
+
+    batch.forEach((file, index) => {
+      const varName = `expr_${index}`;
+      varDefinitions.push(`$${varName}: String!`);
+      variables[varName] = `${branch}:${file.path}`;
+      selectionFields.push(`
+        file_${index}: object(expression: $${varName}) {
+          ... on Blob {
+            text
+          }
+        }
+      `);
+    });
+
+    const query = `
+      query GetBatchFiles($owner: String!, $name: String!, ${varDefinitions.join(', ')}) {
+        repository(owner: $owner, name: $name) {
+          ${selectionFields.join('\n')}
+        }
+      }
+    `;
+
+    try {
+      const data = (await graphqlRequest(token, query, variables)) as {
+        repository?: Record<string, { text?: string } | null>;
+      } | null;
+      const repoData = data?.repository;
+      if (repoData) {
+        batch.forEach((file, index) => {
+          const fileObj = repoData[`file_${index}`];
+          if (fileObj && typeof fileObj.text === 'string') {
+            fileContentsMap.set(file.path, fileObj.text);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn(`GraphQL batch fetch failed for batch starting at index ${i}:`, err);
+    }
+  }
+
+  return fileContentsMap;
 }
 
 /**
@@ -444,57 +550,48 @@ export async function syncVault(
   const updatedPaths = new Set<string>();
 
   try {
-    console.log("Downloading zipball for high-quality prefetch...");
-    const res = await fetch(`https://api.github.com/repos/${repo}/zipball/${branch}`, {
-      headers: { Authorization: `token ${token}` }
-    });
-
-    if (!res.ok) {
-      throw new Error(`Failed to download zipball: HTTP ${res.status}`);
-    }
-
-    const blob = await res.blob();
-    const zip = await JSZip.loadAsync(blob);
-
-    // Extract and save the changed files to IndexedDB
-    for (const [path, file] of Object.entries(zip.files)) {
-      if (file.dir) continue;
-
-      const cleanPath = path.split('/').slice(1).join('/'); // Remove root folder name from zip path
-      const cleanPathLower = cleanPath.toLowerCase();
-      const targetFile = changedFiles.find(f => f.path.toLowerCase() === cleanPathLower);
-
+    console.log("Fetching changed files in bulk via GraphQL...");
+    const graphqlContents = await fetchFilesGraphQL(token, repo, branch, changedFiles);
+    for (const [filePath, content] of graphqlContents.entries()) {
+      const targetFile = changedFiles.find(f => f.path === filePath);
       if (targetFile) {
-        if (isTextFile(cleanPath) || cleanPath.endsWith('.canvas')) {
-          console.log(`Updating/Saving local file from zip: ${targetFile.path}`);
-          const content = await file.async('string');
-          await saveLocalFile(targetFile.path, { content, sha: targetFile.sha });
-          updatedPaths.add(targetFile.path);
-        }
+        console.log(`Updating/Saving local file from GraphQL: ${targetFile.path}`);
+        await saveLocalFile(targetFile.path, { content, sha: targetFile.sha });
+        updatedPaths.add(targetFile.path);
       }
     }
-
-    console.log("Zipball sync complete.");
+    console.log(`GraphQL bulk sync complete. Updated ${updatedPaths.size} out of ${changedFiles.length} files.`);
   } catch (error) {
-    console.error("Zipball sync failed, falling back to individual file fetches...", error);
+    console.error("GraphQL bulk sync failed, falling back to individual file fetches...", error);
   }
 
-  // 2. Fallback / Cleanup for files not updated by zipball
+  // 2. Fallback / Cleanup for files not updated by GraphQL bulk sync
   // This handles both:
-  // - The entire zipball download failing
-  // - A specific file not being present in the zipball (e.g. race conditions)
+  // - The entire GraphQL bulk sync failing
+  // - Specific files that failed to fetch or return null via GraphQL
   const remainingFiles = changedFiles.filter(f => !updatedPaths.has(f.path));
   if (remainingFiles.length > 0) {
-    console.log(`Fetching ${remainingFiles.length} remaining/failed files individually...`);
-    for (const remoteFile of remainingFiles) {
-      try {
-        console.log(`Updating ${remoteFile.path}...`);
-        const content = await fetchFileContent(token, repo, remoteFile.path, remoteFile.sha);
-        await saveLocalFile(remoteFile.path, { content, sha: remoteFile.sha });
-      } catch (fetchErr) {
-        console.error(`Failed to fetch file ${remoteFile.path} individually:`, fetchErr);
+    console.log(`Fetching ${remainingFiles.length} remaining/failed files in parallel (concurrency: 5)...`);
+    const concurrencyLimit = 5;
+    const queue = [...remainingFiles];
+    
+    const runWorker = async () => {
+      while (queue.length > 0) {
+        const remoteFile = queue.shift();
+        if (!remoteFile) break;
+        try {
+          console.log(`Updating ${remoteFile.path}...`);
+          const content = await fetchFileContent(token, repo, remoteFile.path, remoteFile.sha);
+          await saveLocalFile(remoteFile.path, { content, sha: remoteFile.sha });
+          updatedPaths.add(remoteFile.path);
+        } catch (fetchErr) {
+          console.error(`Failed to fetch file ${remoteFile.path} individually:`, fetchErr);
+        }
       }
-    }
+    };
+
+    const workers = Array.from({ length: Math.min(concurrencyLimit, remainingFiles.length) }, runWorker);
+    await Promise.all(workers);
   }
 }
 
