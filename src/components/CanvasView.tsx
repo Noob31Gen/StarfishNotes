@@ -121,11 +121,13 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     if (isAddNoteOpen && addNoteButtonRef.current) {
       const rect = addNoteButtonRef.current.getBoundingClientRect();
       const popupWidth = 240;
-      const rawLeft = rect.left + rect.width / 2 - popupWidth / 2;
-      const left = Math.max(8, Math.min(rawLeft, window.innerWidth - popupWidth - 8));
+      const isMobile = window.innerWidth < 640;
+      const left = isMobile 
+        ? (window.innerWidth - popupWidth) / 2 
+        : Math.max(8, Math.min(rect.left + rect.width / 2 - popupWidth / 2, window.innerWidth - popupWidth - 8));
       setNotePopupCoords({
         left,
-        bottom: window.innerHeight - rect.top + 8,
+        bottom: window.innerHeight - rect.top + 16,
       });
     } else {
       setNotePopupCoords(null);
@@ -136,11 +138,13 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     if (isAddImageOpen && addImageButtonRef.current) {
       const rect = addImageButtonRef.current.getBoundingClientRect();
       const popupWidth = 250;
-      const rawLeft = rect.left + rect.width / 2 - popupWidth / 2;
-      const left = Math.max(8, Math.min(rawLeft, window.innerWidth - popupWidth - 8));
+      const isMobile = window.innerWidth < 640;
+      const left = isMobile 
+        ? (window.innerWidth - popupWidth) / 2 
+        : Math.max(8, Math.min(rect.left + rect.width / 2 - popupWidth / 2, window.innerWidth - popupWidth - 8));
       setImagePopupCoords({
         left,
-        bottom: window.innerHeight - rect.top + 8,
+        bottom: window.innerHeight - rect.top + 16,
       });
     } else {
       setImagePopupCoords(null);
@@ -2126,7 +2130,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         <button
           type="button"
           onClick={() => addNewCard('text')}
-          className="h-8 px-2.5 lg:px-3.5 rounded-full flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground bg-muted border border-border hover:bg-border/60 focus:outline-none transition-premium cursor-pointer shrink-0"
+          className="h-8 px-2.5 lg:px-3.5 rounded-full flex items-center gap-1.5 text-xs font-semibold text-white bg-gradient-to-r from-primary to-accent hover:from-primary/95 hover:to-accent/95 focus:outline-none transition-all cursor-pointer shadow-md shadow-primary/10 shrink-0"
           title="Add Independent Text Box"
         >
           <Type size={13} />
@@ -2141,7 +2145,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
               setIsAddNoteOpen(!isAddNoteOpen);
               setIsAddImageOpen(false);
             }}
-            className="w-auto lg:w-[125px] h-8 px-2.5 lg:px-3.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground bg-muted border border-border focus:outline-none transition-premium cursor-pointer flex items-center justify-center lg:justify-between text-left shrink-0"
+            className={cn(
+              "w-auto lg:w-[125px] h-8 px-2.5 lg:px-3.5 rounded-full text-xs font-semibold text-muted-foreground hover:bg-border/60 hover:text-foreground border border-transparent focus:outline-none transition-all cursor-pointer flex items-center justify-center lg:justify-between text-left shrink-0",
+              isAddNoteOpen && "bg-primary/10 text-accent border-primary/20"
+            )}
             title="Add Linked Note"
           >
             <div className="flex items-center gap-1.5 truncate">
@@ -2160,7 +2167,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
               setIsAddImageOpen(!isAddImageOpen);
               setIsAddNoteOpen(false);
             }}
-            className="w-auto lg:w-[130px] h-8 px-2.5 lg:px-3.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground bg-muted border border-border focus:outline-none transition-premium cursor-pointer flex items-center justify-center lg:justify-between text-left shrink-0"
+            className={cn(
+              "w-auto lg:w-[130px] h-8 px-2.5 lg:px-3.5 rounded-full text-xs font-semibold text-muted-foreground hover:bg-border/60 hover:text-foreground border border-transparent focus:outline-none transition-all cursor-pointer flex items-center justify-center lg:justify-between text-left shrink-0",
+              isAddImageOpen && "bg-primary/10 text-accent border-primary/20"
+            )}
             title="Add Media / Attachment Card"
           >
             <div className="flex items-center gap-1.5 truncate">
@@ -2221,7 +2231,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
         <button
           onClick={() => zoomCentered(false)}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer border border-transparent hover:border-border shrink-0"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer border border-transparent shrink-0"
           title="Zoom Out"
         >
           <Minus size={14.5} />
@@ -2233,7 +2243,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
         <button
           onClick={() => zoomCentered(true)}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer border border-transparent hover:border-border shrink-0"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer border border-transparent shrink-0"
           title="Zoom In"
         >
           <Plus size={14.5} />
@@ -2243,7 +2253,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
           onClick={centerToNodes}
           disabled={nodes.length === 0}
           className={cn(
-            "w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer border border-transparent hover:border-border shrink-0",
+            "w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer border border-transparent shrink-0",
             nodes.length > 0
               ? "text-muted-foreground hover:bg-border/60 hover:text-foreground"
               : "text-muted-foreground/45 pointer-events-none"
@@ -2260,10 +2270,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
           disabled={saveStatus === 'saving'}
           title="Save Canvas"
           className={cn(
-            "flex items-center justify-center gap-1.5 h-8 w-8 lg:w-auto px-0 lg:px-4 rounded-full font-semibold text-xs transition-all duration-200 transform shrink-0 cursor-pointer",
+            "flex items-center justify-center gap-1.5 h-8 w-8 lg:w-auto px-0 lg:px-4 rounded-full font-semibold text-xs transition-all duration-200 transform shrink-0 cursor-pointer border border-transparent",
             hasUnsavedChanges
               ? "bg-gradient-to-r from-primary to-accent text-white shadow-md shadow-primary/20 hover:-translate-y-0.5"
-              : "bg-muted border border-border text-foreground hover:bg-border/60"
+              : "bg-transparent text-muted-foreground hover:bg-border/60 hover:text-foreground"
           )}
         >
           {saveStatus === 'saving' ? (

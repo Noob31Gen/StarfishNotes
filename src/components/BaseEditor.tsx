@@ -931,7 +931,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
           "w-auto sm:w-72 bg-[#18181f]/95 backdrop-blur-xl border border-border/60 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 z-30 duration-100 text-foreground text-left normal-case font-normal",
           position === 'header' 
             ? "fixed top-32 left-4 right-4 sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-72 sm:mt-2 animate-in fade-in slide-in-from-top-2" 
-            : "fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-4 right-4 sm:fixed sm:bottom-20 sm:right-6 sm:left-auto sm:mb-0 animate-in fade-in slide-in-from-bottom-2"
+            : "fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-4 right-4 sm:absolute sm:bottom-full sm:left-1/2 sm:-translate-x-1/2 sm:right-auto sm:mb-3 animate-in fade-in slide-in-from-bottom-2"
         )}
       >
         {/* Search Bar */}
@@ -1215,18 +1215,20 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                     })}
 
                     {/* Action header cell for adding new columns */}
-                    <th className="px-4 py-2 w-44 relative">
-                      <button
-                        onClick={() => {
-                          setIsAddingFilter(false);
-                          setPropertiesMenuOpen(prev => prev === 'header' ? null : 'header');
-                        }}
-                        className="properties-toggle-btn h-7 px-2.5 bg-muted/40 hover:bg-muted/70 border border-dashed border-border rounded-lg text-[0.65rem] font-bold text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus size={11} />
-                        <span>Add Property</span>
-                      </button>
-                      {propertiesMenuOpen === 'header' && renderPropertiesDropdown('header')}
+                    <th className="px-4 py-2 w-44">
+                      <div className="relative inline-block">
+                        <button
+                          onClick={() => {
+                            setIsAddingFilter(false);
+                            setPropertiesMenuOpen(prev => prev === 'header' ? null : 'header');
+                          }}
+                          className="properties-toggle-btn h-7 px-2.5 bg-muted/40 hover:bg-muted/70 border border-dashed border-border rounded-lg text-[0.65rem] font-bold text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus size={11} />
+                          <span>Add Property</span>
+                        </button>
+                        {propertiesMenuOpen === 'header' && renderPropertiesDropdown('header')}
+                      </div>
                     </th>
                   </tr>
                 </thead>
@@ -1393,6 +1395,124 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                 <Filter size={14.5} className="text-primary" />
                 <span className="hidden sm:inline text-xs font-semibold">Filter</span>
               </button>
+              {isAddingFilter && (
+                <div 
+                  ref={filterDropdownRef}
+                  className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-4 right-4 sm:absolute sm:bottom-full sm:left-1/2 sm:-translate-x-1/2 sm:right-auto sm:mb-3 w-auto sm:w-72 bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-4 flex flex-col gap-3 z-30 animate-in fade-in slide-in-from-bottom-2 duration-100 text-foreground"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-foreground">Create Filter</span>
+                    <button onClick={() => setIsAddingFilter(false)} className="text-muted-foreground hover:text-foreground" type="button">✕</button>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Property</label>
+                    <div className="relative" ref={filterPropSelectRef}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveFilterSelect(prev => prev === 'prop' ? null : 'prop')}
+                        className="filter-select-toggle w-full h-8 bg-muted/50 hover:bg-muted border border-border rounded-xl px-3 flex items-center justify-between text-xs text-foreground focus:outline-none transition-all cursor-pointer font-semibold"
+                      >
+                        <span className="truncate">{filterProp}</span>
+                        <ChevronDown size={13} className="text-muted-foreground/60 shrink-0 ml-1" />
+                      </button>
+                      {activeFilterSelect === 'prop' && (
+                        <div className="absolute bottom-full left-0 mb-1.5 w-full bg-[#18181f] border border-border/60 rounded-xl shadow-2xl p-1 flex flex-col gap-0.5 z-50 max-h-48 overflow-y-auto no-scrollbar animate-in fade-in slide-in-from-bottom-1 duration-100">
+                          {availableProperties.map(p => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => {
+                                setFilterProp(p);
+                                setActiveFilterSelect(null);
+                              }}
+                              className={cn(
+                                "w-full text-left px-2.5 py-1.5 text-[0.72rem] font-semibold rounded-lg transition-all flex items-center justify-between cursor-pointer border border-transparent hover:border-border/10",
+                                filterProp === p 
+                                  ? "bg-primary/15 text-accent" 
+                                  : "text-foreground/90 hover:bg-white/[0.04]"
+                              )}
+                            >
+                              <span className="truncate">{p}</span>
+                              {filterProp === p && <Check size={11} className="text-accent stroke-[3] shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Operator</label>
+                    <div className="relative" ref={filterOpSelectRef}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveFilterSelect(prev => prev === 'op' ? null : 'op')}
+                        className="filter-select-toggle w-full h-8 bg-muted/50 hover:bg-muted border border-border rounded-xl px-3 flex items-center justify-between text-xs text-foreground focus:outline-none transition-all cursor-pointer font-semibold"
+                      >
+                        <span className="truncate">{
+                          filterOp === 'contains' ? 'contains' :
+                          filterOp === 'equals' ? 'equals' :
+                          filterOp === 'not_equals' ? 'does not equal' :
+                          filterOp === 'is_empty' ? 'is empty' :
+                          filterOp === 'is_not_empty' ? 'is not empty' : filterOp
+                        }</span>
+                        <ChevronDown size={13} className="text-muted-foreground/60 shrink-0 ml-1" />
+                      </button>
+                      {activeFilterSelect === 'op' && (
+                        <div className="absolute bottom-full left-0 mb-1.5 w-full bg-[#18181f] border border-border/60 rounded-xl shadow-2xl p-1 flex flex-col gap-0.5 z-50 max-h-48 overflow-y-auto no-scrollbar animate-in fade-in slide-in-from-bottom-1 duration-100">
+                          {[
+                            { value: 'contains', label: 'contains' },
+                            { value: 'equals', label: 'equals' },
+                            { value: 'not_equals', label: 'does not equal' },
+                            { value: 'is_empty', label: 'is empty' },
+                            { value: 'is_not_empty', label: 'is not empty' },
+                          ].map(o => (
+                            <button
+                              key={o.value}
+                              type="button"
+                              onClick={() => {
+                                setFilterOp(o.value);
+                                setActiveFilterSelect(null);
+                              }}
+                              className={cn(
+                                "w-full text-left px-2.5 py-1.5 text-[0.72rem] font-semibold rounded-lg transition-all flex items-center justify-between cursor-pointer border border-transparent hover:border-border/10",
+                                filterOp === o.value 
+                                  ? "bg-primary/15 text-accent" 
+                                  : "text-foreground/90 hover:bg-white/[0.04]"
+                              )}
+                            >
+                              <span className="truncate">{o.label}</span>
+                              {filterOp === o.value && <Check size={11} className="text-accent stroke-[3] shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {filterOp !== 'is_empty' && filterOp !== 'is_not_empty' && (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Value</label>
+                      <input
+                        type="text"
+                        value={filterVal}
+                        onChange={(e) => setFilterVal(e.target.value)}
+                        placeholder="Value..."
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none"
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleAddFilter}
+                    type="button"
+                    className="w-full h-8 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg mt-1 cursor-pointer transition-all"
+                  >
+                    Apply Filter
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Properties control button */}
@@ -1412,6 +1532,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                 <SlidersHorizontal size={14.5} className="text-primary" />
                 <span className="hidden sm:inline text-xs font-semibold">Properties</span>
               </button>
+              {propertiesMenuOpen === 'floating' && renderPropertiesDropdown('floating')}
             </div>
 
             <div className="w-[1px] h-6 bg-border mx-1 shrink-0" />
@@ -1472,126 +1593,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
         )}
       </div>
 
-      {/* Dropdowns rendered outside the floating panel to prevent clipping/backdrop containment */}
-      {propertiesMenuOpen === 'floating' && renderPropertiesDropdown('floating')}
-      {isAddingFilter && (
-        <div 
-          ref={filterDropdownRef}
-          className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-4 right-4 sm:fixed sm:bottom-20 sm:right-6 sm:left-auto sm:mb-0 w-auto sm:w-72 bg-[#12131a] border border-border rounded-xl shadow-2xl p-4 flex flex-col gap-3 z-30 animate-in fade-in slide-in-from-bottom-2 duration-100 text-foreground"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-foreground">Create Filter</span>
-            <button onClick={() => setIsAddingFilter(false)} className="text-muted-foreground hover:text-foreground" type="button">✕</button>
-          </div>
 
-          <div className="flex flex-col gap-2">
-            <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Property</label>
-            <div className="relative" ref={filterPropSelectRef}>
-              <button
-                type="button"
-                onClick={() => setActiveFilterSelect(prev => prev === 'prop' ? null : 'prop')}
-                className="filter-select-toggle w-full h-8 bg-muted/50 hover:bg-muted border border-border rounded-xl px-3 flex items-center justify-between text-xs text-foreground focus:outline-none transition-all cursor-pointer font-semibold"
-              >
-                <span className="truncate">{filterProp}</span>
-                <ChevronDown size={13} className="text-muted-foreground/60 shrink-0 ml-1" />
-              </button>
-              {activeFilterSelect === 'prop' && (
-                <div className="absolute bottom-full left-0 mb-1.5 w-full bg-[#18181f] border border-border/60 rounded-xl shadow-2xl p-1 flex flex-col gap-0.5 z-50 max-h-48 overflow-y-auto no-scrollbar animate-in fade-in slide-in-from-bottom-1 duration-100">
-                  {availableProperties.map(p => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => {
-                        setFilterProp(p);
-                        setActiveFilterSelect(null);
-                      }}
-                      className={cn(
-                        "w-full text-left px-2.5 py-1.5 text-[0.72rem] font-semibold rounded-lg transition-all flex items-center justify-between cursor-pointer border border-transparent hover:border-border/10",
-                        filterProp === p 
-                          ? "bg-primary/15 text-accent" 
-                          : "text-foreground/90 hover:bg-white/[0.04]"
-                      )}
-                    >
-                      <span className="truncate">{p}</span>
-                      {filterProp === p && <Check size={11} className="text-accent stroke-[3] shrink-0" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Operator</label>
-            <div className="relative" ref={filterOpSelectRef}>
-              <button
-                type="button"
-                onClick={() => setActiveFilterSelect(prev => prev === 'op' ? null : 'op')}
-                className="filter-select-toggle w-full h-8 bg-muted/50 hover:bg-muted border border-border rounded-xl px-3 flex items-center justify-between text-xs text-foreground focus:outline-none transition-all cursor-pointer font-semibold"
-              >
-                <span className="truncate">{
-                  filterOp === 'contains' ? 'contains' :
-                  filterOp === 'equals' ? 'equals' :
-                  filterOp === 'not_equals' ? 'does not equal' :
-                  filterOp === 'is_empty' ? 'is empty' :
-                  filterOp === 'is_not_empty' ? 'is not empty' : filterOp
-                }</span>
-                <ChevronDown size={13} className="text-muted-foreground/60 shrink-0 ml-1" />
-              </button>
-              {activeFilterSelect === 'op' && (
-                <div className="absolute bottom-full left-0 mb-1.5 w-full bg-[#18181f] border border-border/60 rounded-xl shadow-2xl p-1 flex flex-col gap-0.5 z-50 max-h-48 overflow-y-auto no-scrollbar animate-in fade-in slide-in-from-bottom-1 duration-100">
-                  {[
-                    { value: 'contains', label: 'contains' },
-                    { value: 'equals', label: 'equals' },
-                    { value: 'not_equals', label: 'does not equal' },
-                    { value: 'is_empty', label: 'is empty' },
-                    { value: 'is_not_empty', label: 'is not empty' },
-                  ].map(o => (
-                    <button
-                      key={o.value}
-                      type="button"
-                      onClick={() => {
-                        setFilterOp(o.value);
-                        setActiveFilterSelect(null);
-                      }}
-                      className={cn(
-                        "w-full text-left px-2.5 py-1.5 text-[0.72rem] font-semibold rounded-lg transition-all flex items-center justify-between cursor-pointer border border-transparent hover:border-border/10",
-                        filterOp === o.value 
-                          ? "bg-primary/15 text-accent" 
-                          : "text-foreground/90 hover:bg-white/[0.04]"
-                      )}
-                    >
-                      <span className="truncate">{o.label}</span>
-                      {filterOp === o.value && <Check size={11} className="text-accent stroke-[3] shrink-0" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {filterOp !== 'is_empty' && filterOp !== 'is_not_empty' && (
-            <div className="flex flex-col gap-2">
-              <label className="text-[0.62rem] font-bold text-muted-foreground uppercase">Value</label>
-              <input
-                type="text"
-                value={filterVal}
-                onChange={(e) => setFilterVal(e.target.value)}
-                placeholder="Value..."
-                className="w-full bg-muted border border-border rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none"
-              />
-            </div>
-          )}
-
-          <button
-            onClick={handleAddFilter}
-            type="button"
-            className="w-full h-8 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg mt-1 cursor-pointer transition-all"
-          >
-            Apply Filter
-          </button>
-        </div>
-      )}
 
       {/* Row Creation Modal popup */}
       {showAddRowModal && (
