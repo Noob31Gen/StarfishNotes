@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, Minus, Trash2, FileText, Type, Save, RefreshCw, Link2, ChevronDown, Compass, Eye, Edit2, Undo2, Redo2, Image, Paperclip } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { safeParseJson } from '../utils/json';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { isTextFile } from '../services/github';
@@ -72,26 +73,12 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   const panStart = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const [nodes, setNodes] = useState<CanvasNode[]>(() => {
-    try {
-      if (initialContent.trim()) {
-        const parsed = JSON.parse(initialContent) as CanvasData;
-        return parsed.nodes || [];
-      }
-    } catch (e) {
-      console.error('Failed to parse initial canvas nodes:', e);
-    }
-    return [];
+    const parsed = safeParseJson<CanvasData>(initialContent, { nodes: [], edges: [] });
+    return parsed.nodes || [];
   });
   const [edges, setEdges] = useState<CanvasEdge[]>(() => {
-    try {
-      if (initialContent.trim()) {
-        const parsed = JSON.parse(initialContent) as CanvasData;
-        return parsed.edges || [];
-      }
-    } catch (e) {
-      console.error('Failed to parse initial canvas edges:', e);
-    }
-    return [];
+    const parsed = safeParseJson<CanvasData>(initialContent, { nodes: [], edges: [] });
+    return parsed.edges || [];
   });
   const [sha, setSha] = useState<string | null>(initialSha);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -555,7 +542,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     setSavedContent(initialContent);
     try {
       if (initialContent.trim()) {
-        const parsed = JSON.parse(initialContent) as CanvasData;
+        const parsed = safeParseJson<CanvasData>(initialContent, { nodes: [], edges: [] });
         const incomingNodes = parsed.nodes || [];
         const incomingEdges = parsed.edges || [];
         const nodesChanged = JSON.stringify(incomingNodes) !== JSON.stringify(nodes);
@@ -641,7 +628,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     // do not overwrite the file to prevent accidental deletion due to initialization delays or race conditions.
     try {
       if (origVal && origVal.trim()) {
-        const parsedOrig = JSON.parse(origVal) as CanvasData;
+        const parsedOrig = safeParseJson<CanvasData>(origVal, { nodes: [], edges: [] });
         const origNodesCount = parsedOrig.nodes?.length || 0;
         const origEdgesCount = parsedOrig.edges?.length || 0;
         if ((origNodesCount > 0 || origEdgesCount > 0) && currentNodes.length === 0 && currentEdges.length === 0) {

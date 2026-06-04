@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, Settings, SlidersHorizontal, Search, RefreshCw } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { safeParseJson } from '../utils/json';
 
 interface Node {
   id: string; // The full file path
@@ -264,7 +265,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       } else if (file.path.endsWith('.canvas')) {
         try {
           const content = fileContents[file.path] || '{}';
-          const canvasData = JSON.parse(content) as { nodes?: { type?: string; file?: string }[] };
+          const canvasData = safeParseJson<{ nodes?: { type?: string; file?: string }[] }>(content, {});
           if (canvasData.nodes && Array.isArray(canvasData.nodes)) {
             canvasData.nodes.forEach((node) => {
               if (node.type === 'file' && node.file) {

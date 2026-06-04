@@ -9,6 +9,7 @@ import { parseYaml, stringifyYaml } from '../utils/yaml';
 import { parseFrontmatter, updateFrontmatter } from '../utils/frontmatter';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
+import { safeParseJson } from '../utils/json';
 
 interface InbuiltPropertyDef {
   key: string;
@@ -137,7 +138,7 @@ const calculateBacklinks = (
 
     if (path.endsWith('.canvas')) {
       try {
-        const canvasData = JSON.parse(content);
+        const canvasData = safeParseJson<{ nodes?: { type?: string; file?: string; text?: string }[] }>(content, {});
         if (canvasData.nodes && Array.isArray(canvasData.nodes)) {
           for (const node of canvasData.nodes) {
             if (node.type === 'file' && node.file) {
