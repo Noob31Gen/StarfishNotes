@@ -575,25 +575,27 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
   // Track in-flight and completed preloads to prevent duplicate requests
   const preloadedRef = useRef<Set<string>>(new Set());
+  const preloadAttemptRef = useRef<Map<string, number>>(new Map()); // Track failed attempts
 
   // Preload file contents for all notes in the database's source folder
   useEffect(() => {
-    // Collect all matched files (md, canvas, txt) in the entire vault that need loading to calculate complete backlinks
-    const matchedFiles = files.filter(f => {
+    // Collect all loadable files that need loading (not just new files, but check content too)
+    const allLoadableFiles = files.filter(f => {
       const isLoadable = f.path.endsWith('.md') || f.path.endsWith('.canvas') || f.path.endsWith('.txt');
-      return isLoadable && fileContents[f.path] === undefined && !preloadedRef.current.has(f.path);
+      return isLoadable;
     });
 
-    // If no files to load, ensure preload is marked complete
-    if (matchedFiles.length === 0) {
-      // Mark all loadable files as preloaded if content already exists
-      files.forEach(f => {
-        if ((f.path.endsWith('.md') || f.path.endsWith('.canvas') || f.path.endsWith('.txt')) && fileContents[f.path] !== undefined) {
-          preloadedRef.current.add(f.path);
-        }
-      });
-      return;
-    }
+    // Find files missing content (never attempted or recently failed)
+    const matchedFiles = allLoadableFiles.filter(f => {
+      const hasContent = fileContents[f.path] !== undefined;
+      const isPreloaded = preloadedRef.current.has(f.path);
+      const failedAttempts = preloadAttemptRef.current.get(f.path) || 0;
+      // Retry failed files after 2 attempts (exponential backoff)
+      const canRetry = failedAttempts < 2;
+      return !hasContent && !isPreloaded && canRetry;
+    });
+
+    if (matchedFiles.length === 0) return;
 
     // Add them to the in-flight ref first to avoid triggering duplicate fetches on sub-renders
     matchedFiles.forEach(f => {
@@ -609,6 +611,8 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
         .catch(err => {
           console.error('Failed to preload note content:', file.path, err);
           preloadedRef.current.delete(file.path); // Allow retry on failure
+          const attempts = preloadAttemptRef.current.get(file.path) || 0;
+          preloadAttemptRef.current.set(file.path, attempts + 1); // Track attempts
         })
         .finally(() => {
           next();
@@ -619,12 +623,15 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     for (let i = 0; i < Math.min(5, matchedFiles.length); i++) {
       next();
     }
-  }, [folderPrefix, files, fileContents, onLoadFileContent]);
+  }, [files, fileContents, onLoadFileContent]);
 
   // Extract all rows (notes) and their properties
   const allRows = useMemo<BaseRow[]>(() => {
+    const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.svg']);
     const matchedFiles = files.filter(f => {
-      if (!f.path.endsWith('.md')) return false;
+      const isMd = f.path.endsWith('.md');
+      const isImage = imageExtensions.has('.' + (f.path.split('.').pop() || '').toLowerCase());
+      if (!isMd && !isImage) return false;
       return folderPrefix ? f.path.startsWith(folderPrefix) : true;
     });
 

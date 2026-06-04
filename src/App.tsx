@@ -345,7 +345,10 @@ export default function App() {
     if (toFetch.length === 0) {
       setPrefetchStatus('success');
       setPrefetchProgress({ loaded: targets.length, total: targets.length });
-      setTimeout(() => setPrefetchStatus('idle'), 3000);
+      setTimeout(() => {
+        // Only reset to idle if still in success state (not if user started another prefetch)
+        setPrefetchStatus(prevStatus => prevStatus === 'success' ? 'idle' : prevStatus);
+      }, 3000);
       return;
     }
 
@@ -375,7 +378,7 @@ export default function App() {
                   try {
                     text = await decryptToken(stored.content, activeKey);
                   } catch {
-                    // Ignore decryption error
+                    // Ignore decryption error - use stored content as-is
                   }
                 }
               }
@@ -401,11 +404,22 @@ export default function App() {
         workers.push(worker());
       }
       await Promise.all(workers);
-      setPrefetchStatus(hasError ? 'error' : 'success');
-      setTimeout(() => setPrefetchStatus('idle'), 3000);
+      
+      // Check if status is still 'fetching' before updating (user might have started another fetch)
+      setPrefetchStatus(prevStatus => {
+        if (prevStatus !== 'fetching') return prevStatus;
+        return hasError ? 'error' : 'success';
+      });
+      
+      setTimeout(() => {
+        setPrefetchStatus(prevStatus => {
+          // Only reset to idle if still in success/error state
+          return (prevStatus === 'success' || prevStatus === 'error') ? 'idle' : prevStatus;
+        });
+      }, 3000);
     } catch (e) {
       console.error('Prefetch all failed:', e);
-      setPrefetchStatus('error');
+      setPrefetchStatus(prevStatus => prevStatus === 'fetching' ? 'error' : prevStatus);
     }
   }, [files, fileContents, isOffline, storageMode, masterPassphrase, githubToken, repoName]);
 
