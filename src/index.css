@@ -246,7 +246,8 @@
 }
 
 /* Graphview Links (Obsidian [[internal-links]]) styling */
-.markdown-preview .wiki-link {
+.markdown-preview .wiki-link,
+.markdown-preview .graphview-link {
   @apply text-accent font-medium no-underline border-b border-dashed border-primary/60 cursor-pointer px-1 rounded-sm bg-accent/5 hover:bg-primary/15 hover:text-foreground transition-all duration-200;
 }
 
@@ -264,6 +265,10 @@
 
 .markdown-preview blockquote {
   @apply my-5 py-2 pl-4 border-l-4 border-primary bg-muted/40 rounded-r-lg text-muted-foreground italic;
+}
+
+.markdown-preview blockquote blockquote {
+  @apply my-2 border-primary/50 bg-muted/20;
 }
 
 .markdown-preview ul {
@@ -297,6 +302,44 @@
 
 .markdown-preview input[type="checkbox"] {
   @apply w-4 h-4 mr-2 rounded border-border accent-primary align-middle cursor-pointer;
+}
+
+/* h5 and h6 */
+.markdown-preview h5 {
+  @apply font-heading text-foreground font-semibold mt-5 mb-2 tracking-tight text-[0.95rem];
+}
+
+.markdown-preview h6 {
+  @apply font-heading text-muted-foreground font-semibold mt-4 mb-2 tracking-tight text-[0.9rem];
+}
+
+/* Horizontal rules */
+.markdown-preview hr {
+  @apply my-8 border-none h-px bg-border;
+}
+
+/* Strikethrough */
+.markdown-preview del,
+.markdown-preview s {
+  @apply text-muted-foreground line-through;
+}
+
+/* Definition lists (from inline HTML) */
+.markdown-preview dl {
+  @apply mb-4;
+}
+
+.markdown-preview dt {
+  @apply font-semibold text-foreground mt-3;
+}
+
+.markdown-preview dd {
+  @apply pl-4 mb-2 text-muted-foreground;
+}
+
+/* Images */
+.markdown-preview img {
+  @apply max-w-full h-auto rounded-lg my-4;
 }
 
 /* ----------------------------------------------------

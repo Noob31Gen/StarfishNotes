@@ -539,11 +539,18 @@ export const Editor: React.FC<EditorProps> = ({
         html = marked.parse(processedText) as string;
 
         // 3. Resolve local vault image paths to base64 Data URLs, or custom iframe for PDFs / attachment cards
+        //    Only process local vault paths (from wiki-embeds ![[file]]). Skip external URLs from standard markdown ![alt](url).
         html = html.replace(/<img src="([^"]+)"([^>]*)>/g, (_match, src, rest) => {
+          const srcClean = src.trim();
+
+          // Skip external URLs — they're standard markdown images, not vault embeds
+          if (/^(?:https?|data):/.test(srcClean)) {
+            return _match;
+          }
+
           const altMatch = rest.match(/alt="([^"]+)"/);
           const alt = altMatch ? altMatch[1] : '';
 
-          const srcClean = src.trim();
           const extIndex = srcClean.lastIndexOf('.');
           const srcExt = extIndex !== -1 ? srcClean.substring(extIndex).toLowerCase() : '';
           const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
@@ -551,7 +558,7 @@ export const Editor: React.FC<EditorProps> = ({
           // Normalize relative path: strip leading "./" to resolve root files correctly
           const cleanSrc = srcClean.startsWith('./') ? srcClean.substring(2) : srcClean;
 
-          if (imageExtensions.includes(srcExt) || srcClean.startsWith('data:image/')) {
+          if (imageExtensions.includes(srcExt)) {
             const cached = vaultImages[cleanSrc] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanSrc))?.[1];
             return `<img src="${cached || srcClean}"${rest}>`;
           } else if (srcExt === '.pdf') {
@@ -578,7 +585,7 @@ export const Editor: React.FC<EditorProps> = ({
               </div>
             `;
           } else {
-            // Render a custom embed card instead of image!
+            // Non-image, non-PDF local vault file — render as attachment card
             const filename = alt || srcClean.split('/').pop() || srcClean;
             const displayExt = srcExt ? srcExt.substring(1).toUpperCase() : 'FILE';
             return `
@@ -610,7 +617,7 @@ export const Editor: React.FC<EditorProps> = ({
 
       // 5. Bulletproof sanitize through DOMPurify to eliminate any script injection vectors
       return DOMPurify.sanitize(html, {
-        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col', 'src', 'type', 'class'],
+        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border'],
         ADD_TAGS: ['embed', 'iframe', 'svg', 'line'],
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|sms|blob|data):|[^&:/?#]*(?:[/?#]|$))/i
       });
