@@ -995,7 +995,6 @@ export const Editor: React.FC<EditorProps> = ({
                     placeholder="Search notes/attachments..."
                     className="w-full bg-muted/30 border border-border/40 text-foreground px-2 py-1 rounded-md text-[0.7rem] focus:outline-none focus:border-primary/60 transition-all duration-150"
                     onClick={(e) => e.stopPropagation()}
-                    autoFocus
                   />
                 </div>
 
