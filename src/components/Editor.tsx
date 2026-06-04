@@ -206,9 +206,6 @@ export const Editor: React.FC<EditorProps> = ({
   const previewScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const pendingCursorRef = useRef<{ start: number; end: number } | null>(null);
 
-  const isScrollingEditorRef = useRef(false);
-  const isScrollingPreviewRef = useRef(false);
-
   const getGlobalIndex = useCallback((localIndex: number, startLine: number) => {
     let globalIndex = 0;
     const vLines = virtualLinesRef.current;
@@ -292,29 +289,6 @@ export const Editor: React.FC<EditorProps> = ({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [isWindowingMode, content, measureLineHeights]);
-
-  const getTopVisibleLineIndex = useCallback(() => {
-    const viewport = isWindowingMode ? viewportRef.current : textareaRef.current;
-    if (!viewport) return windowStartLine;
-
-    if (!isWindowingMode) {
-      const adjustedScrollTop = Math.max(0, viewport.scrollTop - 24);
-      const estimatedLineHeight = 25;
-      return Math.max(0, Math.floor(adjustedScrollTop / estimatedLineHeight));
-    }
-
-    const relativeScrollTop = viewport.scrollTop - (windowStartLine * 24);
-    if (relativeScrollTop <= 0) return windowStartLine;
-
-    let accumulatedHeight = 0;
-    for (let i = 0; i < windowLineHeights.length; i++) {
-      accumulatedHeight += windowLineHeights[i];
-      if (accumulatedHeight > relativeScrollTop) {
-        return windowStartLine + i;
-      }
-    }
-    return windowEndLine - 1;
-  }, [windowStartLine, windowEndLine, windowLineHeights, isWindowingMode]);
 
   // Undo / Redo history state stack
   const [history, setHistory] = useState<string[]>([]);
@@ -423,104 +397,6 @@ export const Editor: React.FC<EditorProps> = ({
     }
   }, [isWindowingMode, windowStartLine, windowEndLine, pushEditorState]);
 
-  const syncPreviewScrollFromEditor = useCallback((editorViewport: HTMLElement, previewContainer: HTMLElement) => {
-    const currentLineIndex = getTopVisibleLineIndex();
-
-    if (editorViewport.scrollTop === 0) {
-      previewContainer.scrollTop = 0;
-    } else {
-      let targetTop = -1;
-      let targetElement: HTMLElement | null = null;
-      let targetElementHeight = 26;
-      let targetLocalLineIndex = currentLineIndex - windowStartLine;
-
-      const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
-      const isCSV = ext === '.csv' || ext === '.tsv';
-      const isPlainCode = ext !== '.md' && ext !== '.canvas' && isTextFile(filePath);
-
-      if (isCSV) {
-        const table = previewContainer.querySelector('table');
-        if (table) {
-          const rows = table.querySelectorAll('tbody tr');
-          const targetRowIdx = currentLineIndex - windowStartLine;
-          if (rows[targetRowIdx]) {
-            targetElement = rows[targetRowIdx] as HTMLElement;
-            targetElementHeight = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
-          }
-        }
-      } else if (isPlainCode) {
-        const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
-        if (lineEl) {
-          targetElement = lineEl as HTMLElement;
-          targetElementHeight = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
-        }
-      } else {
-        // Case 3: Markdown semantic block matching
-        const blocks = previewContainer.querySelectorAll('h1, h2, h3, h4, h5, h6, p, pre, table, blockquote, li');
-        const vLines = isWindowingMode ? virtualLines : content.split('\n');
-        
-        // Scan downwards from currentLineIndex to find a line with text to match
-        for (let offset = 0; offset < 20; offset++) {
-          const lineIdx = currentLineIndex + offset;
-          if (lineIdx >= vLines.length) break;
-          const rawLine = vLines[lineIdx];
-          const cleanLine = rawLine.replace(/[#*`~_\-|[\]]/g, '').trim().toLowerCase();
-          if (cleanLine.length > 3) {
-            const searchStr = cleanLine.substring(0, 30);
-            for (let b = 0; b < blocks.length; b++) {
-              const blockText = blocks[b].textContent || '';
-              const cleanBlockText = blockText.trim().toLowerCase();
-              if (cleanBlockText.includes(searchStr)) {
-                targetElement = blocks[b] as HTMLElement;
-                targetElementHeight = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
-                targetLocalLineIndex = lineIdx - windowStartLine;
-                break;
-              }
-            }
-            if (targetElement) break;
-          }
-        }
-      }
-
-      if (targetElement) {
-        targetTop = targetElement.getBoundingClientRect().top - previewContainer.getBoundingClientRect().top + previewContainer.scrollTop;
-        
-        const localLineIndex = targetLocalLineIndex;
-        let lineTop = 0;
-        let editorLineHeight: number;
-        if (isWindowingMode) {
-          const heights = windowLineHeights;
-          for (let i = 0; i < Math.min(localLineIndex, heights.length); i++) {
-            lineTop += heights[i];
-          }
-          lineTop += windowStartLine * 24;
-          editorLineHeight = windowLineHeights[localLineIndex] || 24;
-        } else {
-          lineTop = localLineIndex * 25 + 24; // line index * estimated line height + top padding (24px)
-          editorLineHeight = 25;
-        }
-
-        const relativeScrollTop = editorViewport.scrollTop;
-        const editorLineScrollOffset = Math.max(0, relativeScrollTop - lineTop);
-        const proportion = Math.min(1, editorLineScrollOffset / editorLineHeight);
-        
-        const previewOffset = proportion * targetElementHeight;
-        targetTop += previewOffset;
-      }
-
-      if (targetTop !== -1) {
-        previewContainer.scrollTop = targetTop;
-      } else {
-        const maxEditorScroll = editorViewport.scrollHeight - editorViewport.clientHeight;
-        if (maxEditorScroll > 0) {
-          const percentage = editorViewport.scrollTop / maxEditorScroll;
-          const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
-          previewContainer.scrollTop = percentage * maxPreviewScroll;
-        }
-      }
-    }
-  }, [filePath, windowStartLine, windowLineHeights, getTopVisibleLineIndex, isWindowingMode, virtualLines, content]);
-
   const handleEditorScroll = (e: React.UIEvent<HTMLDivElement | HTMLTextAreaElement>) => {
     const editorViewport = e.currentTarget;
     if (!editorViewport) return;
@@ -568,168 +444,6 @@ export const Editor: React.FC<EditorProps> = ({
           setContent(newChunk);
         }
       }
-    }
-
-    if (viewMode === 'split') {
-      if (isScrollingPreviewRef.current) {
-        return;
-      }
-      isScrollingEditorRef.current = true;
-
-      const previewContainer = previewScrollContainerRef.current;
-      if (previewContainer) {
-        syncPreviewScrollFromEditor(editorViewport, previewContainer);
-      }
-
-      setTimeout(() => {
-        isScrollingEditorRef.current = false;
-      }, 50);
-    }
-  };
-
-  const handlePreviewScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const previewContainer = e.currentTarget;
-    if (!previewContainer) return;
-
-    if (viewMode === 'split') {
-      if (isScrollingEditorRef.current) {
-        return;
-      }
-      isScrollingPreviewRef.current = true;
-
-      if (previewContainer.scrollTop === 0) {
-        if (isWindowingMode && viewportRef.current) {
-          viewportRef.current.scrollTop = 0;
-        } else if (!isWindowingMode && textareaRef.current) {
-          // eslint-disable-next-line react-hooks/immutability
-          textareaRef.current.scrollTop = 0;
-        }
-      } else {
-        const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
-        const isCSV = ext === '.csv' || ext === '.tsv';
-        const isPlainCode = ext !== '.md' && ext !== '.canvas' && isTextFile(filePath);
-
-        let targetElement: HTMLElement | null = null;
-        let matchedLineIndex = windowStartLine;
-
-        if (isCSV) {
-          const table = previewContainer.querySelector('table');
-          if (table) {
-            const containerTop = previewContainer.getBoundingClientRect().top;
-            const rows = table.querySelectorAll('tbody tr');
-            let matchedRowIdx = 0;
-            for (let i = 0; i < rows.length; i++) {
-              const rowElement = rows[i] as HTMLElement;
-              const relativeTop = rowElement.getBoundingClientRect().top - containerTop;
-              const height = rowElement.getBoundingClientRect().height || rowElement.clientHeight || 26;
-              if (relativeTop + height > 0) {
-                targetElement = rowElement;
-                matchedRowIdx = i;
-                break;
-              }
-            }
-            matchedLineIndex = windowStartLine + matchedRowIdx;
-          }
-        } else if (isPlainCode) {
-          const lines = previewContainer.querySelectorAll('.preview-line');
-          if (lines.length > 0) {
-            const containerTop = previewContainer.getBoundingClientRect().top;
-            let matchedLineOffset = 0;
-            for (let i = 0; i < lines.length; i++) {
-              const lineElement = lines[i] as HTMLElement;
-              const relativeTop = lineElement.getBoundingClientRect().top - containerTop;
-              const height = lineElement.getBoundingClientRect().height || lineElement.clientHeight || 26;
-              if (relativeTop + height > 0) {
-                targetElement = lineElement;
-                matchedLineOffset = i;
-                break;
-              }
-            }
-            const dataLineAttr = lines[matchedLineOffset]?.getAttribute('data-line');
-            if (dataLineAttr !== null) {
-              matchedLineIndex = parseInt(dataLineAttr, 10);
-            }
-          }
-        } else {
-          // Case 3: Markdown semantic block matching
-          const blocks = previewContainer.querySelectorAll('h1, h2, h3, h4, h5, h6, p, pre, table, blockquote, li');
-          const containerTop = previewContainer.getBoundingClientRect().top;
-          let matchedBlock: HTMLElement | null = null;
-
-          for (let i = 0; i < blocks.length; i++) {
-            const block = blocks[i] as HTMLElement;
-            const relativeTop = block.getBoundingClientRect().top - containerTop;
-            const height = block.getBoundingClientRect().height || block.clientHeight || 26;
-            if (relativeTop + height > 0) {
-              matchedBlock = block;
-              break;
-            }
-          }
-
-          if (matchedBlock) {
-            const blockText = matchedBlock.textContent || '';
-            const cleanBlockText = blockText.replace(/[#*`~_\-|[\]]/g, '').trim().toLowerCase();
-            if (cleanBlockText.length > 3) {
-              const searchStr = cleanBlockText.substring(0, 30);
-              const vLines = isWindowingMode ? virtualLines : content.split('\n');
-              for (let i = 0; i < vLines.length; i++) {
-                const lineText = vLines[i].replace(/[#*`~_\-|[\]]/g, '').trim().toLowerCase();
-                if (lineText.includes(searchStr)) {
-                  matchedLineIndex = windowStartLine + i;
-                  targetElement = matchedBlock;
-                  break;
-                }
-              }
-            }
-          }
-        }
-
-        if (targetElement) {
-          const containerTop = previewContainer.getBoundingClientRect().top;
-          let targetScrollTop: number;
-          const localLineIndex = matchedLineIndex - windowStartLine;
-          
-          if (isWindowingMode) {
-            targetScrollTop = windowStartLine * 24;
-            for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
-              targetScrollTop += windowLineHeights[i];
-            }
-          } else {
-            targetScrollTop = matchedLineIndex * 25 + 24; // line index * estimated line height + top padding (24px)
-          }
-
-          const height = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
-          const relativeTop = targetElement.getBoundingClientRect().top - containerTop;
-          const previewLineScrollOffset = Math.max(0, -relativeTop);
-          const proportion = previewLineScrollOffset / height;
-          const editorLineHeight = (isWindowingMode ? windowLineHeights[localLineIndex] : 25) || 25;
-          const editorLineScrollOffset = proportion * editorLineHeight;
-          targetScrollTop += editorLineScrollOffset;
-
-          if (isWindowingMode && viewportRef.current) {
-            viewportRef.current.scrollTop = targetScrollTop;
-          } else if (!isWindowingMode && textareaRef.current) {
-            textareaRef.current.scrollTop = targetScrollTop;
-          }
-        } else {
-          // Percentage-based fallback (like for standard markdown files with no matched block)
-          const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
-          if (maxPreviewScroll > 0) {
-            const percentage = previewContainer.scrollTop / maxPreviewScroll;
-            if (isWindowingMode && viewportRef.current) {
-              const maxEditorScroll = viewportRef.current.scrollHeight - viewportRef.current.clientHeight;
-              viewportRef.current.scrollTop = percentage * maxEditorScroll;
-            } else if (!isWindowingMode && textareaRef.current) {
-              const maxEditorScroll = textareaRef.current.scrollHeight - textareaRef.current.clientHeight;
-              textareaRef.current.scrollTop = percentage * maxEditorScroll;
-            }
-          }
-        }
-      }
-
-      setTimeout(() => {
-        isScrollingPreviewRef.current = false;
-      }, 50);
     }
   };
 
@@ -1286,21 +1000,11 @@ export const Editor: React.FC<EditorProps> = ({
         const topSpacer = `<div style="height: ${windowStartLine * 26}px; width: 100%;"></div>`;
         const bottomSpacer = `<div style="height: ${Math.max(0, virtualLines.length - windowEndLine) * 26}px; width: 100%;"></div>`;
         previewContainer.innerHTML = topSpacer + renderMarkdown(content, windowStartLine) + bottomSpacer;
-
-        // Sync scroll from editor to preview immediately upon boundary shifting
-        const editorViewport = viewportRef.current;
-        if (editorViewport) {
-          isScrollingEditorRef.current = true;
-          syncPreviewScrollFromEditor(editorViewport, previewContainer);
-          setTimeout(() => {
-            isScrollingEditorRef.current = false;
-          }, 50);
-        }
       } else {
         previewContainer.innerHTML = renderMarkdown(content, 0);
       }
     }
-  }, [content, filePath, viewMode, renderMarkdown, isWindowingMode, windowStartLine, windowEndLine, getTopVisibleLineIndex, virtualLines.length, syncPreviewScrollFromEditor]);
+  }, [content, filePath, viewMode, renderMarkdown, isWindowingMode, windowStartLine, windowEndLine, virtualLines.length]);
 
   // Unified save orchestration
   const performAutoSave = useCallback(async () => {
@@ -2002,7 +1706,6 @@ export const Editor: React.FC<EditorProps> = ({
         </div>
         <div
           ref={previewScrollContainerRef}
-          onScroll={handlePreviewScroll}
           className="flex-1 p-6 pb-32 sm:p-8 sm:pb-32 overflow-y-auto bg-background"
           onClick={handlePreviewClick}
           onBlur={handlePreviewInput}
