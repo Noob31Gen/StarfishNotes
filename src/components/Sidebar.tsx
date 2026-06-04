@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Compass, Plus, Search, RefreshCw, Settings, FileText, Trash2, Edit3, GitBranch,
   Folder, FolderOpen, ChevronRight, ChevronDown, FolderPlus, Copy, ArrowRight, MoreHorizontal,
-  PanelLeftClose, Paperclip, Image, Download, Database, X
+  PanelLeftClose, Paperclip, Image, Download, Database, X, AlertTriangle
 } from 'lucide-react';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
@@ -426,6 +426,8 @@ interface SidebarProps {
   setIsResizingSidebar: (resizing: boolean) => void;
 
   onOpenSettings: () => void;
+  hasConflicts: boolean;
+  onOpenConflictResolution: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -459,6 +461,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isResizingSidebar,
   setIsResizingSidebar,
   onOpenSettings,
+  hasConflicts,
+  onOpenConflictResolution,
 }) => {
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [activeMenuPath, setActiveMenuPath] = useState<string | null>(null);
@@ -934,14 +938,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {repoName}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="p-1.5 rounded-lg text-muted-foreground hover:bg-border/65 hover:text-foreground transition-all cursor-pointer shrink-0 hover:rotate-45 duration-300 flex items-center justify-center border border-transparent"
-              title="Open Settings"
-            >
-              <Settings size={14.5} />
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {hasConflicts && (
+                <button
+                  type="button"
+                  onClick={onOpenConflictResolution}
+                  className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer flex items-center justify-center animate-pulse"
+                  title="Resolve Conflicts"
+                >
+                  <AlertTriangle size={14.5} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="p-1.5 rounded-lg text-muted-foreground hover:bg-border/65 hover:text-foreground transition-all cursor-pointer shrink-0 hover:rotate-45 duration-300 flex items-center justify-center border border-transparent"
+                title="Open Settings"
+              >
+                <Settings size={14.5} />
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-2 text-[0.7rem] text-muted-foreground/60 font-semibold px-0.5">
             <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse-soft shrink-0" />

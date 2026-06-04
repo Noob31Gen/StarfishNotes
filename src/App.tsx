@@ -17,6 +17,7 @@ import { GraphView } from './components/GraphView';
 import { CanvasView } from './components/CanvasView';
 import { BaseEditor } from './components/BaseEditor';
 import { offlineStorage } from './services/offlineStorage';
+import { ConflictResolutionModal } from './components/ConflictResolutionModal';
 
 // Split modular components
 import { AuthScreen } from './components/AuthScreen';
@@ -25,7 +26,7 @@ import { InitVaultScreen } from './components/InitVaultScreen';
 import { Sidebar } from './components/Sidebar';
 import { cn } from './utils/cn';
 import { resolveVaultFilePath } from './utils/pathResolver';
-import { getLocalFile, saveLocalFile, getAllLocalFilePaths, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase, clearAllLocalFiles, clearStorageCrypto } from './services/storage';
+import { getLocalFile, saveLocalFile, deleteLocalFile, getAllLocalFilePaths, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase, clearAllLocalFiles, clearStorageCrypto } from './services/storage';
 
 // Initialize offline storage crypto callbacks to avoid circular dependencies
 offlineStorage.initCrypto(encryptToken, decryptToken);
@@ -85,6 +86,9 @@ export default function App() {
     return localStorage.getItem('starfishnotes-is-offline') === 'true';
   });
   const [isNetworkOffline, setIsNetworkOffline] = useState<boolean>(!navigator.onLine);
+  const [showConflictModal, setShowConflictModal] = useState<boolean>(false);
+  const [conflictingFiles, setConflictingFiles] = useState<VaultFile[]>([]);
+  const lastActiveTimeRef = useRef<number>(Date.now());
   const [authMode, setAuthMode] = useState<'github' | 'local'>(() => {
     return localStorage.getItem('starfishnotes-is-offline') === 'true' ? 'local' : 'github';
   });
@@ -843,7 +847,8 @@ export default function App() {
   const refreshFiles = useCallback(async (
     token: string = githubToken,
     repo: string = repoName,
-    branch: string = branchName
+    branch: string = branchName,
+    isIdleCheck: boolean = false
   ) => {
     if (isOffline) {
       await refreshFilesOffline();
@@ -854,40 +859,126 @@ export default function App() {
       let tree = await fetchRepositoryTree(token, repo, branch);
       setIsNetworkOffline(false);
 
-      // Check and push unsynced files first
+      // Check and push unsynced files first, while detecting parallel edits conflicts
       const unsynced = getUnsyncedFiles();
+      const transitionConflicts: VaultFile[] = [];
+      const safeToPush: string[] = [];
+
       if (unsynced.length > 0) {
-        console.log(`Pushing ${unsynced.length} unsynced local edits to GitHub...`);
+        console.log(`Checking ${unsynced.length} unsynced offline files for remote conflicts...`);
         for (const path of unsynced) {
-          try {
-            const cachedFile = await getLocalFile(path);
-            if (cachedFile) {
-              const fileInTree = tree.find(f => f.path === path);
-              const shaToUse = fileInTree ? fileInTree.sha : (cachedFile.sha.startsWith('offline-') ? null : cachedFile.sha);
-              
-              const pushRes = await commitFileContent(
-                token,
-                repo,
-                branch,
-                path,
-                cachedFile.content,
-                shaToUse,
-                `sync offline edits for ${path}`
-              );
-              await saveLocalFile(path, { content: cachedFile.content, sha: pushRes.sha });
-              removeUnsyncedFile(path);
-              console.log(`Successfully synced ${path} to GitHub.`);
+          const cachedFile = await getLocalFile(path);
+          if (cachedFile) {
+            const fileInTree = tree.find(f => f.path === path);
+            if (fileInTree) {
+              // File exists on remote - check if remote SHA matches our local pre-edit SHA
+              if (cachedFile.sha === 'offline-pending' || cachedFile.sha !== fileInTree.sha) {
+                // Parallel edit conflict!
+                transitionConflicts.push(fileInTree);
+              } else {
+                // No conflict, safe to auto-push
+                safeToPush.push(path);
+              }
+            } else {
+              // File does not exist on remote
+              if (cachedFile.sha === 'offline-pending' || cachedFile.sha === 'offline-init-sha' || cachedFile.sha === '') {
+                // Locally created new file, safe to push
+                safeToPush.push(path);
+              } else {
+                // File deleted on remote in the interim - conflict
+                const dummyFile: VaultFile = {
+                  path,
+                  name: path.split('/').pop() || path,
+                  type: 'blob',
+                  sha: 'remote-deleted'
+                };
+                transitionConflicts.push(dummyFile);
+              }
             }
-          } catch (syncErr) {
-            console.error(`Failed to push offline edits for ${path}:`, syncErr);
           }
         }
-        // Refetch tree after pushing
-        try {
-          const updatedTree = await fetchRepositoryTree(token, repo, branch);
-          tree = updatedTree;
-        } catch (treeErr) {
-          console.error('Failed to refetch tree after pushing offline edits:', treeErr);
+
+        // Push non-conflicting offline edits in the background
+        if (safeToPush.length > 0) {
+          console.log(`Auto-pushing ${safeToPush.length} non-conflicting offline edits...`);
+          for (const path of safeToPush) {
+            try {
+              const cachedFile = await getLocalFile(path);
+              if (cachedFile) {
+                const fileInTree = tree.find(f => f.path === path);
+                const shaToUse = fileInTree ? fileInTree.sha : null;
+                const pushRes = await commitFileContent(
+                  token,
+                  repo,
+                  branch,
+                  path,
+                  cachedFile.content,
+                  shaToUse,
+                  `sync offline edits for ${path}`
+                );
+                await saveLocalFile(path, { content: cachedFile.content, sha: pushRes.sha });
+                removeUnsyncedFile(path);
+                console.log(`Successfully auto-pushed ${path}`);
+              }
+            } catch (pushErr) {
+              console.error(`Failed to auto-push ${path}:`, pushErr);
+            }
+          }
+          // Refetch tree after pushing
+          try {
+            tree = await fetchRepositoryTree(token, repo, branch);
+          } catch (treeErr) {
+            console.error('Failed to refetch tree after auto-pushing offline edits:', treeErr);
+          }
+        }
+      }
+
+      // Process transition conflicts
+      if (transitionConflicts.length > 0) {
+        setConflictingFiles(prev => {
+          const combined = [...prev];
+          for (const f of transitionConflicts) {
+            if (!combined.some(existing => existing.path === f.path)) {
+              combined.push(f);
+            }
+          }
+          return combined;
+        });
+        setShowConflictModal(true);
+        setIsLoadingTree(false);
+        return;
+      }
+
+      // Handle Idle Check Conflicts
+      if (isIdleCheck) {
+        const idleConflicts: VaultFile[] = [];
+        for (const remoteFile of tree) {
+          if (!isTextFile(remoteFile.path) && !remoteFile.path.endsWith('.canvas')) continue;
+          
+          const localFile = await getLocalFile(remoteFile.path);
+          if (!localFile) {
+            // Missing locally, remote has it
+            idleConflicts.push(remoteFile);
+          } else if (localFile.sha !== remoteFile.sha) {
+            // Mismatching SHA (remote updated)
+            idleConflicts.push(remoteFile);
+          }
+        }
+
+        if (idleConflicts.length > 0) {
+          console.log(`Idle check: found ${idleConflicts.length} conflicting remote updates.`);
+          setConflictingFiles(prev => {
+            const combined = [...prev];
+            for (const f of idleConflicts) {
+              if (!combined.some(existing => existing.path === f.path)) {
+                combined.push(f);
+              }
+            }
+            return combined;
+          });
+          setShowConflictModal(true);
+          setIsLoadingTree(false);
+          return;
         }
       }
 
@@ -1482,6 +1573,63 @@ export default function App() {
     };
   }, [refreshFiles]);
 
+  // Activity monitor for idle detection
+  useEffect(() => {
+    const updateActivity = () => {
+      lastActiveTimeRef.current = Date.now();
+    };
+
+    window.addEventListener('mousemove', updateActivity, { passive: true });
+    window.addEventListener('mousedown', updateActivity, { passive: true });
+    window.addEventListener('keydown', updateActivity, { passive: true });
+    window.addEventListener('scroll', updateActivity, { passive: true });
+    window.addEventListener('touchstart', updateActivity, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('mousedown', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('scroll', updateActivity);
+      window.removeEventListener('touchstart', updateActivity);
+    };
+  }, []);
+
+  // Periodic idle check timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const idleTime = Date.now() - lastActiveTimeRef.current;
+      if (idleTime > 5 * 60 * 1000 && document.visibilityState === 'visible' && !isOffline && githubToken) {
+        console.log("Tab has been idle for more than 5 minutes. Checking remote updates...");
+        refreshFiles(githubToken, repoName, branchName, true); // Trigger idle check
+      }
+    }, 60 * 1000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [refreshFiles, isOffline, githubToken, repoName, branchName]);
+
+  // Tab visibility (focus return) idle check
+  useEffect(() => {
+    if (isOffline || !githubToken) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const idleTime = Date.now() - lastActiveTimeRef.current;
+        if (idleTime > 5 * 60 * 1000) {
+          console.log('Tab focused after being idle for > 5 minutes. Verifying conflicts...');
+          refreshFiles(githubToken, repoName, branchName, true); // Idle check
+        } else {
+          console.log('Tab focused. Standard refresh...');
+          refreshFiles();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [githubToken, isOffline, refreshFiles, repoName, branchName]);
+
   // Cleanup handler: purge volatile caches when tab is closed or navigated away
   useEffect(() => {
     const handlePageHide = () => {
@@ -1693,6 +1841,94 @@ export default function App() {
   // preloadFilesBackground function migrated to stable top position
 
   // loadFileContent function migrated to stable top position
+
+  const resolveKeepLocal = useCallback(async (file: VaultFile) => {
+    try {
+      const cachedFile = await getLocalFile(file.path);
+      if (cachedFile) {
+        const isNewFile = file.sha === 'offline-pending' || file.sha === 'remote-deleted';
+        const shaToUse = isNewFile ? null : file.sha;
+        const pushRes = await commitFileContent(
+          githubToken,
+          repoName,
+          branchName,
+          file.path,
+          cachedFile.content,
+          shaToUse,
+          `resolve conflict: keep local changes for ${file.path}`
+        );
+        await saveLocalFile(file.path, { content: cachedFile.content, sha: pushRes.sha });
+        removeUnsyncedFile(file.path);
+        setFiles(prev => prev.map(f => f.path === file.path ? { ...f, sha: pushRes.sha } : f));
+        setConflictingFiles(prev => prev.filter(f => f.path !== file.path));
+        console.log(`Conflict resolved: Kept local copy of ${file.path}`);
+      }
+    } catch (e) {
+      console.error(`Failed to push local conflict resolution for ${file.path}:`, e);
+      throw e;
+    }
+  }, [githubToken, repoName, branchName]);
+
+  const resolveKeepRemote = useCallback(async (file: VaultFile) => {
+    try {
+      if (file.sha === 'remote-deleted') {
+        await deleteLocalFile(file.path);
+        removeUnsyncedFile(file.path);
+        setFileContents(prev => {
+          const updated = { ...prev };
+          delete updated[file.path];
+          return updated;
+        });
+        setFiles(prev => prev.filter(f => f.path !== file.path));
+        setConflictingFiles(prev => prev.filter(f => f.path !== file.path));
+        if (activeFilePath === file.path) {
+          setActiveFilePath(null);
+        }
+        console.log(`Conflict resolved: Kept remote delete of ${file.path}`);
+        return;
+      }
+
+      const content = await fetchFileContent(githubToken, repoName, file.path, file.sha);
+      await saveLocalFile(file.path, { content, sha: file.sha });
+      removeUnsyncedFile(file.path);
+      setFileContents(prev => ({ ...prev, [file.path]: content }));
+      setFiles(prev => {
+        const exists = prev.some(f => f.path === file.path);
+        if (exists) {
+          return prev.map(f => f.path === file.path ? { ...f, sha: file.sha } : f);
+        } else {
+          return [...prev, file];
+        }
+      });
+      setConflictingFiles(prev => prev.filter(f => f.path !== file.path));
+      console.log(`Conflict resolved: Kept remote copy of ${file.path}`);
+    } catch (e) {
+      console.error(`Failed to pull remote conflict resolution for ${file.path}:`, e);
+      throw e;
+    }
+  }, [githubToken, repoName, activeFilePath]);
+
+  const resolveAllLocal = useCallback(async () => {
+    console.log("Resolving all conflicts: Keeping local versions...");
+    for (const file of conflictingFiles) {
+      try {
+        await resolveKeepLocal(file);
+      } catch (err) {
+        console.error(`Failed resolving all local for ${file.path}`, err);
+      }
+    }
+  }, [conflictingFiles, resolveKeepLocal]);
+
+  const resolveAllRemote = useCallback(async () => {
+    console.log("Resolving all conflicts: Keeping remote versions...");
+    for (const file of conflictingFiles) {
+      try {
+        await resolveKeepRemote(file);
+      } catch (err) {
+        console.error(`Failed resolving all remote for ${file.path}`, err);
+      }
+    }
+  }, [conflictingFiles, resolveKeepRemote]);
 
   const handleSaveFile = async (path: string, content: string, fileSha: string | null) => {
     if (isOffline) {
@@ -2448,6 +2684,8 @@ export default function App() {
         filteredFiles={filteredFiles}
         isLoadingTree={isLoadingTree}
         onOpenSettings={() => setShowSettingsModal(true)}
+        hasConflicts={conflictingFiles.length > 0}
+        onOpenConflictResolution={() => setShowConflictModal(true)}
         activeFilePath={activeFilePath}
         setActiveFilePath={handleOpenNote}
         setViewTab={setViewTab}
@@ -3198,6 +3436,18 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Conflict Resolution Modal */}
+      <ConflictResolutionModal
+        isOpen={showConflictModal}
+        onClose={() => setShowConflictModal(false)}
+        conflictingFiles={conflictingFiles}
+        unsyncedPaths={getUnsyncedFiles()}
+        onKeepLocal={resolveKeepLocal}
+        onKeepRemote={resolveKeepRemote}
+        onKeepAllLocal={resolveAllLocal}
+        onKeepAllRemote={resolveAllRemote}
+      />
 
       {/* Settings Modal */}
       {showSettingsModal && (
