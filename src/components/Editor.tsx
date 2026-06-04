@@ -813,22 +813,50 @@ export const Editor: React.FC<EditorProps> = ({
     const cleanNoteName = noteName.replace(/\.md$/, '');
     const textarea = textareaRef.current;
 
-    const startText = content.substring(0, caretIndex);
-    const endText = content.substring(textarea.selectionStart);
+    // Use fullContent for windowing mode, content for normal mode
+    const sourceContent = isWindowingMode ? fullContentRef.current : content;
+    
+    // Convert textarea positions to global positions if in windowing mode
+    const globalCaretIndex = isWindowingMode 
+      ? getGlobalIndex(caretIndex, windowStartLine) 
+      : caretIndex;
+    const globalSelectionStart = isWindowingMode 
+      ? getGlobalIndex(textarea.selectionStart, windowStartLine) 
+      : textarea.selectionStart;
+
+    const startText = sourceContent.substring(0, globalCaretIndex);
+    const endText = sourceContent.substring(globalSelectionStart);
 
     const insertedLink = `[[${cleanNoteName}]]`;
     const newContent = startText + insertedLink + endText;
 
-    setContent(newContent);
-    pushEditorState(newContent);
+    if (isWindowingMode) {
+      // Update full content and recalculate visible window
+      setFullContent(newContent);
+      fullContentRef.current = newContent;
+      const vLines = splitLongLines(newContent);
+      virtualLinesRef.current = vLines;
+      const newStart = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+      const newEnd = Math.min(newStart + 300, vLines.length);
+      setWindowStartLine(newStart);
+      setWindowEndLine(newEnd);
+      setContent(vLines.slice(newStart, newEnd).join('\n'));
+      pushEditorState(newContent);
+    } else {
+      setContent(newContent);
+      setFullContent(newContent);
+      fullContentRef.current = newContent;
+      pushEditorState(newContent);
+    }
     setShowSuggestions(false);
     setSuggestionSearchQuery('');
 
     // Re-focus and shift caret location past brackets
     setTimeout(() => {
       textarea.focus();
-      const newPos = caretIndex + insertedLink.length;
-      textarea.setSelectionRange(newPos, newPos);
+      const newPos = globalCaretIndex + insertedLink.length;
+      const localNewPos = isWindowingMode ? getLocalIndex(newPos, windowStartLine) : newPos;
+      textarea.setSelectionRange(localNewPos, localNewPos);
     }, 50);
   };
 
@@ -886,18 +914,36 @@ export const Editor: React.FC<EditorProps> = ({
             if (result && result.name) {
               const textarea = textareaRef.current;
               if (textarea) {
-                const startPos = textarea.selectionStart;
-                const endPos = textarea.selectionEnd;
+                const sourceContent = isWindowingMode ? fullContentRef.current : content;
+                const globalStartPos = isWindowingMode ? getGlobalIndex(textarea.selectionStart, windowStartLine) : textarea.selectionStart;
+                const globalEndPos = isWindowingMode ? getGlobalIndex(textarea.selectionEnd, windowStartLine) : textarea.selectionEnd;
                 const textToInsert = `![[${result.name}]]`;
-                const newContent = content.substring(0, startPos) + textToInsert + content.substring(endPos);
-                setContent(newContent);
-                pushEditorState(newContent);
+                const newContent = sourceContent.substring(0, globalStartPos) + textToInsert + sourceContent.substring(globalEndPos);
+                
+                if (isWindowingMode) {
+                  setFullContent(newContent);
+                  fullContentRef.current = newContent;
+                  const vLines = splitLongLines(newContent);
+                  virtualLinesRef.current = vLines;
+                  const newStart = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+                  const newEnd = Math.min(newStart + 300, vLines.length);
+                  setWindowStartLine(newStart);
+                  setWindowEndLine(newEnd);
+                  setContent(vLines.slice(newStart, newEnd).join('\n'));
+                  pushEditorState(newContent);
+                } else {
+                  setContent(newContent);
+                  setFullContent(newContent);
+                  fullContentRef.current = newContent;
+                  pushEditorState(newContent);
+                }
 
                 // Move cursor past the inserted link
                 setTimeout(() => {
                   textarea.focus();
-                  const newCursorPos = startPos + textToInsert.length;
-                  textarea.setSelectionRange(newCursorPos, newCursorPos);
+                  const newCursorPos = globalStartPos + textToInsert.length;
+                  const localNewPos = isWindowingMode ? getLocalIndex(newCursorPos, windowStartLine) : newCursorPos;
+                  textarea.setSelectionRange(localNewPos, localNewPos);
                 }, 50);
               }
             }

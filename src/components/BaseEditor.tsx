@@ -342,12 +342,19 @@ function parseBaseConfig(content: string): BaseConfig {
       id: 'view_1',
       name: 'Default View',
       type: 'table',
-      columns: [{ property: 'file.name', visible: true, width: 200 }],
+      columns: [
+        { property: 'file.name', visible: true, width: 200 },
+        { property: 'file backlinks', visible: true, width: 200 }
+      ],
       sort: [],
       filters: { and: [] }
     }];
   } else {
+    // Ensure each view has at least file.name column preserved on reload
     parsed.views = parsed.views.map(view => {
+      if (!view.columns || view.columns.length === 0) {
+        view.columns = [{ property: 'file.name', visible: true, width: 200 }];
+      }
       let normalizedFilters: BaseFilterGroup = { and: [] };
       if (view.filters) {
         if (Array.isArray(view.filters)) {
@@ -365,6 +372,13 @@ function parseBaseConfig(content: string): BaseConfig {
         filters: normalizedFilters
       };
     });
+  }
+  // Ensure first view always exists with at least default column
+  if (parsed.views.length > 0 && (!parsed.views[0].columns || parsed.views[0].columns.length === 0)) {
+    parsed.views[0] = {
+      ...parsed.views[0],
+      columns: [{ property: 'file.name', visible: true, width: 200 }]
+    };
   }
   return parsed;
 }
@@ -570,7 +584,16 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       return isLoadable && fileContents[f.path] === undefined && !preloadedRef.current.has(f.path);
     });
 
-    if (matchedFiles.length === 0) return;
+    // If no files to load, ensure preload is marked complete
+    if (matchedFiles.length === 0) {
+      // Mark all loadable files as preloaded if content already exists
+      files.forEach(f => {
+        if ((f.path.endsWith('.md') || f.path.endsWith('.canvas') || f.path.endsWith('.txt')) && fileContents[f.path] !== undefined) {
+          preloadedRef.current.add(f.path);
+        }
+      });
+      return;
+    }
 
     // Add them to the in-flight ref first to avoid triggering duplicate fetches on sub-renders
     matchedFiles.forEach(f => {
