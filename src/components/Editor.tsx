@@ -426,14 +426,20 @@ export const Editor: React.FC<EditorProps> = ({
       let targetTop = -1;
       let targetElement: HTMLElement | null = null;
 
-      const table = previewContainer.querySelector('table');
-      if (table) {
-        const rows = table.querySelectorAll('tbody tr');
-        const targetRowIdx = currentLineIndex - windowStartLine;
-        if (rows[targetRowIdx]) {
-          targetElement = rows[targetRowIdx] as HTMLElement;
+      const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+      const isCSV = ext === '.csv' || ext === '.tsv';
+      const isPlainCode = ext !== '.md' && ext !== '.canvas' && isTextFile(filePath);
+
+      if (isCSV) {
+        const table = previewContainer.querySelector('table');
+        if (table) {
+          const rows = table.querySelectorAll('tbody tr');
+          const targetRowIdx = currentLineIndex - windowStartLine;
+          if (rows[targetRowIdx]) {
+            targetElement = rows[targetRowIdx] as HTMLElement;
+          }
         }
-      } else {
+      } else if (isPlainCode) {
         const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
         if (lineEl) {
           targetElement = lineEl as HTMLElement;
@@ -469,7 +475,7 @@ export const Editor: React.FC<EditorProps> = ({
         }
       }
     }
-  }, [windowStartLine, windowLineHeights, getTopVisibleLineIndex]);
+  }, [filePath, windowStartLine, windowLineHeights, getTopVisibleLineIndex]);
 
   const handleEditorScroll = (e: React.UIEvent<HTMLDivElement | HTMLTextAreaElement>) => {
     const editorViewport = e.currentTarget;
@@ -555,15 +561,17 @@ export const Editor: React.FC<EditorProps> = ({
           textareaRef.current.scrollTop = 0;
         }
       } else {
-        const table = previewContainer.querySelector('table');
-        const lines = previewContainer.querySelectorAll('.preview-line');
+        const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+        const isCSV = ext === '.csv' || ext === '.tsv';
+        const isPlainCode = ext !== '.md' && ext !== '.canvas' && isTextFile(filePath);
 
-        if (table || lines.length > 0) {
-          let matchedLineIndex = windowStartLine;
-          const containerTop = previewContainer.getBoundingClientRect().top;
-          let targetElement: HTMLElement | null = null;
+        let targetElement: HTMLElement | null = null;
+        let matchedLineIndex = windowStartLine;
 
+        if (isCSV) {
+          const table = previewContainer.querySelector('table');
           if (table) {
+            const containerTop = previewContainer.getBoundingClientRect().top;
             const rows = table.querySelectorAll('tbody tr');
             let matchedRowIdx = 0;
             for (let i = 0; i < rows.length; i++) {
@@ -577,7 +585,11 @@ export const Editor: React.FC<EditorProps> = ({
               }
             }
             matchedLineIndex = windowStartLine + matchedRowIdx;
-          } else {
+          }
+        } else if (isPlainCode) {
+          const lines = previewContainer.querySelectorAll('.preview-line');
+          if (lines.length > 0) {
+            const containerTop = previewContainer.getBoundingClientRect().top;
             let matchedLineOffset = 0;
             for (let i = 0; i < lines.length; i++) {
               const lineElement = lines[i] as HTMLElement;
@@ -594,22 +606,23 @@ export const Editor: React.FC<EditorProps> = ({
               matchedLineIndex = parseInt(dataLineAttr, 10);
             }
           }
+        }
 
+        if (targetElement) {
+          const containerTop = previewContainer.getBoundingClientRect().top;
           let targetScrollTop = windowStartLine * 24;
           const localLineIndex = matchedLineIndex - windowStartLine;
           for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
             targetScrollTop += windowLineHeights[i];
           }
 
-          if (targetElement) {
-            const height = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
-            const relativeTop = targetElement.getBoundingClientRect().top - containerTop;
-            const previewLineScrollOffset = Math.max(0, -relativeTop);
-            const proportion = previewLineScrollOffset / height;
-            const editorLineHeight = windowLineHeights[localLineIndex] || 24;
-            const editorLineScrollOffset = proportion * editorLineHeight;
-            targetScrollTop += editorLineScrollOffset;
-          }
+          const height = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
+          const relativeTop = targetElement.getBoundingClientRect().top - containerTop;
+          const previewLineScrollOffset = Math.max(0, -relativeTop);
+          const proportion = previewLineScrollOffset / height;
+          const editorLineHeight = windowLineHeights[localLineIndex] || 24;
+          const editorLineScrollOffset = proportion * editorLineHeight;
+          targetScrollTop += editorLineScrollOffset;
 
           if (isWindowingMode && viewportRef.current) {
             viewportRef.current.scrollTop = targetScrollTop;
@@ -617,6 +630,7 @@ export const Editor: React.FC<EditorProps> = ({
             textareaRef.current.scrollTop = targetScrollTop;
           }
         } else {
+          // Percentage-based fallback (like for standard markdown files)
           const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
           if (maxPreviewScroll > 0) {
             const percentage = previewContainer.scrollTop / maxPreviewScroll;
