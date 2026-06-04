@@ -2336,7 +2336,7 @@ export default function App() {
       {/* 2. Main Workspace & Views */}
       <main className="flex-1 h-full flex flex-col overflow-hidden relative">
         {/* Workspace Nav Tabs Header */}
-        <header className="h-[60px] bg-card border-b border-border flex items-center justify-between px-6 z-[5] shrink-0">
+        <header className="h-[60px] bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-6 z-[5] shrink-0">
           <div className="flex items-center gap-3 font-heading font-semibold text-[0.975rem] max-w-[45%] truncate text-foreground">
             <button
               onClick={() => setIsMobileSidebarOpen(true)}
@@ -2596,7 +2596,7 @@ export default function App() {
       {/* 3. Premium Glassmorphic Confirmation Dialogs */}
       {/* Delete Confirmation Modal */}
       {pendingDeleteFile && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-destructive/15 flex items-center justify-center text-destructive shrink-0">
@@ -2638,7 +2638,7 @@ export default function App() {
 
       {/* Rename Prompt Modal */}
       {pendingRenameFile && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <form
             onSubmit={handleRenameFile}
             className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
@@ -2704,7 +2704,7 @@ export default function App() {
       )}
       {/* Create Folder Modal */}
       {showCreateFolderModal && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -2774,7 +2774,7 @@ export default function App() {
 
       {/* Move/Copy Selection Modal */}
       {pendingMoveCopyFile && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -2975,7 +2975,7 @@ export default function App() {
 
       {/* Delete Folder Modal */}
       {pendingDeleteFolder && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-destructive/15 flex items-center justify-center text-destructive shrink-0">

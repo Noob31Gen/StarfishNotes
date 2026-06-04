@@ -2122,7 +2122,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         })}
       </div>
 
-      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 sm:bottom-6 sm:right-6 flex items-center gap-1.5 lg:gap-2 bg-card/65 backdrop-blur-xl border border-border pl-3 pr-4 lg:pl-5 lg:pr-6 py-2 rounded-full shadow-2xl z-50 select-none max-w-[calc(100%-2rem)] overflow-x-auto flex-nowrap no-scrollbar">
+      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 sm:bottom-6 sm:right-6 flex items-center gap-1.5 bg-card/60 backdrop-blur-xl border border-border px-3 py-2 rounded-full shadow-2xl z-50 select-none max-w-[calc(100%-2rem)] overflow-x-auto flex-nowrap no-scrollbar">
         <button
           type="button"
           onClick={() => addNewCard('text')}

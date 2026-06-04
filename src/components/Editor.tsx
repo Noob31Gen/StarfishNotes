@@ -932,7 +932,7 @@ export const Editor: React.FC<EditorProps> = ({
           viewMode === 'edit' ? "w-full h-full" : "w-full md:w-1/2 h-[45%] md:h-full"
         )}
       >
-        <div className="h-10 bg-card border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
+        <div className="h-10 bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
           <span>Editor: {filePath.split('/').pop()}</span>
           <div className="flex gap-2">
             {hasUnsavedChanges && (
@@ -1060,7 +1060,7 @@ export const Editor: React.FC<EditorProps> = ({
           viewMode === 'preview' ? "w-full h-full" : "w-full md:w-1/2 h-[55%] md:h-full"
         )}
       >
-        <div className="h-10 bg-card border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
+        <div className="h-10 bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
           <span>Preview</span>
           <span className="text-[0.65rem] text-muted-foreground/60 tracking-normal font-semibold normal-case">
             DOMPurify Sanitized

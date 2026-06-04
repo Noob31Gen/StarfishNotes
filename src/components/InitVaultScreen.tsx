@@ -23,7 +23,7 @@ export const InitVaultScreen: React.FC<InitVaultScreenProps> = ({
       {/* Visual background ambient blobs */}
       <div className="absolute top-[30%] left-[30%] w-[350px] h-[350px] bg-primary/10 rounded-full blur-[100px] pointer-events-none animate-pulse-soft" />
 
-      <div className="w-[500px] max-w-full bg-card border border-border rounded-2xl p-8 shadow-2xl animate-fade-in flex flex-col gap-6 items-center text-center">
+      <div className="w-[500px] max-w-full bg-card/80 backdrop-blur-xl border border-border rounded-2xl p-8 shadow-2xl animate-fade-in flex flex-col gap-6 items-center text-center">
         <Folder className="w-12 h-12 text-primary glow-primary/20 animate-float" />
 
         <h2 className="font-heading font-bold text-2xl tracking-tight text-foreground">

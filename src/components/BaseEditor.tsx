@@ -928,7 +928,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       <div 
         ref={propertiesDropdownRef}
         className={cn(
-          "w-auto sm:w-72 bg-[#18181f] border border-border/60 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 z-30 duration-100 text-foreground text-left normal-case font-normal",
+          "w-auto sm:w-72 bg-[#18181f]/95 backdrop-blur-xl border border-border/60 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 z-30 duration-100 text-foreground text-left normal-case font-normal",
           position === 'header' 
             ? "fixed top-32 left-4 right-4 sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-72 sm:mt-2 animate-in fade-in slide-in-from-top-2" 
             : "fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-4 right-4 sm:fixed sm:bottom-20 sm:right-6 sm:left-auto sm:mb-0 animate-in fade-in slide-in-from-bottom-2"
@@ -1038,7 +1038,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   return (
     <div className="flex-1 w-full h-full flex flex-col bg-background overflow-hidden relative select-text text-foreground animate-fade-in animate-duration-200">
       {/* 1. Header Toolbar */}
-      <header className="h-14 bg-card border-b border-border flex items-center justify-between px-4 sm:px-6 shrink-0 z-30 select-none gap-4">
+      <header className="h-14 bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-4 sm:px-6 shrink-0 z-30 select-none gap-4">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/25 shrink-0">
             <Database size={15} />
@@ -1176,7 +1176,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
             <div className="flex-1 w-full overflow-auto">
               <table className="w-full text-left border-collapse table-fixed min-w-[700px]">
                 {/* Table Header */}
-                <thead className="bg-[#0b0c10] border-b border-border/80 sticky top-0 z-20 select-none">
+                <thead className="bg-[#0b0c10]/90 backdrop-blur-md border-b border-border/80 sticky top-0 z-20 select-none">
                   <tr>
                     {/* Header Columns */}
                     {visibleColumns.map((col) => {
@@ -1595,7 +1595,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
       {/* Row Creation Modal popup */}
       {showAddRowModal && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in select-none">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in select-none">
           <form
             onSubmit={handleCreateRowSubmit}
             className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
