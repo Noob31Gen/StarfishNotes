@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { Eye, Edit2, Columns, Save, AlertCircle, RefreshCw, FileText, Paperclip, Undo2, Redo2, Image } from 'lucide-react';
+import { Eye, Edit2, Columns, Save, AlertCircle, RefreshCw, FileText, Paperclip, Undo2, Redo2, Image, Copy, Check } from 'lucide-react';
 import { GitConflictError, isTextFile } from '../services/github';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
@@ -104,6 +104,45 @@ function getColLabel(index: number): string {
   return label;
 }
 
+function splitLongLines(text: string): string[] {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  const virtualLines: string[] = [];
+  for (const line of lines) {
+    if (line.length <= 1000) {
+      virtualLines.push(line);
+    } else {
+      let start = 0;
+      while (start < line.length) {
+        const chunk = line.slice(start, start + 1000);
+        start += 1000;
+        if (start < line.length) {
+          virtualLines.push(chunk + '\r');
+        } else {
+          virtualLines.push(chunk);
+        }
+      }
+    }
+  }
+  return virtualLines;
+}
+
+function mergeVirtualLines(virtualLines: string[]): string {
+  let result = '';
+  for (let i = 0; i < virtualLines.length; i++) {
+    const line = virtualLines[i];
+    if (line.endsWith('\r')) {
+      result += line.slice(0, -1);
+    } else {
+      result += line;
+      if (i < virtualLines.length - 1) {
+        result += '\n';
+      }
+    }
+  }
+  return result;
+}
+
 export const Editor: React.FC<EditorProps> = ({
   filePath,
   initialContent,
@@ -118,7 +157,41 @@ export const Editor: React.FC<EditorProps> = ({
   initialSearchLineIndex,
   onClearTargetLine,
 }) => {
-  const [content, setContent] = useState(initialContent);
+  const isWindowingMode = initialContent.length > 50000;
+
+  const [virtualLines, setVirtualLines] = useState<string[]>(() => {
+    if (isWindowingMode) {
+      return splitLongLines(initialContent);
+    }
+    return [];
+  });
+
+  const virtualLinesRef = useRef<string[]>(virtualLines);
+  useEffect(() => {
+    virtualLinesRef.current = virtualLines;
+  }, [virtualLines]);
+
+  const [windowStartLine, setWindowStartLine] = useState(0);
+  const [windowEndLine, setWindowEndLine] = useState(() => {
+    if (isWindowingMode) {
+      return Math.min(300, virtualLines.length);
+    }
+    return 0;
+  });
+
+  const [content, setContent] = useState(() => {
+    if (isWindowingMode) {
+      return virtualLines.slice(0, Math.min(300, virtualLines.length)).join('\n');
+    }
+    return initialContent;
+  });
+
+  const [fullContent, setFullContent] = useState(initialContent);
+  const fullContentRef = useRef(initialContent);
+  useEffect(() => {
+    fullContentRef.current = fullContent;
+  }, [fullContent]);
+
   const [sha, setSha] = useState(initialSha);
   const [savedContent, setSavedContent] = useState(initialContent);
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>(() => {
@@ -127,9 +200,413 @@ export const Editor: React.FC<EditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const previewScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const pendingCursorRef = useRef<{ start: number; end: number } | null>(null);
+
+  const isScrollingEditorRef = useRef(false);
+  const isScrollingPreviewRef = useRef(false);
+
+  const getGlobalIndex = useCallback((localIndex: number, startLine: number) => {
+    let globalIndex = 0;
+    const vLines = virtualLinesRef.current;
+    for (let i = 0; i < Math.min(startLine, vLines.length); i++) {
+      globalIndex += vLines[i].length + 1;
+    }
+    return globalIndex + localIndex;
+  }, []);
+
+  const getLocalIndex = useCallback((globalIndex: number, targetStartLine: number) => {
+    let offset = 0;
+    const vLines = virtualLinesRef.current;
+    for (let i = 0; i < Math.min(targetStartLine, vLines.length); i++) {
+      offset += vLines[i].length + 1;
+    }
+    return Math.max(0, globalIndex - offset);
+  }, []);
+
+  const [windowLineHeights, setWindowLineHeights] = useState<number[]>(() => {
+    if (isWindowingMode) {
+      const size = Math.min(300, virtualLines.length);
+      return Array(size).fill(24);
+    }
+    return [];
+  });
+
+  const measureLineHeights = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    let mirror = document.getElementById('textarea-mirror-div') as HTMLDivElement;
+    if (!mirror) {
+      mirror = document.createElement('div');
+      mirror.id = 'textarea-mirror-div';
+      mirror.style.position = 'absolute';
+      mirror.style.visibility = 'hidden';
+      mirror.style.whiteSpace = 'pre-wrap';
+      mirror.style.wordBreak = 'break-all';
+      mirror.style.boxSizing = 'border-box';
+      mirror.style.fontFamily = 'monospace';
+      mirror.style.fontSize = '14.8px';
+      mirror.style.lineHeight = '24px';
+      mirror.style.padding = '0 24px';
+      document.body.appendChild(mirror);
+    }
+
+    const style = window.getComputedStyle(textarea);
+    mirror.style.width = style.width;
+
+    const vLines = virtualLinesRef.current;
+    const heights: number[] = [];
+    
+    for (let i = windowStartLine; i < windowEndLine; i++) {
+      const lineText = vLines[i] || '';
+      const cleanLine = lineText.endsWith('\r') ? lineText.slice(0, -1) : lineText;
+      mirror.textContent = cleanLine || ' ';
+      heights.push(mirror.clientHeight || 24);
+    }
+    
+    return heights;
+  }, [windowStartLine, windowEndLine]);
+
+  useLayoutEffect(() => {
+    if (isWindowingMode) {
+      const heights = measureLineHeights();
+      if (heights) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setWindowLineHeights(heights);
+      }
+    }
+  }, [content, isWindowingMode, windowStartLine, windowEndLine, measureLineHeights]);
+
+  useEffect(() => {
+    if (!isWindowingMode) return;
+    const handleResize = () => {
+      const heights = measureLineHeights();
+      if (heights) {
+        setWindowLineHeights(heights);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isWindowingMode, content, measureLineHeights]);
+
+  const getTopVisibleLineIndex = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return windowStartLine;
+
+    const relativeScrollTop = viewport.scrollTop - (windowStartLine * 24);
+    if (relativeScrollTop <= 0) return windowStartLine;
+
+    let accumulatedHeight = 0;
+    for (let i = 0; i < windowLineHeights.length; i++) {
+      accumulatedHeight += windowLineHeights[i];
+      if (accumulatedHeight > relativeScrollTop) {
+        return windowStartLine + i;
+      }
+    }
+    return windowEndLine - 1;
+  }, [windowStartLine, windowEndLine, windowLineHeights]);
+
+  // Undo / Redo history state stack
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  const pushEditorState = useCallback((val: string) => {
+    setHistory(prev => {
+      const currentHistory = prev.slice(0, historyIndex + 1);
+      if (currentHistory.length > 0 && currentHistory[currentHistory.length - 1] === val) {
+        return prev;
+      }
+      const nextHistory = [...currentHistory, val];
+      if (nextHistory.length > 50) nextHistory.shift();
+      setHistoryIndex(nextHistory.length - 1);
+      return nextHistory;
+    });
+  }, [historyIndex]);
+
+  const undo = useCallback(() => {
+    if (historyIndex > 0) {
+      const prevIndex = historyIndex - 1;
+      const prevText = history[prevIndex];
+      setHistoryIndex(prevIndex);
+      if (isWindowingMode) {
+        setFullContent(prevText);
+        fullContentRef.current = prevText;
+        const vLines = splitLongLines(prevText);
+        virtualLinesRef.current = vLines;
+        const newStart = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+        const newEnd = Math.min(newStart + 300, vLines.length);
+        setWindowStartLine(newStart);
+        setWindowEndLine(newEnd);
+        setContent(vLines.slice(newStart, newEnd).join('\n'));
+      } else {
+        setContent(prevText);
+        setFullContent(prevText);
+        fullContentRef.current = prevText;
+      }
+    }
+  }, [history, historyIndex, isWindowingMode, windowStartLine]);
+
+  const redo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const nextIndex = historyIndex + 1;
+      const nextText = history[nextIndex];
+      setHistoryIndex(nextIndex);
+      if (isWindowingMode) {
+        setFullContent(nextText);
+        fullContentRef.current = nextText;
+        const vLines = splitLongLines(nextText);
+        virtualLinesRef.current = vLines;
+        const newStart = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+        const newEnd = Math.min(newStart + 300, vLines.length);
+        setWindowStartLine(newStart);
+        setWindowEndLine(newEnd);
+        setContent(vLines.slice(newStart, newEnd).join('\n'));
+      } else {
+        setContent(nextText);
+        setFullContent(nextText);
+        fullContentRef.current = nextText;
+      }
+    }
+  }, [history, historyIndex, isWindowingMode, windowStartLine]);
+
+  // Seed initial content into history stack when note is loaded
+  useEffect(() => {
+    if (initialContent) {
+      Promise.resolve().then(() => {
+        setHistory([initialContent]);
+        setHistoryIndex(0);
+      });
+    }
+  }, [filePath, initialContent]);
+
+  const handleCopyAll = async () => {
+    try {
+      const fullTxt = isWindowingMode ? fullContentRef.current : content;
+      await navigator.clipboard.writeText(fullTxt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
+  const handleContentEdit = useCallback((newVisibleContent: string, shouldPushHistory = false) => {
+    setContent(newVisibleContent);
+    if (isWindowingMode) {
+      const newChunkLines = newVisibleContent.split('\n');
+      const updatedVirtualLines = [...virtualLinesRef.current];
+      updatedVirtualLines.splice(windowStartLine, windowEndLine - windowStartLine, ...newChunkLines);
+      virtualLinesRef.current = updatedVirtualLines;
+      
+      const newFullContent = mergeVirtualLines(updatedVirtualLines);
+      setFullContent(newFullContent);
+      fullContentRef.current = newFullContent;
+      if (shouldPushHistory) {
+        pushEditorState(newFullContent);
+      }
+    } else {
+      setFullContent(newVisibleContent);
+      fullContentRef.current = newVisibleContent;
+      if (shouldPushHistory) {
+        pushEditorState(newVisibleContent);
+      }
+    }
+  }, [isWindowingMode, windowStartLine, windowEndLine, pushEditorState]);
+
+  const handleEditorScroll = (e: React.UIEvent<HTMLDivElement | HTMLTextAreaElement>) => {
+    const editorViewport = e.currentTarget;
+    if (!editorViewport) return;
+
+    if (isWindowingMode) {
+      const scrollTop = editorViewport.scrollTop;
+      const clientHeight = editorViewport.clientHeight;
+      
+      let accumulatedHeight = 0;
+      let centerLine = windowStartLine;
+      const targetMiddle = scrollTop + clientHeight / 2;
+      const relativeMiddle = targetMiddle - (windowStartLine * 24);
+      
+      if (relativeMiddle > 0) {
+        for (let i = 0; i < windowLineHeights.length; i++) {
+          accumulatedHeight += windowLineHeights[i];
+          if (accumulatedHeight > relativeMiddle) {
+            centerLine = windowStartLine + i;
+            break;
+          }
+        }
+      } else {
+        centerLine = Math.floor((scrollTop + clientHeight / 2) / 24);
+      }
+
+      if (centerLine - windowStartLine < 75 || windowEndLine - centerLine < 75) {
+        let newStart = Math.floor(centerLine - 150);
+        newStart = Math.max(0, Math.min(newStart, Math.max(0, virtualLinesRef.current.length - 300)));
+        const newEnd = Math.min(newStart + 300, virtualLinesRef.current.length);
+
+        if (newStart !== windowStartLine) {
+          const activeTextarea = textareaRef.current;
+          if (activeTextarea && document.activeElement === activeTextarea) {
+            const curStart = activeTextarea.selectionStart;
+            const curEnd = activeTextarea.selectionEnd;
+            pendingCursorRef.current = {
+              start: getGlobalIndex(curStart, windowStartLine),
+              end: getGlobalIndex(curEnd, windowStartLine)
+            };
+          }
+
+          setWindowStartLine(newStart);
+          setWindowEndLine(newEnd);
+          const newChunk = virtualLinesRef.current.slice(newStart, newEnd).join('\n');
+          setContent(newChunk);
+        }
+      }
+    }
+
+    if (viewMode === 'split') {
+      if (isScrollingPreviewRef.current) {
+        return;
+      }
+      isScrollingEditorRef.current = true;
+
+      const previewContainer = previewScrollContainerRef.current;
+      if (previewContainer) {
+        const currentLineIndex = getTopVisibleLineIndex();
+        let targetElement: HTMLElement | null = null;
+        let containerOffset = 0;
+
+        // Try to find a table row
+        const table = previewContainer.querySelector('table');
+        if (table) {
+          const rows = table.querySelectorAll('tbody tr');
+          const targetRowIdx = currentLineIndex - windowStartLine;
+          if (rows[targetRowIdx]) {
+            targetElement = rows[targetRowIdx] as HTMLElement;
+            containerOffset = table.offsetTop;
+          }
+        } else {
+          // Try to find a preview line (for code blocks or text files)
+          const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
+          if (lineEl) {
+            targetElement = lineEl as HTMLElement;
+            const pre = previewContainer.querySelector('pre');
+            if (pre) {
+              containerOffset = pre.offsetTop;
+            }
+          }
+        }
+
+        if (targetElement) {
+          previewContainer.scrollTop = targetElement.offsetTop + containerOffset;
+        } else {
+          // Fallback to percentage-based scroll sync
+          const maxEditorScroll = editorViewport.scrollHeight - editorViewport.clientHeight;
+          if (maxEditorScroll > 0) {
+            const percentage = editorViewport.scrollTop / maxEditorScroll;
+            const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
+            previewContainer.scrollTop = percentage * maxPreviewScroll;
+          }
+        }
+      }
+
+      setTimeout(() => {
+        isScrollingEditorRef.current = false;
+      }, 50);
+    }
+  };
+
+  const handlePreviewScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const previewContainer = e.currentTarget;
+    if (!previewContainer) return;
+
+    if (viewMode === 'split') {
+      if (isScrollingEditorRef.current) {
+        return;
+      }
+      isScrollingPreviewRef.current = true;
+
+      const table = previewContainer.querySelector('table');
+      const lines = previewContainer.querySelectorAll('.preview-line');
+
+      if (table || lines.length > 0) {
+        let matchedLineIndex = windowStartLine;
+        const scrollTop = previewContainer.scrollTop;
+
+        if (table) {
+          const rows = table.querySelectorAll('tbody tr');
+          let matchedRowIdx = 0;
+          for (let i = 0; i < rows.length; i++) {
+            const rowElement = rows[i] as HTMLElement;
+            if (rowElement.offsetTop + table.offsetTop >= scrollTop) {
+              matchedRowIdx = i;
+              break;
+            }
+          }
+          matchedLineIndex = windowStartLine + matchedRowIdx;
+        } else {
+          const pre = previewContainer.querySelector('pre');
+          const containerOffset = pre ? pre.offsetTop : 0;
+          let matchedLineOffset = 0;
+          for (let i = 0; i < lines.length; i++) {
+            const lineElement = lines[i] as HTMLElement;
+            if (lineElement.offsetTop + containerOffset >= scrollTop) {
+              matchedLineOffset = i;
+              break;
+            }
+          }
+          const dataLineAttr = lines[matchedLineOffset]?.getAttribute('data-line');
+          if (dataLineAttr !== null) {
+            matchedLineIndex = parseInt(dataLineAttr, 10);
+          }
+        }
+
+        let targetScrollTop = windowStartLine * 24;
+        const localLineIndex = matchedLineIndex - windowStartLine;
+        for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
+          targetScrollTop += windowLineHeights[i];
+        }
+
+        if (isWindowingMode && viewportRef.current) {
+          viewportRef.current.scrollTop = targetScrollTop;
+        } else if (!isWindowingMode && textareaRef.current) {
+          // eslint-disable-next-line react-hooks/immutability
+          textareaRef.current.scrollTop = targetScrollTop;
+        }
+      } else {
+        const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
+        if (maxPreviewScroll > 0) {
+          const percentage = previewContainer.scrollTop / maxPreviewScroll;
+          if (isWindowingMode && viewportRef.current) {
+            const maxEditorScroll = viewportRef.current.scrollHeight - viewportRef.current.clientHeight;
+            viewportRef.current.scrollTop = percentage * maxEditorScroll;
+          } else if (!isWindowingMode && textareaRef.current) {
+            const maxEditorScroll = textareaRef.current.scrollHeight - textareaRef.current.clientHeight;
+            textareaRef.current.scrollTop = percentage * maxEditorScroll;
+          }
+        }
+      }
+
+      setTimeout(() => {
+        isScrollingPreviewRef.current = false;
+      }, 50);
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (pendingCursorRef.current && textareaRef.current) {
+      const { start, end } = pendingCursorRef.current;
+      pendingCursorRef.current = null;
+      const localStart = getLocalIndex(start, windowStartLine);
+      const localEnd = getLocalIndex(end, windowStartLine);
+      textareaRef.current.setSelectionRange(localStart, localEnd);
+    }
+  }, [content, windowStartLine, getLocalIndex]);
 
   // Custom renderer or post-processor for graphviewlinks [[Note Name]] and vault images
-  const renderMarkdown = useCallback((text: string): string => {
+  const renderMarkdown = useCallback((text: string, startLineOffset: number = 0): string => {
     try {
       const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
       let html = '';
@@ -153,7 +630,7 @@ export const Editor: React.FC<EditorProps> = ({
         tableHtml += `<tbody>`;
         rows.forEach((row, rIdx) => {
           tableHtml += `<tr class="border-b border-border/80 hover:bg-muted/10">`;
-          tableHtml += `<td class="p-2 text-center font-semibold text-muted-foreground border-r border-border bg-muted/30 select-none w-12">${rIdx + 1}</td>`;
+          tableHtml += `<td class="p-2 text-center font-semibold text-muted-foreground border-r border-border bg-muted/30 select-none w-12">${startLineOffset + rIdx + 1}</td>`;
           for (let cIdx = 0; cIdx < maxCols; cIdx++) {
             const val = row[cIdx] || '';
             tableHtml += `<td contenteditable="true" data-row="${rIdx}" data-col="${cIdx}" class="p-2 border-r border-border outline-none focus:bg-primary/5 focus:ring-1 focus:ring-primary/20 transition-all font-mono text-xs whitespace-pre-wrap">${val}</td>`;
@@ -182,10 +659,16 @@ export const Editor: React.FC<EditorProps> = ({
         `;
         html = tableHtml;
       }
-      // B. Code/Configuration Files
-      else if (ext !== '.md' && ext !== '.txt' && ext !== '.canvas' && isTextFile(filePath)) {
-        const lang = ext.substring(1);
-        html = `<pre class="bg-card/30 border border-border rounded-xl p-4 overflow-x-auto my-4 select-text font-mono text-[0.85rem] leading-[1.6]"><code class="language-${lang}">${text}</code></pre>`;
+      // B. Code/Configuration / Plain Text / Custom Files (Any non-markdown, non-canvas text files)
+      else if (ext !== '.md' && ext !== '.canvas' && isTextFile(filePath)) {
+        const lang = ext.substring(1) || 'text';
+        const lines = text.split('\n');
+        const codeLines = lines.map((line, idx) => {
+          const globalLine = startLineOffset + idx;
+          return `<div class="preview-line" data-line="${globalLine}" style="line-height: 26px; min-height: 26px; white-space: pre-wrap; word-break: break-all;">${line || ' '}</div>`;
+        }).join('');
+        
+        html = `<pre class="bg-card/30 border border-border rounded-xl p-4 my-4 select-text font-mono text-[0.85rem] leading-[1.6]" style="white-space: pre-wrap; word-break: break-all;"><code class="language-${lang}" style="white-space: pre-wrap; word-break: break-all; display: block;">${codeLines}</code></pre>`;
       }
       // C. Markdown / Plaintext
       else {
@@ -341,50 +824,7 @@ export const Editor: React.FC<EditorProps> = ({
     }
   }, [filePath, vaultImages]);
 
-  // Undo / Redo history state stack
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
 
-  const pushEditorState = useCallback((val: string) => {
-    setHistory(prev => {
-      const currentHistory = prev.slice(0, historyIndex + 1);
-      if (currentHistory.length > 0 && currentHistory[currentHistory.length - 1] === val) {
-        return prev;
-      }
-      const nextHistory = [...currentHistory, val];
-      if (nextHistory.length > 50) nextHistory.shift();
-      setHistoryIndex(nextHistory.length - 1);
-      return nextHistory;
-    });
-  }, [historyIndex]);
-
-  const undo = useCallback(() => {
-    if (historyIndex > 0) {
-      const prevIndex = historyIndex - 1;
-      const prevText = history[prevIndex];
-      setHistoryIndex(prevIndex);
-      setContent(prevText);
-    }
-  }, [history, historyIndex]);
-
-  const redo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      const nextIndex = historyIndex + 1;
-      const nextText = history[nextIndex];
-      setHistoryIndex(nextIndex);
-      setContent(nextText);
-    }
-  }, [history, historyIndex]);
-
-  // Seed initial content into history stack when note is loaded
-  useEffect(() => {
-    if (initialContent) {
-      Promise.resolve().then(() => {
-        setHistory([initialContent]);
-        setHistoryIndex(0);
-      });
-    }
-  }, [filePath, initialContent]);
 
   // Background Scraper scanning note text for local vault attachments (images and other files)
   useEffect(() => {
@@ -392,10 +832,10 @@ export const Editor: React.FC<EditorProps> = ({
     const obsRegex = /!?\[\[([^\]]+)\]\]/g;
     const mdRegex = /!?\[[^\]]*\]\(([^)]+)\)/g;
     let match;
-    while ((match = obsRegex.exec(content)) !== null) {
+    while ((match = obsRegex.exec(fullContent)) !== null) {
       attachments.push(match[1].split('|')[0].trim());
     }
-    while ((match = mdRegex.exec(content)) !== null) {
+    while ((match = mdRegex.exec(fullContent)) !== null) {
       attachments.push(match[1].trim());
     }
 
@@ -405,7 +845,7 @@ export const Editor: React.FC<EditorProps> = ({
         onFetchBinaryFile(matchedFile.path, matchedFile.sha);
       }
     });
-  }, [content, files, vaultImages, onFetchBinaryFile]);
+  }, [fullContent, files, vaultImages, onFetchBinaryFile]);
 
   // Autocomplete suggestions states
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -439,17 +879,48 @@ export const Editor: React.FC<EditorProps> = ({
   if (filePath !== prevFilePath) {
     setPrevFilePath(filePath);
     setPrevInitialContent(initialContent);
-    setContent(initialContent);
     setSha(initialSha);
     setSavedContent(initialContent);
     setSaveStatus('idle');
     setErrorMessage('');
+
+    const newIsWindowing = initialContent.length > 50000;
+    if (newIsWindowing) {
+      const vLines = splitLongLines(initialContent);
+      setVirtualLines(vLines);
+      const start = 0;
+      const end = Math.min(300, vLines.length);
+      setWindowStartLine(start);
+      setWindowEndLine(end);
+      const chunkText = vLines.slice(start, end).join('\n');
+      setContent(chunkText);
+      setFullContent(initialContent);
+    } else {
+      setVirtualLines([]);
+      setContent(initialContent);
+      setFullContent(initialContent);
+    }
   } else if (initialContent !== prevInitialContent) {
     setPrevInitialContent(initialContent);
     setSha(initialSha);
     // Only update active content if the change is external (does not match what we last saved/have in memory)
     if (initialContent !== savedContent) {
-      setContent(initialContent);
+      const newIsWindowing = initialContent.length > 50000;
+      if (newIsWindowing) {
+        const vLines = splitLongLines(initialContent);
+        setVirtualLines(vLines);
+        const start = 0;
+        const end = Math.min(300, vLines.length);
+        setWindowStartLine(start);
+        setWindowEndLine(end);
+        const chunkText = vLines.slice(start, end).join('\n');
+        setContent(chunkText);
+        setFullContent(initialContent);
+      } else {
+        setVirtualLines([]);
+        setContent(initialContent);
+        setFullContent(initialContent);
+      }
       setSavedContent(initialContent);
     }
   }
@@ -518,8 +989,12 @@ export const Editor: React.FC<EditorProps> = ({
     document.body.appendChild(mirror);
 
     // Add offset limits to avoid clipping near borders
-    const relativeTop = marker.offsetTop - textarea.scrollTop + 22;
-    const relativeLeft = Math.min(marker.offsetLeft, textarea.clientWidth - 250);
+    const relativeTop = isWindowingMode
+      ? marker.offsetTop + (windowStartLine * 24) - (viewportRef.current?.scrollTop || 0) + 22
+      : marker.offsetTop - textarea.scrollTop + 22;
+    const relativeLeft = isWindowingMode
+      ? Math.min(marker.offsetLeft + 48 - (viewportRef.current?.scrollLeft || 0), (viewportRef.current?.clientWidth || textarea.clientWidth) - 250)
+      : Math.min(marker.offsetLeft, textarea.clientWidth - 250);
 
     setSuggestionPosition({
       top: relativeTop,
@@ -640,6 +1115,10 @@ export const Editor: React.FC<EditorProps> = ({
   }, [content]);
 
   useEffect(() => {
+    fullContentRef.current = fullContent;
+  }, [fullContent]);
+
+  useEffect(() => {
     shaRef.current = sha;
   }, [sha]);
 
@@ -664,13 +1143,19 @@ export const Editor: React.FC<EditorProps> = ({
         isEditingFromPreviewRef.current = false;
         return;
       }
-      previewContainerRef.current.innerHTML = renderMarkdown(content);
+      if (isWindowingMode) {
+        const topSpacer = `<div style="height: ${windowStartLine * 26}px; width: 100%;"></div>`;
+        const bottomSpacer = `<div style="height: ${Math.max(0, virtualLinesRef.current.length - windowEndLine) * 26}px; width: 100%;"></div>`;
+        previewContainerRef.current.innerHTML = topSpacer + renderMarkdown(content, windowStartLine) + bottomSpacer;
+      } else {
+        previewContainerRef.current.innerHTML = renderMarkdown(content, 0);
+      }
     }
-  }, [content, filePath, viewMode, renderMarkdown]);
+  }, [content, filePath, viewMode, renderMarkdown, isWindowingMode, windowStartLine, windowEndLine]);
 
   // Unified save orchestration
   const performAutoSave = useCallback(async () => {
-    const currentVal = contentRef.current;
+    const currentVal = fullContentRef.current;
     const currentSha = shaRef.current;
     const origVal = originalContent.current;
 
@@ -679,8 +1164,12 @@ export const Editor: React.FC<EditorProps> = ({
     // Save cursor position before saving
     if (textareaRef.current) {
       saveEditorState(vaultId, filePath, {
-        cursorPos: textareaRef.current.selectionStart,
-        scrollPos: textareaRef.current.scrollTop,
+        cursorPos: isWindowingMode 
+          ? getGlobalIndex(textareaRef.current.selectionStart, windowStartLine)
+          : textareaRef.current.selectionStart,
+        scrollPos: isWindowingMode 
+          ? (viewportRef.current ? viewportRef.current.scrollTop : 0)
+          : textareaRef.current.scrollTop,
       });
     }
 
@@ -711,13 +1200,13 @@ export const Editor: React.FC<EditorProps> = ({
         }
       }
     }
-  }, [vaultId, filePath]);
+  }, [vaultId, filePath, isWindowingMode, windowStartLine, getGlobalIndex]);
 
   // Debounced auto-save effect for editor content while typing
   useEffect(() => {
     const timer = setTimeout(() => {
       performAutoSave();
-      pushEditorState(contentRef.current);
+      pushEditorState(fullContentRef.current);
     }, 3000); // 3 second debounce while typing
 
     return () => clearTimeout(timer);
@@ -731,65 +1220,143 @@ export const Editor: React.FC<EditorProps> = ({
       // Save cursor position on blur
       if (currentTextarea) {
         saveEditorState(vaultId, filePath, {
-          cursorPos: currentTextarea.selectionStart,
-          scrollPos: currentTextarea.scrollTop,
+          cursorPos: isWindowingMode 
+            ? getGlobalIndex(currentTextarea.selectionStart, windowStartLine)
+            : currentTextarea.selectionStart,
+          scrollPos: isWindowingMode 
+            ? (viewportRef.current ? viewportRef.current.scrollTop : 0)
+            : currentTextarea.scrollTop,
         });
       }
       performAutoSave();
-      pushEditorState(contentRef.current);
+      pushEditorState(fullContentRef.current);
     };
 
+    const currentViewport = viewportRef.current;
     window.addEventListener('blur', handleWindowBlur);
     return () => {
       window.removeEventListener('blur', handleWindowBlur);
       if (currentTextarea) {
         saveEditorState(vaultId, filePath, {
-          cursorPos: currentTextarea.selectionStart,
-          scrollPos: currentTextarea.scrollTop,
+          cursorPos: isWindowingMode 
+            ? getGlobalIndex(currentTextarea.selectionStart, windowStartLine)
+            : currentTextarea.selectionStart,
+          scrollPos: isWindowingMode 
+            ? (currentViewport ? currentViewport.scrollTop : 0)
+            : currentTextarea.scrollTop,
         });
       }
       performAutoSave(); // Final save on unmount!
-      pushEditorState(contentRef.current);
+      pushEditorState(fullContentRef.current);
     };
-  }, [vaultId, filePath, performAutoSave, pushEditorState]);
+  }, [vaultId, filePath, performAutoSave, pushEditorState, isWindowingMode, windowStartLine, getGlobalIndex]);
 
   useEffect(() => {
     // Restore cursor position after content is loaded
     const timer = setTimeout(() => {
-      if (initialSearchLineIndex !== undefined && textareaRef.current) {
-        const textarea = textareaRef.current;
-        const lines = initialContent.split('\n');
-        let charIndex = 0;
-        for (let i = 0; i < Math.min(initialSearchLineIndex, lines.length); i++) {
-          charIndex += lines[i].length + 1; // +1 for the newline character
+      if (initialSearchLineIndex !== undefined) {
+        if (isWindowingMode) {
+          const vLines = virtualLinesRef.current;
+          const targetLine = initialSearchLineIndex;
+          let newStart = Math.max(0, targetLine - 150);
+          newStart = Math.min(newStart, Math.max(0, vLines.length - 300));
+          const newEnd = Math.min(newStart + 300, vLines.length);
+
+          setWindowStartLine(newStart);
+          setWindowEndLine(newEnd);
+          setContent(vLines.slice(newStart, newEnd).join('\n'));
+
+          let localCharIndex = 0;
+          for (let i = newStart; i < Math.min(targetLine, vLines.length); i++) {
+            localCharIndex += vLines[i].length + 1;
+          }
+
+          setTimeout(() => {
+            const viewport = viewportRef.current;
+            if (viewport) {
+              const targetScroll = Math.max(0, targetLine * 24 - (viewport.clientHeight / 2));
+              viewport.scrollTop = targetScroll;
+            }
+            if (textareaRef.current) {
+              textareaRef.current.setSelectionRange(localCharIndex, localCharIndex);
+              textareaRef.current.focus();
+            }
+          }, 50);
+        } else {
+          if (textareaRef.current) {
+            const textarea = textareaRef.current;
+            const lines = initialContent.split('\n');
+            let charIndex = 0;
+            for (let i = 0; i < Math.min(initialSearchLineIndex, lines.length); i++) {
+              charIndex += lines[i].length + 1;
+            }
+            textarea.setSelectionRange(charIndex, charIndex);
+            textarea.focus();
+
+            const linePercentage = initialSearchLineIndex / Math.max(1, lines.length);
+            const targetScroll = Math.max(0, textarea.scrollHeight * linePercentage - (textarea.clientHeight / 2));
+            textarea.scrollTop = targetScroll;
+          }
         }
-        
-        textarea.setSelectionRange(charIndex, charIndex);
-        textarea.focus();
-        
-        // Scroll to approximate line position
-        const linePercentage = initialSearchLineIndex / Math.max(1, lines.length);
-        const targetScroll = Math.max(0, textarea.scrollHeight * linePercentage - (textarea.clientHeight / 2));
-        textarea.scrollTop = targetScroll;
-        
-        hasRestoredRef.current = true; // Mark as restored since we jump to search match
+
+        hasRestoredRef.current = true;
         if (onClearTargetLine) {
           onClearTargetLine();
         }
       } else if (!hasRestoredRef.current) {
-        hasRestoredRef.current = true; // Mark as restored
+        hasRestoredRef.current = true;
         const savedState = restoreEditorState(vaultId, filePath);
-        if (textareaRef.current && savedState.cursorPos !== undefined) {
-          textareaRef.current.setSelectionRange(savedState.cursorPos, savedState.cursorPos);
-          textareaRef.current.focus();
-        }
-        if (textareaRef.current && savedState.scrollPos !== undefined) {
-          textareaRef.current.scrollTop = savedState.scrollPos;
+        if (savedState.cursorPos !== undefined) {
+          if (isWindowingMode) {
+            const globalPos = savedState.cursorPos;
+            let charCount = 0;
+            let targetLine = 0;
+            const vLines = virtualLinesRef.current;
+            for (let i = 0; i < vLines.length; i++) {
+              const lineLen = vLines[i].length + 1;
+              if (charCount + lineLen > globalPos) {
+                targetLine = i;
+                break;
+              }
+              charCount += lineLen;
+            }
+
+            let newStart = Math.max(0, targetLine - 150);
+            newStart = Math.min(newStart, Math.max(0, vLines.length - 300));
+            const newEnd = Math.min(newStart + 300, vLines.length);
+
+            setWindowStartLine(newStart);
+            setWindowEndLine(newEnd);
+            setContent(vLines.slice(newStart, newEnd).join('\n'));
+
+            const localPos = Math.max(0, globalPos - charCount);
+
+            setTimeout(() => {
+              const viewport = viewportRef.current;
+              if (viewport && savedState.scrollPos !== undefined) {
+                viewport.scrollTop = savedState.scrollPos;
+              } else if (viewport) {
+                viewport.scrollTop = Math.max(0, targetLine * 24 - (viewport.clientHeight / 2));
+              }
+              if (textareaRef.current) {
+                textareaRef.current.setSelectionRange(localPos, localPos);
+                textareaRef.current.focus();
+              }
+            }, 50);
+          } else {
+            if (textareaRef.current) {
+              textareaRef.current.setSelectionRange(savedState.cursorPos, savedState.cursorPos);
+              textareaRef.current.focus();
+            }
+            if (textareaRef.current && savedState.scrollPos !== undefined) {
+              textareaRef.current.scrollTop = savedState.scrollPos;
+            }
+          }
         }
       }
     }, 0);
     return () => clearTimeout(timer);
-  }, [filePath, vaultId, initialSearchLineIndex, onClearTargetLine, initialContent]);
+  }, [filePath, vaultId, initialSearchLineIndex, onClearTargetLine, initialContent, isWindowingMode]);
 
   // Configure marked with custom options
   useEffect(() => {
@@ -803,7 +1370,7 @@ export const Editor: React.FC<EditorProps> = ({
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
-    setContent(value);
+    handleContentEdit(value);
 
     const selectionStart = e.target.selectionStart;
     const textBeforeCaret = value.substring(0, selectionStart);
@@ -846,12 +1413,27 @@ export const Editor: React.FC<EditorProps> = ({
     if (addRowBtn) {
       const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
       const delimiter = ext === '.csv' ? ',' : '\t';
-      const rows = parseCSV(content, delimiter);
+      const rows = parseCSV(fullContent, delimiter);
       const maxCols = Math.max(...rows.map(r => r.length), 1);
       rows.push(Array(maxCols).fill(''));
       const newContent = stringifyCSV(rows, delimiter);
-      setContent(newContent);
-      pushEditorState(newContent);
+      if (isWindowingMode) {
+        const vLines = splitLongLines(newContent);
+        virtualLinesRef.current = vLines;
+        const start = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+        const end = Math.min(start + 300, vLines.length);
+        setWindowStartLine(start);
+        setWindowEndLine(end);
+        setContent(vLines.slice(start, end).join('\n'));
+        setFullContent(newContent);
+        fullContentRef.current = newContent;
+        pushEditorState(newContent);
+      } else {
+        setContent(newContent);
+        setFullContent(newContent);
+        fullContentRef.current = newContent;
+        pushEditorState(newContent);
+      }
       return;
     }
 
@@ -859,11 +1441,26 @@ export const Editor: React.FC<EditorProps> = ({
     if (addColBtn) {
       const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
       const delimiter = ext === '.csv' ? ',' : '\t';
-      const rows = parseCSV(content, delimiter);
+      const rows = parseCSV(fullContent, delimiter);
       const updatedRows = rows.map(row => [...row, '']);
       const newContent = stringifyCSV(updatedRows, delimiter);
-      setContent(newContent);
-      pushEditorState(newContent);
+      if (isWindowingMode) {
+        const vLines = splitLongLines(newContent);
+        virtualLinesRef.current = vLines;
+        const start = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+        const end = Math.min(start + 300, vLines.length);
+        setWindowStartLine(start);
+        setWindowEndLine(end);
+        setContent(vLines.slice(start, end).join('\n'));
+        setFullContent(newContent);
+        fullContentRef.current = newContent;
+        pushEditorState(newContent);
+      } else {
+        setContent(newContent);
+        setFullContent(newContent);
+        fullContentRef.current = newContent;
+        pushEditorState(newContent);
+      }
       return;
     }
 
@@ -871,12 +1468,27 @@ export const Editor: React.FC<EditorProps> = ({
     if (deleteRowBtn) {
       const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
       const delimiter = ext === '.csv' ? ',' : '\t';
-      const rows = parseCSV(content, delimiter);
+      const rows = parseCSV(fullContent, delimiter);
       if (rows.length > 1) {
         rows.pop();
         const newContent = stringifyCSV(rows, delimiter);
-        setContent(newContent);
-        pushEditorState(newContent);
+        if (isWindowingMode) {
+          const vLines = splitLongLines(newContent);
+          virtualLinesRef.current = vLines;
+          const start = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+          const end = Math.min(start + 300, vLines.length);
+          setWindowStartLine(start);
+          setWindowEndLine(end);
+          setContent(vLines.slice(start, end).join('\n'));
+          setFullContent(newContent);
+          fullContentRef.current = newContent;
+          pushEditorState(newContent);
+        } else {
+          setContent(newContent);
+          setFullContent(newContent);
+          fullContentRef.current = newContent;
+          pushEditorState(newContent);
+        }
       }
       return;
     }
@@ -885,13 +1497,28 @@ export const Editor: React.FC<EditorProps> = ({
     if (deleteColBtn) {
       const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
       const delimiter = ext === '.csv' ? ',' : '\t';
-      const rows = parseCSV(content, delimiter);
+      const rows = parseCSV(fullContent, delimiter);
       const maxCols = Math.max(...rows.map(r => r.length), 1);
       if (maxCols > 1) {
         const updatedRows = rows.map(row => row.slice(0, -1));
         const newContent = stringifyCSV(updatedRows, delimiter);
-        setContent(newContent);
-        pushEditorState(newContent);
+        if (isWindowingMode) {
+          const vLines = splitLongLines(newContent);
+          virtualLinesRef.current = vLines;
+          const start = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+          const end = Math.min(start + 300, vLines.length);
+          setWindowStartLine(start);
+          setWindowEndLine(end);
+          setContent(vLines.slice(start, end).join('\n'));
+          setFullContent(newContent);
+          fullContentRef.current = newContent;
+          pushEditorState(newContent);
+        } else {
+          setContent(newContent);
+          setFullContent(newContent);
+          fullContentRef.current = newContent;
+          pushEditorState(newContent);
+        }
       }
       return;
     }
@@ -941,7 +1568,7 @@ export const Editor: React.FC<EditorProps> = ({
 
       const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
       const delimiter = ext === '.csv' ? ',' : '\t';
-      const rows = parseCSV(content, delimiter);
+      const rows = parseCSV(fullContent, delimiter);
 
       // Make sure row/col exists in our array
       while (rows.length <= rowIdx) {
@@ -957,11 +1584,25 @@ export const Editor: React.FC<EditorProps> = ({
 
       const newContent = stringifyCSV(rows, delimiter);
       isEditingFromPreviewRef.current = true;
-      setContent(newContent);
+      if (isWindowingMode) {
+        const vLines = splitLongLines(newContent);
+        virtualLinesRef.current = vLines;
+        const start = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+        const end = Math.min(start + 300, vLines.length);
+        setWindowStartLine(start);
+        setWindowEndLine(end);
+        setContent(vLines.slice(start, end).join('\n'));
+        setFullContent(newContent);
+        fullContentRef.current = newContent;
+      } else {
+        setContent(newContent);
+        setFullContent(newContent);
+        fullContentRef.current = newContent;
+      }
     }
   };
 
-  const hasUnsavedChanges = content !== savedContent;
+  const hasUnsavedChanges = (isWindowingMode ? fullContent : content) !== savedContent;
 
   return (
     <div className="flex flex-col md:flex-row w-full h-full bg-background relative select-none animate-fade-in">
@@ -976,27 +1617,129 @@ export const Editor: React.FC<EditorProps> = ({
       >
         <div className="h-10 bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
           <span>Editor: {filePath.split('/').pop()}</span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-3">
             {hasUnsavedChanges && (
               <span className="text-amber-500 flex items-center gap-1.5 normal-case font-semibold animate-pulse-soft">
                 <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
                 Unsaved Edits
               </span>
             )}
+            <button
+              onClick={handleCopyAll}
+              className="flex items-center gap-1 px-2.5 py-1 bg-border/40 hover:bg-border/80 text-foreground rounded-lg text-[0.6rem] font-bold transition-all cursor-pointer normal-case shrink-0"
+              title="Copy all file contents"
+            >
+              {copied ? (
+                <>
+                  <Check size={11} className="text-emerald-500" />
+                  <span className="text-emerald-500">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={11} />
+                  <span>Copy Content</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        <div className="flex-1 w-full h-[calc(100%-40px)] relative select-text">
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={handleTextareaChange}
-            onKeyDown={handleTextareaKeyDown}
-            onPaste={handleTextareaPaste}
-            onBlur={handleAutoSave}
-            placeholder={`# ${filePath.split('/').pop()?.replace(/\.md$/, '').replace(/\.txt$/, '') || 'Untitled Note'}\n\nStart typing notes in Markdown... Use [[Links]] to connect notes!`}
-            className="w-full h-full border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] p-6 pb-32 resize-none outline-none focus:ring-0 select-text overflow-y-auto"
-          />
+        <div 
+          ref={viewportRef}
+          onScroll={isWindowingMode ? handleEditorScroll : undefined}
+          className={cn(
+            "flex-1 w-full h-[calc(100%-40px)] relative select-text",
+            isWindowingMode ? "overflow-y-auto overflow-x-hidden" : ""
+          )}
+          style={isWindowingMode ? {
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          } : undefined}
+        >
+          {isWindowingMode ? (
+            <div
+              style={{
+                boxSizing: 'border-box',
+                paddingTop: `${windowStartLine * 24}px`,
+                paddingBottom: `${Math.max(0, virtualLines.length - windowEndLine) * 24 + 128}px`,
+                width: '100%',
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'stretch',
+              }}
+            >
+              {/* Line Counter */}
+              <div
+                style={{
+                  width: '48px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                  color: 'rgba(255, 255, 255, 0.3)',
+                  fontFamily: 'monospace',
+                  fontSize: '14.8px',
+                  lineHeight: '24px',
+                  textAlign: 'right',
+                  paddingRight: '12px',
+                  paddingLeft: '6px',
+                  userSelect: 'none',
+                  borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+                  boxSizing: 'border-box',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: `${windowLineHeights.reduce((a, b) => a + b, 0)}px`,
+                }}
+              >
+                {Array.from({ length: windowEndLine - windowStartLine }, (_, idx) => windowStartLine + idx + 1).map((num, idx) => (
+                  <div key={num} style={{ height: `${windowLineHeights[idx] || 24}px` }}>{num}</div>
+                ))}
+              </div>
+
+              {/* Textarea */}
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={handleTextareaChange}
+                onKeyDown={handleTextareaKeyDown}
+                onPaste={handleTextareaPaste}
+                onBlur={handleAutoSave}
+                wrap="soft"
+                style={{
+                  width: '100%',
+                  minWidth: '100%',
+                  height: `${windowLineHeights.reduce((a, b) => a + b, 0)}px`,
+                  lineHeight: '24px',
+                  fontSize: '14.8px',
+                  fontFamily: 'monospace',
+                  padding: '0 24px',
+                  margin: 0,
+                  border: 'none',
+                  outline: 'none',
+                  resize: 'none',
+                  overflow: 'hidden',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  boxSizing: 'border-box',
+                  background: 'transparent',
+                }}
+                placeholder={`# ${filePath.split('/').pop()?.replace(/\.md$/, '').replace(/\.txt$/, '') || 'Untitled Note'}\n\nStart typing notes in Markdown... Use [[Links]] to connect notes!`}
+                className="border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] resize-none outline-none focus:ring-0 select-text flex-1"
+              />
+            </div>
+          ) : (
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={handleTextareaChange}
+              onKeyDown={handleTextareaKeyDown}
+              onPaste={handleTextareaPaste}
+              onBlur={handleAutoSave}
+              onScroll={handleEditorScroll}
+              placeholder={`# ${filePath.split('/').pop()?.replace(/\.md$/, '').replace(/\.txt$/, '') || 'Untitled Note'}\n\nStart typing notes in Markdown... Use [[Links]] to connect notes!`}
+              className="w-full h-full border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] p-6 pb-32 resize-none outline-none focus:ring-0 select-text overflow-y-auto"
+            />
+          )}
 
           {/* Autocomplete suggestions overlay box */}
           {showSuggestions && (
@@ -1109,6 +1852,8 @@ export const Editor: React.FC<EditorProps> = ({
           </span>
         </div>
         <div
+          ref={previewScrollContainerRef}
+          onScroll={handlePreviewScroll}
           className="flex-1 p-6 pb-32 sm:p-8 sm:pb-32 overflow-y-auto bg-background"
           onClick={handlePreviewClick}
           onBlur={handlePreviewInput}
