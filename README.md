@@ -4,7 +4,7 @@ This was created as an alternative to Obsidian on web.
 
 - Notes are saved as Markdown with non-invasive Preview.
 - App primarily made to sync to github.
-- Fully compatible with .canvas and .base files and includes a detailed editor
+- Fully compatible with .canvas and .base files and includes a fully featured editor.
 - Supports links and graph view for links.
 - Supports images and attachments with previews and editor for text based file formats.
 - Fully client side application with offline app and note caching. Only connects to github to sync.
