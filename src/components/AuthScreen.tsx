@@ -114,7 +114,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             StarfishNotes
           </h1>
           <p className="text-muted-foreground text-xs font-semibold leading-relaxed">
-            I created this out of necessity. I wanted client-side web-based note taking alternative to Obsidian. This project is open source. It takes md and supports canvas, base, images, attachments, text editing etc.
+            I created this out of necessity. I wanted client-side web-based note taking alternative to Obsidian. This project is open source. It takes md and supports canvas, base, images, attachments, text editing etc. It runs fully in-browser, supports offline caching and only connects to github to sync.
           </p>
         </div>
 
