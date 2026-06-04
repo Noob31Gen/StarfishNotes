@@ -928,7 +928,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                 (containerRef.current?.clientWidth || 800) / 2,
                 (containerRef.current?.clientHeight || 600) / 2
               );
-              
+
               const newNode: CanvasNode = {
                 id: `card_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                 x: Math.round(centerWorld.x - 160),
@@ -2092,7 +2092,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
                         }}
                         onMouseEnter={() => setSuggestionIndex(idx)}
                         className={cn(
-                          "w-full text-left px-2.5 py-2 rounded-lg text-xs transition-premium cursor-pointer truncate font-semibold flex items-center justify-between border border-transparent",
+                          "w-full text-left px-2.5 py-2 rounded-lg text-xs transition-premium cursor-pointer font-semibold flex items-center justify-between border border-transparent",
                           isSelectedSug
                             ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent font-semibold"
                             : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground"
