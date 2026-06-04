@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import {
   validateRepository, checkVaultCompatibility, initializeVault,
   fetchRepositoryTree, fetchFileContent, commitFileContent, deleteFile, syncVault,
-  commitAttachment, fetchBinaryFileContent, isTextFile
+  commitAttachment, fetchBinaryFileContent, isTextFile, isBinaryBytes, registerDetectedTextFile, safeB64Decode
 } from './services/github';
 import type { VaultFile } from './services/github';
 import {
@@ -13,6 +13,7 @@ import {
 } from './utils/crypto';
 import type { StorageMode } from './utils/crypto';
 import { Editor } from './components/Editor';
+import { textExtensions } from './utils/textExtensions';
 import { GraphView } from './components/GraphView';
 import { CanvasView } from './components/CanvasView';
 import { BaseEditor } from './components/BaseEditor';
@@ -239,6 +240,7 @@ export default function App() {
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [activeFileTargetLine, setActiveFileTargetLine] = useState<number | undefined>(undefined);
+  const [detectedTextFiles, setDetectedTextFiles] = useState<Record<string, boolean>>({}); // path -> isText
 
   const handleOpenNote = useCallback((path: string | null) => {
     setActiveFileTargetLine(undefined); // Reset target line on normal open
@@ -1169,6 +1171,78 @@ export default function App() {
       console.error('Failed to load binary file:', e);
     }
   }, [vaultImages, githubToken, repoName, isOffline, loadBinaryFileOffline]);
+
+  const loadUnknownFile = useCallback(async (path: string, sha: string) => {
+    setIsLoadingFile(true);
+    try {
+      let base64 = '';
+      if (isOffline) {
+        const file = await offlineStorage.getFile(path);
+        if (file) {
+          base64 = file.content;
+          const mode = storageMode;
+          if (mode === 'encrypted' || mode === 'keychain' || mode === 'plain') {
+            const decryptionKey = masterPassphrase;
+            if (decryptionKey) {
+              base64 = await decryptToken(file.content, decryptionKey);
+            }
+          }
+        }
+      } else {
+        base64 = await fetchBinaryFileContent(githubToken, repoName, sha);
+      }
+
+      if (!base64) {
+        setIsLoadingFile(false);
+        return;
+      }
+
+      const byteCharacters = atob(base64);
+      const len = Math.min(byteCharacters.length, 1024);
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = byteCharacters.charCodeAt(i);
+      }
+
+      const isBinary = isBinaryBytes(bytes);
+
+      if (isBinary) {
+        registerDetectedTextFile(path, false);
+        setDetectedTextFiles(prev => ({ ...prev, [path]: false }));
+
+        const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
+        let mime = 'application/octet-stream';
+        if (ext === '.png') mime = 'image/png';
+        else if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
+        else if (ext === '.webp') mime = 'image/webp';
+        else if (ext === '.gif') mime = 'image/gif';
+        else if (ext === '.svg') mime = 'image/svg+xml';
+        else if (ext === '.pdf') mime = 'application/pdf';
+
+        const fileUrl = ext === '.pdf'
+          ? URL.createObjectURL(base64ToBlob(base64, mime))
+          : `data:${mime};base64,${base64}`;
+
+        setVaultImages(prev => ({
+          ...prev,
+          [path]: fileUrl
+        }));
+      } else {
+        registerDetectedTextFile(path, true);
+        setDetectedTextFiles(prev => ({ ...prev, [path]: true }));
+
+        const text = safeB64Decode(base64);
+        setFileContents(prev => ({
+          ...prev,
+          [path]: text
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to load and classify unknown file:', e);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  }, [githubToken, repoName, isOffline, storageMode, masterPassphrase]);
 
   const uploadAttachment = async (file: File, folderPath?: string, shouldNavigate: boolean = true): Promise<{ path: string; name: string }> => {
     if (isOffline) {
@@ -2564,16 +2638,43 @@ export default function App() {
     if (activeFilePath) {
       const matchingFile = files.find(f => f.path === activeFilePath);
       if (matchingFile) {
-        const isBinary = !isTextFile(matchingFile.path) && !matchingFile.path.toLowerCase().endsWith('.canvas');
+        const lastDot = matchingFile.path.lastIndexOf('.');
+        const ext = lastDot !== -1 ? matchingFile.path.substring(lastDot).toLowerCase() : '';
+        const extName = ext.startsWith('.') ? ext.substring(1) : ext;
+        const binaryExtensions = [
+          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.tar', '.gz', '.mp3', '.mp4', '.mov', '.avi', '.ttf', '.woff', '.woff2', '.eot'
+        ];
+        const isKnownBinary = binaryExtensions.includes(ext);
+        const isCanvas = ext === '.canvas';
+        const isKnownText = textExtensions.has(extName);
+        const isUnrecognized = !isKnownBinary && !isCanvas && !isKnownText;
 
-        if (isBinary) {
-          Promise.resolve().then(() => {
-            loadBinaryFile(matchingFile.path, matchingFile.sha);
-          });
+        if (isUnrecognized) {
+          const isDetectedText = detectedTextFiles[matchingFile.path];
+          if (isDetectedText === undefined) {
+            Promise.resolve().then(() => {
+              loadUnknownFile(matchingFile.path, matchingFile.sha);
+            });
+          } else if (isDetectedText === true) {
+            Promise.resolve().then(() => {
+              loadFileContent(matchingFile.path, matchingFile.sha);
+            });
+          } else {
+            Promise.resolve().then(() => {
+              loadBinaryFile(matchingFile.path, matchingFile.sha);
+            });
+          }
         } else {
-          Promise.resolve().then(() => {
-            loadFileContent(matchingFile.path, matchingFile.sha);
-          });
+          const isBinary = isKnownBinary;
+          if (isBinary) {
+            Promise.resolve().then(() => {
+              loadBinaryFile(matchingFile.path, matchingFile.sha);
+            });
+          } else {
+            Promise.resolve().then(() => {
+              loadFileContent(matchingFile.path, matchingFile.sha);
+            });
+          }
         }
       } else {
         const isGhostMd = isTextFile(activeFilePath);
@@ -2649,7 +2750,7 @@ export default function App() {
         }
       }
     }
-  }, [activeFilePath, files, loadFileContent, loadBinaryFile, githubToken, repoName, branchName, isLoadingFile, isOffline, storageMode, masterPassphrase]);
+  }, [activeFilePath, files, loadFileContent, loadBinaryFile, loadUnknownFile, detectedTextFiles, githubToken, repoName, branchName, isLoadingFile, isOffline, storageMode, masterPassphrase]);
 
   // Sidebar note rendering filters
   const filteredFiles = files.filter(

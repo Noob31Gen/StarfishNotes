@@ -4,6 +4,7 @@
  * Implements robust tree traversal, UTF-8 base64 encoding/decoding, and conflict resolution (SHA checking).
  */
 import { getLocalFile, saveLocalFile } from './storage';
+import { textExtensions } from '../utils/textExtensions';
 
 export interface VaultFile {
   path: string;
@@ -23,12 +24,52 @@ export interface VaultCompatibility {
   };
 }
 
+export function isBinaryBytes(bytes: Uint8Array): boolean {
+  const len = Math.min(bytes.length, 1024);
+  for (let i = 0; i < len; i++) {
+    if (bytes[i] === 0) {
+      return true; // Contains null byte -> binary
+    }
+  }
+  return false; // No null bytes -> text
+}
+
+const runtimeDetectedTextFiles: Record<string, boolean> = {};
+
+export function registerDetectedTextFile(path: string, isText: boolean): void {
+  runtimeDetectedTextFiles[path] = isText;
+}
+
 export function isTextFile(path: string): boolean {
+  if (runtimeDetectedTextFiles[path] !== undefined) {
+    return runtimeDetectedTextFiles[path];
+  }
+
   const binaryExtensions = [
     '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.tar', '.gz', '.mp3', '.mp4', '.mov', '.avi', '.ttf', '.woff', '.woff2', '.eot'
   ];
-  const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
-  return !binaryExtensions.includes(ext) && ext !== '.canvas';
+
+  const lastDot = path.lastIndexOf('.');
+  if (lastDot === -1) {
+    return true; // No extension -> default to text-like (compatibility fallback)
+  }
+
+  const ext = path.substring(lastDot).toLowerCase();
+  if (binaryExtensions.includes(ext)) {
+    return false;
+  }
+  if (ext === '.canvas') {
+    return false;
+  }
+
+  const extName = ext.substring(1);
+  if (textExtensions.has(extName)) {
+    return true;
+  }
+
+  // Unrecognized extensions default to false synchronously.
+  // They will be scanned dynamically on-demand when loaded.
+  return false;
 }
 
 /**

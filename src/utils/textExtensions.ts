@@ -1,0 +1,42 @@
+/**
+ * Statically bundled list of known text-file extensions.
+ * Taken from sindresorhus/text-extensions database.
+ */
+export const textExtensions = new Set<string>([
+  'ada', 'adb', 'ads',
+  'applescript',
+  'as', 'asc', 'ascii', 'ascx',
+  'asm', 'asmx',
+  'asp', 'aspx',
+  'atom',
+  'au3',
+  'awk',
+  'bas', 'bash', 'bashrc', 'bat',
+  'bbcolors',
+  'bcp',
+  'bdsgroup', 'bdsproj',
+  'bib',
+  'bowerrc',
+  'c', 'cbl', 'cc', 'cfc', 'cfg', 'cfm', 'cfml', 'cgi', 'cjs', 'clj', 'cljs', 'cls', 'cmake', 'cmd', 'cnf', 'cob', 'code-snippets', 'coffee', 'coffeekup', 'conf', 'cp', 'cpp', 'cpt', 'cpy', 'crt', 'cs', 'csh', 'cson', 'csproj', 'csr', 'css', 'csslintrc', 'csv', 'ctl', 'cts', 'curlrc', 'cxx',
+  'd', 'dart', 'dfm', 'diff', 'dof', 'dpk', 'dpr', 'dproj', 'dtd',
+  'eco', 'editorconfig', 'ejs', 'el', 'elm', 'emacs', 'eml', 'ent', 'erb', 'erl', 'eslintignore', 'eslintrc', 'ex', 'exs',
+  'f', 'f03', 'f77', 'f90', 'f95', 'fish', 'for', 'fpp', 'frm', 'fs', 'fsproj', 'fsx', 'ftn',
+  'gemrc', 'gemspec', 'gitattributes', 'gitconfig', 'gitignore', 'gitkeep', 'gitmodules', 'go', 'gpp', 'gradle', 'graphql', 'gql', 'groovy', 'gpx',
+  'h', 'haml', 'handlebars', 'hbs', 'hrl', 'hs', 'html', 'htm', 'html5', 'http', 'hpp',
+  'ini', 'io', 'ipr', 'iws',
+  'jade', 'jake', 'java', 'javascript', 'js', 'json', 'json5', 'jsonld', 'jsp', 'jspx', 'jss', 'jsx', 'jl',
+  'kml', 'kotlin', 'kt', 'kts',
+  'less', 'liquid', 'lisp', 'lsp', 'log', 'lock', 'lua',
+  'm', 'm4', 'make', 'makefile', 'mk', 'markdown', 'md', 'mdown', 'mdwn', 'mdtxt', 'mdoc', 'mkd', 'mkdn', 'ml', 'mli', 'mjs', 'mochi', 'mud', 'mustache',
+  'nim', 'nimble', 'nix', 'npmrc',
+  'opts', 'ora',
+  'p', 'pas', 'patch', 'pat', 'php', 'php3', 'php4', 'php5', 'php7', 'phps', 'php-s', 'phtml', 'pl', 'pm', 'pod', 'podspec', 'pp', 'prettierrc', 'properties', 'props', 'ps1', 'psd1', 'psm1', 'pt', 'pug', 'py', 'pyw',
+  'r', 'rake', 'rb', 'rbw', 'rc', 'readme', 'reg', 'rest', 'res', 'rex', 'rexx', 'rhtml', 'rmd', 'rproj', 'rs', 'rst', 'rtf',
+  'sass', 'scala', 'sc', 'scpt', 'scss', 'sh', 'shtml', 'sld', 'sln', 'sql', 'suo', 'svg', 'swift', 'sv', 'svh',
+  't', 'tab', 'tac', 'tart', 'tcl', 'terminal', 'test', 'tex', 'text', 'textile', 'thrift', 'toit', 'toml', 'tpy', 'ts', 'tsx', 'tsv', 'twig', 'txt',
+  'v', 'vala', 'vapi', 'vb', 'vbs', 'vcproj', 'vdproj', 'verilog', 'vhd', 'vhdl', 'vim', 'vimrc', 'vue',
+  'webmanifest', 'wxs', 'wxl', 'wxi',
+  'xhtml', 'xht', 'xml', 'xsd', 'xsl', 'xslt', 'xy',
+  'yaml', 'yml',
+  'zsh', 'zig'
+]);
