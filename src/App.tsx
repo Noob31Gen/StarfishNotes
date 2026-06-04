@@ -2717,7 +2717,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen bg-background relative overflow-hidden select-none animate-fade-in">
       {globalError && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[2000] bg-[#1e1515] border border-destructive/40 text-destructive text-xs font-semibold px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 animate-fade-in select-text">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[2000] bg-[#1e1515] border border-destructive/40 text-destructive text-xs font-semibold px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 animate-fade-in select-text max-w-[calc(100vw-48px)] sm:max-w-md w-max">
           <span>{globalError}</span>
           <button
             type="button"
@@ -2730,7 +2730,7 @@ export default function App() {
       )}
 
       {isNetworkOffline && (
-        <div className="fixed bottom-6 left-6 z-[2000] bg-[#1c1d24]/95 border border-amber-500/30 text-amber-500 text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-fade-in backdrop-blur-xl select-text">
+        <div className="fixed bottom-6 left-6 right-6 sm:right-auto z-[2000] bg-[#1c1d24]/95 border border-amber-500/30 text-amber-500 text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-fade-in backdrop-blur-xl select-text max-w-[calc(100vw-48px)] sm:max-w-md">
           <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
           <span>Offline Mode: Working with cached notes. Edits will sync when connection is restored.</span>
         </div>
@@ -2883,27 +2883,27 @@ export default function App() {
         </header>
 
         {activeFileHasRemoteUpdate && (
-          <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-200/90 text-xs px-6 py-2.5 flex items-center justify-between shrink-0 gap-3 select-none animate-fade-in">
-            <div className="flex items-center gap-2">
-              <svg viewBox="0 0 24 24" className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-200/90 text-xs px-5 py-3 sm:px-6 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between shrink-0 gap-3 select-none animate-fade-in">
+            <div className="flex items-start gap-2.5">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-amber-400 shrink-0 animate-pulse mt-0.5 sm:mt-0" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-              <span className="font-semibold">
-                Warning: A newer version of this file exists on GitHub. Saving will overwrite the remote version.
+              <span className="font-semibold leading-relaxed">
+                Warning: A newer version of "{activeFilePath?.split('/').pop() || 'this file'}" exists on GitHub. Saving will overwrite the remote version.
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 w-full sm:w-auto justify-end">
               <button
                 type="button"
                 onClick={resolveActiveKeepRemote}
-                className="px-3 py-1 bg-sky-500/20 border border-sky-500/30 hover:bg-sky-500/30 text-sky-300 text-[0.68rem] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+                className="px-3 py-1.5 bg-sky-500/20 border border-sky-500/30 hover:bg-sky-500/30 text-sky-300 text-[0.68rem] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
               >
                 Pull Remote
               </button>
               <button
                 type="button"
                 onClick={resolveActiveKeepLocal}
-                className="px-3 py-1 bg-purple-500/20 border border-purple-500/30 hover:bg-purple-500/30 text-purple-300 text-[0.68rem] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+                className="px-3 py-1.5 bg-purple-500/20 border border-purple-500/30 hover:bg-purple-500/30 text-purple-300 text-[0.68rem] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
               >
                 Overwrite Remote
               </button>
