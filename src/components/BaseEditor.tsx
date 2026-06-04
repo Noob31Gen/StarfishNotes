@@ -283,13 +283,19 @@ interface BaseFilter {
   value: string;
 }
 
+interface BaseFilterGroup {
+  and?: BaseFilter[];
+  or?: BaseFilter[];
+  not?: BaseFilter[];
+}
+
 interface BaseView {
   id: string;
   name: string;
   type: string;
   columns?: BaseColumn[];
   sort?: BaseSort[];
-  filters?: BaseFilter[];
+  filters?: BaseFilter[] | BaseFilterGroup;
 }
 
 interface BaseConfig {
@@ -338,8 +344,27 @@ function parseBaseConfig(content: string): BaseConfig {
       type: 'table',
       columns: [{ property: 'file.name', visible: true, width: 200 }],
       sort: [],
-      filters: []
+      filters: { and: [] }
     }];
+  } else {
+    parsed.views = parsed.views.map(view => {
+      let normalizedFilters: BaseFilterGroup = { and: [] };
+      if (view.filters) {
+        if (Array.isArray(view.filters)) {
+          normalizedFilters = { and: view.filters };
+        } else if (typeof view.filters === 'object') {
+          normalizedFilters = {
+            and: view.filters.and || [],
+            or: view.filters.or,
+            not: view.filters.not
+          };
+        }
+      }
+      return {
+        ...view,
+        filters: normalizedFilters
+      };
+    });
   }
   return parsed;
 }
@@ -465,9 +490,15 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       type: 'table',
       columns: [{ property: 'file.name', visible: true, width: 200 }],
       sort: [],
-      filters: []
+      filters: { and: [] }
     };
   }, [config.views]);
+
+  const activeFilters = useMemo<BaseFilter[]>(() => {
+    if (!activeView.filters) return [];
+    if (Array.isArray(activeView.filters)) return activeView.filters;
+    return activeView.filters.and || activeView.filters.or || activeView.filters.not || [];
+  }, [activeView.filters]);
 
   // Sync YAML text editor changes when config object changes
   const saveConfig = async (newConfig: BaseConfig) => {
@@ -774,14 +805,14 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   const [filterVal, setFilterVal] = useState('');
 
   const handleAddFilter = () => {
-    const currentFilters = activeView.filters || [];
+    const currentFilters = activeFilters;
     const newFilters = [
       ...currentFilters,
       { property: filterProp, operator: filterOp, value: filterVal }
     ];
 
     const updatedViews = [...config.views];
-    updatedViews[0] = { ...activeView, filters: newFilters };
+    updatedViews[0] = { ...activeView, filters: { and: newFilters } };
     saveConfig({ ...config, views: updatedViews });
 
     setIsAddingFilter(false);
@@ -789,11 +820,11 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   };
 
   const handleRemoveFilter = (index: number) => {
-    const currentFilters = activeView.filters || [];
+    const currentFilters = activeFilters;
     const newFilters = currentFilters.filter((_, i) => i !== index);
 
     const updatedViews = [...config.views];
-    updatedViews[0] = { ...activeView, filters: newFilters };
+    updatedViews[0] = { ...activeView, filters: { and: newFilters } };
     saveConfig({ ...config, views: updatedViews });
   };
 
@@ -824,7 +855,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     let rows = [...allRows];
 
     // Apply Filters
-    const filters = activeView.filters || [];
+    const filters = activeFilters;
     filters.forEach((f) => {
       rows = rows.filter(row => {
         const val = row.properties[f.property];
@@ -874,7 +905,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     }
 
     return rows;
-  }, [allRows, activeView]);
+  }, [allRows, activeView, activeFilters]);
 
   // Columns to show
   const visibleColumns = useMemo(() => {
@@ -1176,11 +1207,10 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
           /* Visual Table Database View */
           <div className="w-full h-full flex flex-col overflow-hidden bg-background">
             
-            {/* Displaying active filter badges */}
-            {(activeView.filters || []).length > 0 && (
+            {activeFilters.length > 0 && (
               <div className="px-6 py-2 border-b border-border/40 bg-card/10 flex flex-wrap gap-1.5 items-center select-none shrink-0">
                 <span className="text-[0.6rem] font-bold text-muted-foreground uppercase tracking-widest mr-1">Active Filters:</span>
-                {(activeView.filters || []).map((f, idx) => (
+                {activeFilters.map((f, idx) => (
                   <div key={idx} className="flex items-center gap-1 bg-white/[0.04] border border-border px-2.5 py-0.5 rounded-full text-[0.68rem] text-muted-foreground animate-fade-in">
                     <span className="font-semibold text-primary">{f.property}</span>
                     <span>{f.operator}</span>
