@@ -417,6 +417,60 @@ export const Editor: React.FC<EditorProps> = ({
     }
   }, [isWindowingMode, windowStartLine, windowEndLine, pushEditorState]);
 
+  const syncPreviewScrollFromEditor = useCallback((editorViewport: HTMLElement, previewContainer: HTMLElement) => {
+    const currentLineIndex = getTopVisibleLineIndex();
+
+    if (editorViewport.scrollTop === 0) {
+      previewContainer.scrollTop = 0;
+    } else {
+      let targetTop = -1;
+      let targetElement: HTMLElement | null = null;
+
+      const table = previewContainer.querySelector('table');
+      if (table) {
+        const rows = table.querySelectorAll('tbody tr');
+        const targetRowIdx = currentLineIndex - windowStartLine;
+        if (rows[targetRowIdx]) {
+          targetElement = rows[targetRowIdx] as HTMLElement;
+        }
+      } else {
+        const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
+        if (lineEl) {
+          targetElement = lineEl as HTMLElement;
+        }
+      }
+
+      if (targetElement) {
+        targetTop = targetElement.getBoundingClientRect().top - previewContainer.getBoundingClientRect().top + previewContainer.scrollTop;
+        
+        const localLineIndex = currentLineIndex - windowStartLine;
+        let lineTop = 0;
+        for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
+          lineTop += windowLineHeights[i];
+        }
+        const relativeScrollTop = editorViewport.scrollTop - (windowStartLine * 24);
+        const editorLineScrollOffset = Math.max(0, relativeScrollTop - lineTop);
+        const editorLineHeight = windowLineHeights[localLineIndex] || 24;
+        const proportion = Math.min(1, editorLineScrollOffset / editorLineHeight);
+        
+        const targetHeight = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
+        const previewOffset = proportion * targetHeight;
+        targetTop += previewOffset;
+      }
+
+      if (targetTop !== -1) {
+        previewContainer.scrollTop = targetTop;
+      } else {
+        const maxEditorScroll = editorViewport.scrollHeight - editorViewport.clientHeight;
+        if (maxEditorScroll > 0) {
+          const percentage = editorViewport.scrollTop / maxEditorScroll;
+          const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
+          previewContainer.scrollTop = percentage * maxPreviewScroll;
+        }
+      }
+    }
+  }, [windowStartLine, windowLineHeights, getTopVisibleLineIndex]);
+
   const handleEditorScroll = (e: React.UIEvent<HTMLDivElement | HTMLTextAreaElement>) => {
     const editorViewport = e.currentTarget;
     if (!editorViewport) return;
@@ -474,46 +528,7 @@ export const Editor: React.FC<EditorProps> = ({
 
       const previewContainer = previewScrollContainerRef.current;
       if (previewContainer) {
-        const currentLineIndex = getTopVisibleLineIndex();
-        let targetElement: HTMLElement | null = null;
-        let containerOffset = 0;
-
-        if (editorViewport.scrollTop === 0) {
-          previewContainer.scrollTop = 0;
-        } else {
-          // Try to find a table row
-          const table = previewContainer.querySelector('table');
-          if (table) {
-            const rows = table.querySelectorAll('tbody tr');
-            const targetRowIdx = currentLineIndex - windowStartLine;
-            if (rows[targetRowIdx]) {
-              targetElement = rows[targetRowIdx] as HTMLElement;
-              containerOffset = table.offsetTop;
-            }
-          } else {
-            // Try to find a preview line (for code blocks or text files)
-            const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
-            if (lineEl) {
-              targetElement = lineEl as HTMLElement;
-              const pre = previewContainer.querySelector('pre');
-              if (pre) {
-                containerOffset = pre.offsetTop;
-              }
-            }
-          }
-
-          if (targetElement) {
-            previewContainer.scrollTop = targetElement.offsetTop + containerOffset;
-          } else {
-            // Fallback to percentage-based scroll sync
-            const maxEditorScroll = editorViewport.scrollHeight - editorViewport.clientHeight;
-            if (maxEditorScroll > 0) {
-              const percentage = editorViewport.scrollTop / maxEditorScroll;
-              const maxPreviewScroll = previewContainer.scrollHeight - previewContainer.clientHeight;
-              previewContainer.scrollTop = percentage * maxPreviewScroll;
-            }
-          }
-        }
+        syncPreviewScrollFromEditor(editorViewport, previewContainer);
       }
 
       setTimeout(() => {
@@ -545,26 +560,31 @@ export const Editor: React.FC<EditorProps> = ({
 
         if (table || lines.length > 0) {
           let matchedLineIndex = windowStartLine;
-          const scrollTop = previewContainer.scrollTop;
+          const containerTop = previewContainer.getBoundingClientRect().top;
+          let targetElement: HTMLElement | null = null;
 
           if (table) {
             const rows = table.querySelectorAll('tbody tr');
             let matchedRowIdx = 0;
             for (let i = 0; i < rows.length; i++) {
               const rowElement = rows[i] as HTMLElement;
-              if (rowElement.offsetTop + table.offsetTop >= scrollTop) {
+              const relativeTop = rowElement.getBoundingClientRect().top - containerTop;
+              const height = rowElement.getBoundingClientRect().height || rowElement.clientHeight || 26;
+              if (relativeTop + height > 0) {
+                targetElement = rowElement;
                 matchedRowIdx = i;
                 break;
               }
             }
             matchedLineIndex = windowStartLine + matchedRowIdx;
           } else {
-            const pre = previewContainer.querySelector('pre');
-            const containerOffset = pre ? pre.offsetTop : 0;
             let matchedLineOffset = 0;
             for (let i = 0; i < lines.length; i++) {
               const lineElement = lines[i] as HTMLElement;
-              if (lineElement.offsetTop + containerOffset >= scrollTop) {
+              const relativeTop = lineElement.getBoundingClientRect().top - containerTop;
+              const height = lineElement.getBoundingClientRect().height || lineElement.clientHeight || 26;
+              if (relativeTop + height > 0) {
+                targetElement = lineElement;
                 matchedLineOffset = i;
                 break;
               }
@@ -579,6 +599,16 @@ export const Editor: React.FC<EditorProps> = ({
           const localLineIndex = matchedLineIndex - windowStartLine;
           for (let i = 0; i < Math.min(localLineIndex, windowLineHeights.length); i++) {
             targetScrollTop += windowLineHeights[i];
+          }
+
+          if (targetElement) {
+            const height = targetElement.getBoundingClientRect().height || targetElement.clientHeight || 26;
+            const relativeTop = targetElement.getBoundingClientRect().top - containerTop;
+            const previewLineScrollOffset = Math.max(0, -relativeTop);
+            const proportion = previewLineScrollOffset / height;
+            const editorLineHeight = windowLineHeights[localLineIndex] || 24;
+            const editorLineScrollOffset = proportion * editorLineHeight;
+            targetScrollTop += editorLineScrollOffset;
           }
 
           if (isWindowingMode && viewportRef.current) {
@@ -1165,38 +1195,7 @@ export const Editor: React.FC<EditorProps> = ({
         const editorViewport = viewportRef.current;
         if (editorViewport) {
           isScrollingEditorRef.current = true;
-          const currentLineIndex = getTopVisibleLineIndex();
-
-          if (editorViewport.scrollTop === 0) {
-            previewContainer.scrollTop = 0;
-          } else {
-            let targetElement: HTMLElement | null = null;
-            let containerOffset = 0;
-
-            const table = previewContainer.querySelector('table');
-            if (table) {
-              const rows = table.querySelectorAll('tbody tr');
-              const targetRowIdx = currentLineIndex - windowStartLine;
-              if (rows[targetRowIdx]) {
-                targetElement = rows[targetRowIdx] as HTMLElement;
-                containerOffset = table.offsetTop;
-              }
-            } else {
-              const lineEl = previewContainer.querySelector(`.preview-line[data-line="${currentLineIndex}"]`);
-              if (lineEl) {
-                targetElement = lineEl as HTMLElement;
-                const pre = previewContainer.querySelector('pre');
-                if (pre) {
-                  containerOffset = pre.offsetTop;
-                }
-              }
-            }
-
-            if (targetElement) {
-              previewContainer.scrollTop = targetElement.offsetTop + containerOffset;
-            }
-          }
-
+          syncPreviewScrollFromEditor(editorViewport, previewContainer);
           setTimeout(() => {
             isScrollingEditorRef.current = false;
           }, 50);
@@ -1205,7 +1204,7 @@ export const Editor: React.FC<EditorProps> = ({
         previewContainer.innerHTML = renderMarkdown(content, 0);
       }
     }
-  }, [content, filePath, viewMode, renderMarkdown, isWindowingMode, windowStartLine, windowEndLine, getTopVisibleLineIndex, virtualLines.length]);
+  }, [content, filePath, viewMode, renderMarkdown, isWindowingMode, windowStartLine, windowEndLine, getTopVisibleLineIndex, virtualLines.length, syncPreviewScrollFromEditor]);
 
   // Unified save orchestration
   const performAutoSave = useCallback(async () => {
