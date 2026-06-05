@@ -13,7 +13,7 @@ This was created as an alternative to Obsidian on web.
 - Includes background and foreground conflict handling for remote updates and idle tab detection.
 - Supports content search.
 
-(I am aware of many of the bugs and am attempting to fix it. This project was created partly with AI assistance (Claude Opus/Gemini.))
+(I've squashed many of the bugs and issues this thing had. If you find any more, raise an issue or welcome@noob31.com. This project was created partly with AI assistance (Claude Opus/Gemini.))
 
 Demo: https://notes.noob31.com/
 
