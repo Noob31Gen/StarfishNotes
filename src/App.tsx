@@ -2259,13 +2259,33 @@ export default function App() {
           ? JSON.stringify({ nodes: [], edges: [] }, null, 2)
           : `version: 1\nsource:\n  folder: ""\nviews:\n  - id: view_table_1\n    name: "All Active Projects"\n    type: table\n    columns:\n      - property: file.name\n        visible: true\n        width: 200\n`;
 
-      const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`);
+      let resultSha: string;
+      try {
+        const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`);
+        resultSha = result.sha;
+        // Also save to local cache for offline access
+        await saveLocalFile(finalPath, { content: initialText, sha: resultSha });
+      } catch (commitErr: unknown) {
+        const errMsg = commitErr instanceof Error ? commitErr.message : '';
+        const isNetworkError = commitErr instanceof TypeError || errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Failed to fetch');
+
+        if (isNetworkError) {
+          // Network is down — create file locally and mark as unsynced
+          console.warn('Network offline during file creation. Saving locally...', finalPath);
+          setIsNetworkOffline(true);
+          resultSha = 'offline-pending';
+          await saveLocalFile(finalPath, { content: initialText, sha: resultSha });
+          addUnsyncedFile(finalPath);
+        } else {
+          throw commitErr;
+        }
+      }
 
       const newFile: VaultFile = {
         path: finalPath,
         name: cleanFileName,
         type: 'blob',
-        sha: result.sha,
+        sha: resultSha,
       };
 
       setFiles(prev => [newFile, ...prev]);
@@ -2273,7 +2293,7 @@ export default function App() {
       setActiveFilePath(finalPath);
       setViewTab('workspace'); // Toggle workspace active
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Failed to create new file on GitHub.';
+      const msg = e instanceof Error ? e.message : 'Failed to create new file.';
       setAuthError(msg);
     } finally {
       setIsLoadingFile(false);
