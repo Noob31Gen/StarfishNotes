@@ -62,6 +62,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const touchActiveNodeRef = useRef<Node | null>(null);
   const initialPinchDistance = useRef<number | null>(null);
   const initialPinchZoom = useRef<number>(0.5);
+  const isPinchingRef = useRef<boolean>(false);
   const isTouchRef = useRef<boolean>(false);
 
   // Collapsible settings & physics filters states
@@ -826,6 +827,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
   const handleTouchMove = React.useCallback((e: TouchEvent) => {
     if (e.touches.length === 2 && initialPinchDistance.current !== null) {
+      isPinchingRef.current = true;
       if (e.cancelable) {
         e.preventDefault();
       }
@@ -837,6 +839,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
       newZoom = Math.max(0.25, Math.min(newZoom, 2.5));
       zoomRef.current = newZoom;
       setZoom(newZoom);
+      return;
+    }
+
+    // Transitioning from 2-finger pinch to 1-finger: reset mouse position
+    if (isPinchingRef.current && e.touches.length === 1) {
+      isPinchingRef.current = false;
+      const touch = e.touches[0];
+      mouseRef.current = { x: touch.clientX, y: touch.clientY };
       return;
     }
 
@@ -866,6 +876,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
   const handleTouchEnd = React.useCallback((e: TouchEvent) => {
     initialPinchDistance.current = null;
+    isPinchingRef.current = false;
     if (dragNodeRef.current) {
       const touch = e.changedTouches[0];
       if (touch) {
