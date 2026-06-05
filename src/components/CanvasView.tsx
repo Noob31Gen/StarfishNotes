@@ -574,6 +574,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   const isTouchPanning = useRef(false);
   const touchStart = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const touchDragNodeId = useRef<string | null>(null);
+  const isTouchRef = useRef(false);
 
   const initialPinchDistance = useRef<number | null>(null);
   const initialPinchZoom = useRef<number>(1);
@@ -1089,6 +1090,9 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   }, [activeConnection, getCanvasCoords, pushState]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Ignore mouse events when in touch mode (prevent synthetic mouse events from interfering)
+    if (isTouchRef.current) return;
+
     const target = e.target as HTMLElement;
     // Allow panning if clicking on background container, viewport grid, or utilizing middle mouse click
     if (
@@ -1109,6 +1113,9 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    // Ignore mouse events when in touch mode (prevent synthetic mouse events from interfering)
+    if (isTouchRef.current) return;
+
     if (isPanning) {
       setPanX(e.clientX - panStart.current.x);
       setPanY(e.clientY - panStart.current.y);
@@ -1129,6 +1136,9 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
+    // Ignore mouse events when in touch mode (prevent synthetic mouse events from interfering)
+    if (isTouchRef.current) return;
+
     setIsPanning(false);
 
     if (activeConnection) {
@@ -1177,6 +1187,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    isTouchRef.current = true;
     if (e.touches.length === 2) {
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
@@ -1241,6 +1252,11 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   const handleTouchEnd = (e: React.TouchEvent) => {
     initialPinchDistance.current = null;
     isTouchPanning.current = false;
+
+    // Reset touch flag after a short delay to allow synthetic mouse events to be ignored
+    setTimeout(() => {
+      isTouchRef.current = false;
+    }, 50);
 
     if (isTouchConnecting.current && activeConnection) {
       isTouchConnecting.current = false;
@@ -1656,6 +1672,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
         (activeDragResizeState !== 'idle' || activeConnection !== null) && "pointer-events-hijack-active"
       )}
       ref={containerRef}
+      style={{ touchAction: 'none' }}
       onMouseDown={handleMouseDown}
       onPaste={handleCanvasPaste}
       onMouseMove={handleMouseMove}

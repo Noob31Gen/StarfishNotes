@@ -61,6 +61,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const hoverNodeRef = useRef<Node | null>(null);
   const initialPinchDistance = useRef<number | null>(null);
   const initialPinchZoom = useRef<number>(0.5);
+  const isTouchRef = useRef<boolean>(false);
 
   // Collapsible settings & physics filters states
   const [showCanvas, setShowCanvas] = useState(true);
@@ -706,6 +707,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Ignore mouse events when in touch mode (prevent synthetic mouse events from interfering)
+    if (isTouchRef.current) return;
+
     const { x, y } = screenToWorld(e.clientX, e.clientY);
     dragStartScreenRef.current = { x: e.clientX, y: e.clientY };
 
@@ -730,6 +734,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Ignore mouse events when in touch mode (prevent synthetic mouse events from interfering)
+    if (isTouchRef.current) return;
+
     const { x, y } = screenToWorld(e.clientX, e.clientY);
 
     const hoverNode = nodesRef.current.find(node => {
@@ -757,6 +764,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
   };
 
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Ignore mouse events when in touch mode (prevent synthetic mouse events from interfering)
+    if (isTouchRef.current) return;
+
     if (dragNodeRef.current) {
       const dx = e.clientX - dragStartScreenRef.current.x;
       const dy = e.clientY - dragStartScreenRef.current.y;
@@ -771,6 +781,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   };
 
   const handleTouchStart = React.useCallback((e: TouchEvent) => {
+    isTouchRef.current = true;
     if (e.cancelable) {
       e.preventDefault();
     }
@@ -863,6 +874,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
     dragNodeRef.current = null;
     isDraggingRef.current = false;
+    setTimeout(() => {
+      isTouchRef.current = false;
+    }, 50);
   }, [onOpenNote]);
 
   useEffect(() => {
@@ -893,6 +907,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       <canvas
         ref={canvasRef}
         className="w-full h-full block cursor-grab active:cursor-grabbing"
+        style={{ touchAction: 'none' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
