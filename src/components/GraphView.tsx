@@ -1041,6 +1041,32 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 />
               </div>
             </div>
+
+            {/* Map Legend */}
+            <div className="flex flex-col gap-2.5 border-t border-border/80 pt-3">
+              <span className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-0.5">Node Legend</span>
+              
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 bg-[#8b5cf6] rounded-full shrink-0 shadow-[0_0_6px_#8b5cf6]" />
+                <span className="text-xs text-muted-foreground">Markdown Note</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 bg-[#0d9488] rounded-full shrink-0 shadow-[0_0_6px_#0d9488]" />
+                <span className="text-xs text-muted-foreground">Obsidian Canvas</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 bg-[#ef4444] rounded-full shrink-0 shadow-[0_0_6px_#ef4444]" />
+                <span className="text-xs text-muted-foreground">Obsidian Base</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 bg-[#c084fc] rounded-full shrink-0 shadow-[0_0_8px_#c084fc]" />
+                <span className="text-xs text-muted-foreground">Active Note</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 rounded-full border-2 border-[#475569] bg-[rgba(71,85,105,0.15)] shrink-0" />
+                <span className="text-xs text-muted-foreground">Ghost Note</span>
+              </div>
+            </div>
           </div>
         )}
       </div>
