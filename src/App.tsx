@@ -4,8 +4,7 @@ import JSZip from 'jszip';
 import {
   validateRepository, checkVaultCompatibility, initializeVault,
   fetchRepositoryTree, fetchFileContent, commitFileContent, deleteFile, syncVault,
-  commitAttachment, fetchBinaryFileContent, isTextFile, isBinaryBytes, registerDetectedTextFile, safeB64Decode,
-  GitConflictError
+  commitAttachment, fetchBinaryFileContent, isTextFile, isBinaryBytes, registerDetectedTextFile, safeB64Decode
 } from './services/github';
 import type { VaultFile } from './services/github';
 import {
@@ -147,9 +146,6 @@ export default function App() {
 
   // Keep track of ghost note paths that failed to be created to prevent infinite request loops
   const failedGhostNotesRef = React.useRef<Set<string>>(new Set());
-
-  // Keep track of file paths that failed to load content to prevent infinite request loops
-  const failedFileLoadsRef = React.useRef<Set<string>>(new Set());
 
   // Global premium toast error notification system (replaces blocking alerts)
   const [globalError, setGlobalError] = useState('');
@@ -480,10 +476,8 @@ export default function App() {
           [path]: text
         }));
       }
-      failedFileLoadsRef.current.delete(path);
     } catch (e) {
       console.error('Failed to load offline file content:', e);
-      failedFileLoadsRef.current.add(path);
     } finally {
       setIsLoadingFile(false);
     }
@@ -957,11 +951,7 @@ export default function App() {
             const fileInTree = tree.find(f => f.path === path);
             if (fileInTree) {
               // File exists on remote - check if remote SHA matches our local pre-edit SHA
-              const isEditingActive = path === activeFilePath && (Date.now() - lastActiveTimeRef.current <= 5 * 60 * 1000);
-              if (isEditingActive) {
-                // Prefer local: treat as safe to push
-                safeToPush.push(path);
-              } else if (cachedFile.sha === 'offline-pending' || cachedFile.sha !== fileInTree.sha) {
+              if (cachedFile.sha === 'offline-pending' || cachedFile.sha !== fileInTree.sha) {
                 // Parallel edit conflict!
                 transitionConflicts.push(fileInTree);
               } else {
@@ -1050,10 +1040,7 @@ export default function App() {
             idleConflicts.push(remoteFile);
           } else if (localFile.sha !== remoteFile.sha) {
             // Mismatching SHA (remote updated)
-            const isEditingActive = remoteFile.path === activeFilePath && (Date.now() - lastActiveTimeRef.current <= 5 * 60 * 1000);
-            if (!isEditingActive) {
-              idleConflicts.push(remoteFile);
-            }
+            idleConflicts.push(remoteFile);
           }
         }
 
@@ -1088,10 +1075,7 @@ export default function App() {
         const activeFileInTree = tree.find(f => f.path === activeFilePath);
         const localActiveFile = await getLocalFile(activeFilePath);
         if (activeFileInTree && localActiveFile && localActiveFile.sha !== activeFileInTree.sha) {
-          const isEditingActive = Date.now() - lastActiveTimeRef.current <= 5 * 60 * 1000;
-          if (!isEditingActive) {
-            activeHasRemoteUpdate = true;
-          }
+          activeHasRemoteUpdate = true;
         }
       }
       setActiveFileHasRemoteUpdate(activeHasRemoteUpdate);
@@ -1190,10 +1174,8 @@ export default function App() {
         ...prev,
         [path]: content,
       }));
-      failedFileLoadsRef.current.delete(path);
-    } catch (err) {
-      console.error(`Failed to load file content for ${path}:`, err);
-      failedFileLoadsRef.current.add(path);
+    } catch {
+      // Failed loading file content
     } finally {
       setIsLoadingFile(false);
     }
@@ -1240,10 +1222,8 @@ export default function App() {
         ...prev,
         [path]: fileUrl
       }));
-      failedFileLoadsRef.current.delete(path);
     } catch (e) {
       console.error('Failed to load binary file:', e);
-      failedFileLoadsRef.current.add(path);
     }
   }, [vaultImages, githubToken, repoName, isOffline, loadBinaryFileOffline]);
 
@@ -1269,7 +1249,6 @@ export default function App() {
 
       if (!base64) {
         setIsLoadingFile(false);
-        failedFileLoadsRef.current.add(path);
         return;
       }
 
@@ -1321,10 +1300,8 @@ export default function App() {
           [path]: text
         }));
       }
-      failedFileLoadsRef.current.delete(path);
     } catch (e) {
       console.error('Failed to load and classify unknown file:', e);
-      failedFileLoadsRef.current.add(path);
     } finally {
       setIsLoadingFile(false);
     }
@@ -2153,14 +2130,12 @@ export default function App() {
     }
   }, [conflictingFiles, resolveKeepRemote]);
 
-  const handleSaveFile = async (path: string, content: string, fileSha: string | null, allowOverwrite: boolean = false) => {
+  const handleSaveFile = async (path: string, content: string, fileSha: string | null) => {
     if (isOffline) {
       return handleSaveFileOffline(path, content);
     }
-    const isEditingActive = path === activeFilePath && (Date.now() - lastActiveTimeRef.current <= 5 * 60 * 1000);
-    const finalAllowOverwrite = allowOverwrite || isEditingActive;
     try {
-      const result = await commitFileContent(githubToken, repoName, branchName, path, content, fileSha, 'update note via StarfishNotes', finalAllowOverwrite);
+      const result = await commitFileContent(githubToken, repoName, branchName, path, content, fileSha);
 
       // Update in-memory file structure
       setFileContents(prev => ({
@@ -2178,12 +2153,6 @@ export default function App() {
       setActiveFileHasRemoteUpdate(false);
       return result;
     } catch (err: unknown) {
-      if (err instanceof GitConflictError) {
-        console.warn("Conflict detected during save. Prompting resolution...");
-        setActiveFileHasRemoteUpdate(true);
-        throw err;
-      }
-
       const errMsg = err instanceof Error ? err.message : '';
       const isNetworkError = err instanceof TypeError || errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Failed to fetch');
 
@@ -2231,7 +2200,7 @@ export default function App() {
     const content = fileContents[activeFilePath] || '';
     const activeFile = files.find(f => f.path === activeFilePath);
     try {
-      await handleSaveFile(activeFilePath, content, activeFile?.sha || null, true);
+      await handleSaveFile(activeFilePath, content, activeFile?.sha || null);
       setActiveFileHasRemoteUpdate(false);
       console.log(`Resolved active conflict: kept local version for ${activeFilePath}`);
     } catch (err) {
@@ -2292,7 +2261,7 @@ export default function App() {
 
       let resultSha: string;
       try {
-        const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`, false);
+        const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`);
         resultSha = result.sha;
         // Also save to local cache for offline access
         await saveLocalFile(finalPath, { content: initialText, sha: resultSha });
@@ -2502,13 +2471,9 @@ export default function App() {
         await offlineStorage.deleteFile(oldPath);
       } else {
         const commitMessage = `rename note "${oldPath}" to "${newPath}" via StarfishNotes`;
-        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage, false);
+        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
         sha = result.sha;
-        try {
-          await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
-        } catch (delErr) {
-          console.warn(`Rename partial failure: delete old path "${oldPath}" failed:`, delErr);
-        }
+        await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
       }
 
       // 4. Update states
@@ -2696,13 +2661,9 @@ export default function App() {
         await offlineStorage.deleteFile(oldPath);
       } else {
         const commitMessage = `move note "${oldPath}" to "${newPath}" via StarfishNotes`;
-        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage, false);
+        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
         sha = result.sha;
-        try {
-          await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
-        } catch (delErr) {
-          console.warn(`Move partial failure: delete old path "${oldPath}" failed:`, delErr);
-        }
+        await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
       }
 
       let gitkeepFile: VaultFile | null = null;
@@ -2778,17 +2739,10 @@ export default function App() {
     }
   };
 
-  // Reset failed file loads tracking when switching active notes
-  useEffect(() => {
-    failedFileLoadsRef.current.clear();
-  }, [activeFilePath]);
-
   useEffect(() => {
     if (activeFilePath) {
-      if (isLoadingFile) return;
       const matchingFile = files.find(f => f.path === activeFilePath);
       if (matchingFile) {
-        if (failedFileLoadsRef.current.has(matchingFile.path)) return;
         const lastDot = matchingFile.path.lastIndexOf('.');
         const ext = lastDot !== -1 ? matchingFile.path.substring(lastDot).toLowerCase() : '';
         const extName = ext.startsWith('.') ? ext.substring(1) : ext;

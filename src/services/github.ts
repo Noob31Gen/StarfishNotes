@@ -450,8 +450,7 @@ export async function commitFileContent(
   path: string,
   content: string,
   sha: string | null, // null indicates new file
-  commitMessage: string = 'update note via StarfishNotes',
-  allowOverwrite: boolean = true
+  commitMessage: string = 'update note via StarfishNotes'
 ): Promise<{ sha: string }> {
   const payload: { message: string; content: string; branch: string; sha?: string } = {
     message: commitMessage,
@@ -468,7 +467,7 @@ export async function commitFileContent(
     body: JSON.stringify(payload),
   });
 
-  if ((res.status === 409 || res.status === 422) && allowOverwrite) {
+  if (res.status === 409 || res.status === 422) {
     // Conflict detected - local-first resolution takes full priority
     // Directly fetch the latest metadata to get the fresh remote SHA
     try {
@@ -534,9 +533,6 @@ export async function commitFileContent(
 
   if (!res.ok) {
     const err = await res.json();
-    if (res.status === 409 || res.status === 422) {
-      throw new GitConflictError(err.message || 'Conflict: Remote file has been updated.');
-    }
     throw new Error(err.message || `Failed to save file: ${path}`);
   }
 
