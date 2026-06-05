@@ -450,7 +450,8 @@ export async function commitFileContent(
   path: string,
   content: string,
   sha: string | null, // null indicates new file
-  commitMessage: string = 'update note via StarfishNotes'
+  commitMessage: string = 'update note via StarfishNotes',
+  allowOverwrite: boolean = true
 ): Promise<{ sha: string }> {
   const payload: { message: string; content: string; branch: string; sha?: string } = {
     message: commitMessage,
@@ -467,7 +468,7 @@ export async function commitFileContent(
     body: JSON.stringify(payload),
   });
 
-  if (res.status === 409 || res.status === 422) {
+  if ((res.status === 409 || res.status === 422) && allowOverwrite) {
     // Conflict detected - local-first resolution takes full priority
     // Directly fetch the latest metadata to get the fresh remote SHA
     try {

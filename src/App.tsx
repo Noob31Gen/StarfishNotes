@@ -147,6 +147,9 @@ export default function App() {
   // Keep track of ghost note paths that failed to be created to prevent infinite request loops
   const failedGhostNotesRef = React.useRef<Set<string>>(new Set());
 
+  // Keep track of file paths that failed to load content to prevent infinite request loops
+  const failedFileLoadsRef = React.useRef<Set<string>>(new Set());
+
   // Global premium toast error notification system (replaces blocking alerts)
   const [globalError, setGlobalError] = useState('');
 
@@ -476,8 +479,10 @@ export default function App() {
           [path]: text
         }));
       }
+      failedFileLoadsRef.current.delete(path);
     } catch (e) {
       console.error('Failed to load offline file content:', e);
+      failedFileLoadsRef.current.add(path);
     } finally {
       setIsLoadingFile(false);
     }
@@ -1174,8 +1179,10 @@ export default function App() {
         ...prev,
         [path]: content,
       }));
-    } catch {
-      // Failed loading file content
+      failedFileLoadsRef.current.delete(path);
+    } catch (err) {
+      console.error(`Failed to load file content for ${path}:`, err);
+      failedFileLoadsRef.current.add(path);
     } finally {
       setIsLoadingFile(false);
     }
@@ -1222,8 +1229,10 @@ export default function App() {
         ...prev,
         [path]: fileUrl
       }));
+      failedFileLoadsRef.current.delete(path);
     } catch (e) {
       console.error('Failed to load binary file:', e);
+      failedFileLoadsRef.current.add(path);
     }
   }, [vaultImages, githubToken, repoName, isOffline, loadBinaryFileOffline]);
 
@@ -1249,6 +1258,7 @@ export default function App() {
 
       if (!base64) {
         setIsLoadingFile(false);
+        failedFileLoadsRef.current.add(path);
         return;
       }
 
@@ -1300,8 +1310,10 @@ export default function App() {
           [path]: text
         }));
       }
+      failedFileLoadsRef.current.delete(path);
     } catch (e) {
       console.error('Failed to load and classify unknown file:', e);
+      failedFileLoadsRef.current.add(path);
     } finally {
       setIsLoadingFile(false);
     }
@@ -2261,7 +2273,7 @@ export default function App() {
 
       let resultSha: string;
       try {
-        const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`);
+        const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`, false);
         resultSha = result.sha;
         // Also save to local cache for offline access
         await saveLocalFile(finalPath, { content: initialText, sha: resultSha });
@@ -2471,9 +2483,13 @@ export default function App() {
         await offlineStorage.deleteFile(oldPath);
       } else {
         const commitMessage = `rename note "${oldPath}" to "${newPath}" via StarfishNotes`;
-        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage, false);
         sha = result.sha;
-        await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
+        try {
+          await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
+        } catch (delErr) {
+          console.warn(`Rename partial failure: delete old path "${oldPath}" failed:`, delErr);
+        }
       }
 
       // 4. Update states
@@ -2661,9 +2677,13 @@ export default function App() {
         await offlineStorage.deleteFile(oldPath);
       } else {
         const commitMessage = `move note "${oldPath}" to "${newPath}" via StarfishNotes`;
-        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+        const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage, false);
         sha = result.sha;
-        await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
+        try {
+          await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
+        } catch (delErr) {
+          console.warn(`Move partial failure: delete old path "${oldPath}" failed:`, delErr);
+        }
       }
 
       let gitkeepFile: VaultFile | null = null;
@@ -2739,10 +2759,17 @@ export default function App() {
     }
   };
 
+  // Reset failed file loads tracking when switching active notes
+  useEffect(() => {
+    failedFileLoadsRef.current.clear();
+  }, [activeFilePath]);
+
   useEffect(() => {
     if (activeFilePath) {
+      if (isLoadingFile) return;
       const matchingFile = files.find(f => f.path === activeFilePath);
       if (matchingFile) {
+        if (failedFileLoadsRef.current.has(matchingFile.path)) return;
         const lastDot = matchingFile.path.lastIndexOf('.');
         const ext = lastDot !== -1 ? matchingFile.path.substring(lastDot).toLowerCase() : '';
         const extName = ext.startsWith('.') ? ext.substring(1) : ext;
