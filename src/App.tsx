@@ -1771,6 +1771,37 @@ export default function App() {
     };
   }, [refreshFiles]);
 
+  // Periodic network recovery poller — browser 'online' events are unreliable
+  // (e.g. WiFi connected but no actual internet). When we detect network loss,
+  // actively poll every 15s to detect recovery without requiring a page refresh.
+  useEffect(() => {
+    if (!isNetworkOffline || isOffline || !githubToken) return;
+
+    const checkConnectivity = async () => {
+      try {
+        // Lightweight HEAD request to GitHub API root
+        const res = await fetch('https://api.github.com', {
+          method: 'HEAD',
+          cache: 'no-store',
+        });
+        if (res.ok || res.status === 403) {
+          // 403 = rate-limited but reachable — network is back
+          console.log('Network recovery detected via polling. Reconnecting...');
+          setIsNetworkOffline(false);
+          refreshFiles();
+        }
+      } catch {
+        // Still offline — do nothing, next interval will retry
+      }
+    };
+
+    const interval = setInterval(checkConnectivity, 15_000);
+    // Also run immediately on mount (e.g. if online event was missed)
+    checkConnectivity();
+
+    return () => clearInterval(interval);
+  }, [isNetworkOffline, isOffline, githubToken, refreshFiles]);
+
   // Activity monitor for idle detection
   useEffect(() => {
     const updateActivity = () => {
@@ -2947,7 +2978,14 @@ export default function App() {
       {isNetworkOffline && (
         <div className="fixed bottom-6 left-6 right-6 sm:right-auto z-[2000] bg-[#1c1d24]/95 border border-amber-500/30 text-amber-500 text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-fade-in backdrop-blur-xl select-text max-w-[calc(100vw-48px)] sm:max-w-md">
           <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
-          <span>Offline Mode: Working with cached notes. Edits will sync when connection is restored.</span>
+          <span className="flex-1">Offline Mode: Working with cached notes. Edits will sync when connection is restored.</span>
+          <button
+            type="button"
+            onClick={() => refreshFiles()}
+            className="text-amber-400 hover:text-amber-200 text-[0.65rem] uppercase tracking-wide ml-1 px-2 py-1 rounded-md border border-amber-500/30 hover:bg-amber-500/10 cursor-pointer shrink-0 transition-colors"
+          >
+            Retry
+          </button>
         </div>
       )}
 
