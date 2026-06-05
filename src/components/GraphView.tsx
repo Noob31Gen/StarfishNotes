@@ -59,6 +59,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const dragStartScreenRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const mouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const hoverNodeRef = useRef<Node | null>(null);
+  const touchActiveNodeRef = useRef<Node | null>(null);
   const initialPinchDistance = useRef<number | null>(null);
   const initialPinchZoom = useRef<number>(0.5);
   const isTouchRef = useRef<boolean>(false);
@@ -540,14 +541,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
         const s = nodes.find(n => n.id === link.source);
         const t = nodes.find(n => n.id === link.target);
         if (s && t) {
-          const isHighlighted = hoverNodeRef.current &&
-            (hoverNodeRef.current.id === s.id || hoverNodeRef.current.id === t.id);
+          const activeNode = hoverNodeRef.current || touchActiveNodeRef.current;
+          const isHighlighted = activeNode &&
+            (activeNode.id === s.id || activeNode.id === t.id);
 
           ctx.beginPath();
           ctx.moveTo(s.x, s.y);
           ctx.lineTo(t.x, t.y);
 
-          if (hoverNodeRef.current) {
+          if (activeNode) {
             if (isHighlighted) {
               ctx.strokeStyle = 'rgba(192, 132, 252, 0.95)';
               ctx.lineWidth = 2.2;
@@ -570,10 +572,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
       // Draw Nodes
       nodes.forEach(node => {
-        const isHovered = hoverNodeRef.current && hoverNodeRef.current.id === node.id;
-        const isRelated = !hoverNodeRef.current || isHovered || linksRef.current.some(
-          l => (l.source === node.id && l.target === hoverNodeRef.current!.id) ||
-               (l.source === hoverNodeRef.current!.id && l.target === node.id)
+        const activeNode = hoverNodeRef.current || touchActiveNodeRef.current;
+        const isHovered = activeNode && activeNode.id === node.id;
+        const isRelated = !activeNode || isHovered || linksRef.current.some(
+          l => (l.source === node.id && l.target === activeNode!.id) ||
+               (l.source === activeNode!.id && l.target === node.id)
         );
 
         ctx.save();
@@ -791,6 +794,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const touch2 = e.touches[1];
       initialPinchDistance.current = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
       initialPinchZoom.current = zoomRef.current;
+      touchActiveNodeRef.current = null;
       return;
     }
 
@@ -807,12 +811,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     if (clickedNode) {
       dragNodeRef.current = clickedNode;
+      touchActiveNodeRef.current = clickedNode;
       isDraggingRef.current = true;
       clickedNode.vx = 0;
       clickedNode.vy = 0;
     } else {
       isDraggingRef.current = false;
       dragNodeRef.current = null;
+      touchActiveNodeRef.current = null;
     }
 
     mouseRef.current = { x: touch.clientX, y: touch.clientY };
@@ -874,6 +880,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
     dragNodeRef.current = null;
     isDraggingRef.current = false;
+    touchActiveNodeRef.current = null;
     setTimeout(() => {
       isTouchRef.current = false;
     }, 50);
