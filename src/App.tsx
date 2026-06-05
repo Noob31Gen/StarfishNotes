@@ -404,13 +404,13 @@ export default function App() {
         workers.push(worker());
       }
       await Promise.all(workers);
-      
+
       // Check if status is still 'fetching' before updating (user might have started another fetch)
       setPrefetchStatus(prevStatus => {
         if (prevStatus !== 'fetching') return prevStatus;
         return hasError ? 'error' : 'success';
       });
-      
+
       setTimeout(() => {
         setPrefetchStatus(prevStatus => {
           // Only reset to idle if still in success/error state
@@ -913,7 +913,7 @@ export default function App() {
       }
       setFiles(localTree);
       await preloadAllFilesContents(localTree);
-      
+
       if (localTree.length > 0 && !activeFilePath) {
         const defaultNote = localTree.find(f => f.name === 'Welcome.md') || localTree[0];
         setActiveFilePath(defaultNote.path);
@@ -1033,7 +1033,7 @@ export default function App() {
         const idleConflicts: VaultFile[] = [];
         for (const remoteFile of tree) {
           if (!isTextFile(remoteFile.path) && !remoteFile.path.endsWith('.canvas')) continue;
-          
+
           const localFile = await getLocalFile(remoteFile.path);
           if (!localFile) {
             // Missing locally, remote has it
@@ -1094,7 +1094,7 @@ export default function App() {
       console.warn("Tree retrieval failed, checking if it is a network error...", err);
       const errMsg = err instanceof Error ? err.message : '';
       const isNetworkError = err instanceof TypeError || errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Failed to fetch');
-      
+
       if (isNetworkError) {
         setIsNetworkOffline(true);
         console.log("Network error detected. Falling back to local offline cache...");
@@ -1140,7 +1140,7 @@ export default function App() {
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : '';
       const isNetworkError = e instanceof TypeError || errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Failed to fetch');
-      
+
       if (isNetworkError) {
         console.log("Network error on auto-connect. Loading cached notes...");
         setIsNetworkOffline(true);
@@ -1841,12 +1841,12 @@ export default function App() {
         // Note: async operations in pagehide are best-effort (browser may not wait)
         // but idb-keyval clear() and purgeVault() use microtask-based promises
         // that typically complete before the page is discarded.
-        clearAllLocalFiles().catch(() => {});
-        offlineStorage.purgeVault().catch(() => {});
+        clearAllLocalFiles().catch(() => { });
+        offlineStorage.purgeVault().catch(() => { });
       } else if (mode === 'session') {
         // Session mode: browser clears sessionStorage on tab close,
         // but idb-keyval file cache persists — clean it up.
-        clearAllLocalFiles().catch(() => {});
+        clearAllLocalFiles().catch(() => { });
       }
     };
 
@@ -2150,6 +2150,8 @@ export default function App() {
         return f;
       }));
 
+      await saveLocalFile(path, { content: content, sha: result.sha });
+
       setActiveFileHasRemoteUpdate(false);
       return result;
     } catch (err: unknown) {
@@ -2159,10 +2161,10 @@ export default function App() {
       if (isNetworkError) {
         console.warn("Network offline during save. Caching note locally...", path);
         setIsNetworkOffline(true);
-        
+
         // 1. Save content locally
         await saveLocalFile(path, { content, sha: fileSha || 'offline-pending' });
-        
+
         // 2. Mark as unsynced
         addUnsyncedFile(path);
 
@@ -2304,10 +2306,10 @@ export default function App() {
     if (!deletedFilePath.includes('/')) return null;
     const parentFolder = deletedFilePath.substring(0, deletedFilePath.lastIndexOf('/'));
     const prefix = `${parentFolder}/`;
-    
+
     // Check if there are any files remaining in this folder (excluding .gitkeep)
-    const remainingFiles = currentFiles.filter(f => 
-      f.path.startsWith(prefix) && 
+    const remainingFiles = currentFiles.filter(f =>
+      f.path.startsWith(prefix) &&
       f.path !== deletedFilePath &&
       f.name !== '.gitkeep'
     );
@@ -2315,7 +2317,7 @@ export default function App() {
     if (remainingFiles.length === 0) {
       const gitkeepPath = `${prefix}.gitkeep`;
       const hasGitkeep = currentFiles.some(f => f.path === gitkeepPath);
-      
+
       if (!hasGitkeep) {
         console.log(`Folder "${parentFolder}" became empty. Creating .gitkeep placeholder...`);
         try {
