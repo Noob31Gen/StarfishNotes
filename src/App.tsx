@@ -4,7 +4,8 @@ import JSZip from 'jszip';
 import {
   validateRepository, checkVaultCompatibility, initializeVault,
   fetchRepositoryTree, fetchFileContent, commitFileContent, deleteFile, syncVault,
-  commitAttachment, fetchBinaryFileContent, isTextFile, isBinaryBytes, registerDetectedTextFile, safeB64Decode
+  commitAttachment, fetchBinaryFileContent, isTextFile, isBinaryBytes, registerDetectedTextFile, safeB64Decode,
+  GitConflictError
 } from './services/github';
 import type { VaultFile } from './services/github';
 import {
@@ -956,7 +957,11 @@ export default function App() {
             const fileInTree = tree.find(f => f.path === path);
             if (fileInTree) {
               // File exists on remote - check if remote SHA matches our local pre-edit SHA
-              if (cachedFile.sha === 'offline-pending' || cachedFile.sha !== fileInTree.sha) {
+              const isEditingActive = path === activeFilePath && (Date.now() - lastActiveTimeRef.current <= 5 * 60 * 1000);
+              if (isEditingActive) {
+                // Prefer local: treat as safe to push
+                safeToPush.push(path);
+              } else if (cachedFile.sha === 'offline-pending' || cachedFile.sha !== fileInTree.sha) {
                 // Parallel edit conflict!
                 transitionConflicts.push(fileInTree);
               } else {
@@ -1045,7 +1050,10 @@ export default function App() {
             idleConflicts.push(remoteFile);
           } else if (localFile.sha !== remoteFile.sha) {
             // Mismatching SHA (remote updated)
-            idleConflicts.push(remoteFile);
+            const isEditingActive = remoteFile.path === activeFilePath && (Date.now() - lastActiveTimeRef.current <= 5 * 60 * 1000);
+            if (!isEditingActive) {
+              idleConflicts.push(remoteFile);
+            }
           }
         }
 
@@ -1080,7 +1088,10 @@ export default function App() {
         const activeFileInTree = tree.find(f => f.path === activeFilePath);
         const localActiveFile = await getLocalFile(activeFilePath);
         if (activeFileInTree && localActiveFile && localActiveFile.sha !== activeFileInTree.sha) {
-          activeHasRemoteUpdate = true;
+          const isEditingActive = Date.now() - lastActiveTimeRef.current <= 5 * 60 * 1000;
+          if (!isEditingActive) {
+            activeHasRemoteUpdate = true;
+          }
         }
       }
       setActiveFileHasRemoteUpdate(activeHasRemoteUpdate);
@@ -2142,12 +2153,14 @@ export default function App() {
     }
   }, [conflictingFiles, resolveKeepRemote]);
 
-  const handleSaveFile = async (path: string, content: string, fileSha: string | null) => {
+  const handleSaveFile = async (path: string, content: string, fileSha: string | null, allowOverwrite: boolean = false) => {
     if (isOffline) {
       return handleSaveFileOffline(path, content);
     }
+    const isEditingActive = path === activeFilePath && (Date.now() - lastActiveTimeRef.current <= 5 * 60 * 1000);
+    const finalAllowOverwrite = allowOverwrite || isEditingActive;
     try {
-      const result = await commitFileContent(githubToken, repoName, branchName, path, content, fileSha);
+      const result = await commitFileContent(githubToken, repoName, branchName, path, content, fileSha, 'update note via StarfishNotes', finalAllowOverwrite);
 
       // Update in-memory file structure
       setFileContents(prev => ({
@@ -2165,6 +2178,12 @@ export default function App() {
       setActiveFileHasRemoteUpdate(false);
       return result;
     } catch (err: unknown) {
+      if (err instanceof GitConflictError) {
+        console.warn("Conflict detected during save. Prompting resolution...");
+        setActiveFileHasRemoteUpdate(true);
+        throw err;
+      }
+
       const errMsg = err instanceof Error ? err.message : '';
       const isNetworkError = err instanceof TypeError || errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Failed to fetch');
 
@@ -2212,7 +2231,7 @@ export default function App() {
     const content = fileContents[activeFilePath] || '';
     const activeFile = files.find(f => f.path === activeFilePath);
     try {
-      await handleSaveFile(activeFilePath, content, activeFile?.sha || null);
+      await handleSaveFile(activeFilePath, content, activeFile?.sha || null, true);
       setActiveFileHasRemoteUpdate(false);
       console.log(`Resolved active conflict: kept local version for ${activeFilePath}`);
     } catch (err) {

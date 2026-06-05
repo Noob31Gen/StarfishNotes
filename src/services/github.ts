@@ -534,6 +534,9 @@ export async function commitFileContent(
 
   if (!res.ok) {
     const err = await res.json();
+    if (res.status === 409 || res.status === 422) {
+      throw new GitConflictError(err.message || 'Conflict: Remote file has been updated.');
+    }
     throw new Error(err.message || `Failed to save file: ${path}`);
   }
 
