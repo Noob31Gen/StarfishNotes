@@ -258,14 +258,14 @@ export const Editor: React.FC<EditorProps> = ({
 
     const vLines = virtualLinesRef.current;
     const heights: number[] = [];
-    
+
     for (let i = windowStartLine; i < windowEndLine; i++) {
       const lineText = vLines[i] || '';
       const cleanLine = lineText.endsWith('\r') ? lineText.slice(0, -1) : lineText;
       mirror.textContent = cleanLine || ' ';
       heights.push(mirror.clientHeight || 24);
     }
-    
+
     return heights;
   }, [windowStartLine, windowEndLine]);
 
@@ -382,7 +382,7 @@ export const Editor: React.FC<EditorProps> = ({
       const updatedVirtualLines = [...virtualLinesRef.current];
       updatedVirtualLines.splice(windowStartLine, windowEndLine - windowStartLine, ...newChunkLines);
       virtualLinesRef.current = updatedVirtualLines;
-      
+
       const newFullContent = mergeVirtualLines(updatedVirtualLines);
       setFullContent(newFullContent);
       fullContentRef.current = newFullContent;
@@ -405,12 +405,12 @@ export const Editor: React.FC<EditorProps> = ({
     if (isWindowingMode) {
       const scrollTop = editorViewport.scrollTop;
       const clientHeight = editorViewport.clientHeight;
-      
+
       let accumulatedHeight = 0;
       let centerLine = windowStartLine;
       const targetMiddle = scrollTop + clientHeight / 2;
       const relativeMiddle = targetMiddle - (windowStartLine * 24);
-      
+
       if (relativeMiddle > 0) {
         for (let i = 0; i < windowLineHeights.length; i++) {
           accumulatedHeight += windowLineHeights[i];
@@ -520,7 +520,7 @@ export const Editor: React.FC<EditorProps> = ({
           const globalLine = startLineOffset + idx;
           return `<div class="preview-line" data-line="${globalLine}" style="line-height: 26px; min-height: 26px; white-space: pre; word-break: normal;">${line || ' '}</div>`;
         }).join('');
-        
+
         html = `<pre class="bg-card/30 border border-border rounded-xl p-4 overflow-x-auto my-4 select-text font-mono text-[0.85rem] leading-[1.6]"><code class="language-${lang}" style="display: block; white-space: pre; word-break: normal;">${codeLines}</code></pre>`;
       }
       // C. Markdown / Plaintext
@@ -816,13 +816,13 @@ export const Editor: React.FC<EditorProps> = ({
 
     // Use fullContent for windowing mode, content for normal mode
     const sourceContent = isWindowingMode ? fullContentRef.current : content;
-    
+
     // Convert textarea positions to global positions if in windowing mode
-    const globalCaretIndex = isWindowingMode 
-      ? getGlobalIndex(caretIndex, windowStartLine) 
+    const globalCaretIndex = isWindowingMode
+      ? getGlobalIndex(caretIndex, windowStartLine)
       : caretIndex;
-    const globalSelectionStart = isWindowingMode 
-      ? getGlobalIndex(textarea.selectionStart, windowStartLine) 
+    const globalSelectionStart = isWindowingMode
+      ? getGlobalIndex(textarea.selectionStart, windowStartLine)
       : textarea.selectionStart;
 
     const startText = sourceContent.substring(0, globalCaretIndex);
@@ -920,7 +920,7 @@ export const Editor: React.FC<EditorProps> = ({
                 const globalEndPos = isWindowingMode ? getGlobalIndex(textarea.selectionEnd, windowStartLine) : textarea.selectionEnd;
                 const textToInsert = `![[${result.name}]]`;
                 const newContent = sourceContent.substring(0, globalStartPos) + textToInsert + sourceContent.substring(globalEndPos);
-                
+
                 if (isWindowingMode) {
                   setFullContent(newContent);
                   fullContentRef.current = newContent;
@@ -1039,10 +1039,10 @@ export const Editor: React.FC<EditorProps> = ({
     // Save cursor position before saving
     if (textareaRef.current) {
       saveEditorState(vaultId, filePath, {
-        cursorPos: isWindowingMode 
+        cursorPos: isWindowingMode
           ? getGlobalIndex(textareaRef.current.selectionStart, windowStartLine)
           : textareaRef.current.selectionStart,
-        scrollPos: isWindowingMode 
+        scrollPos: isWindowingMode
           ? (viewportRef.current ? viewportRef.current.scrollTop : 0)
           : textareaRef.current.scrollTop,
       });
@@ -1098,10 +1098,10 @@ export const Editor: React.FC<EditorProps> = ({
       // Save cursor position on blur
       if (currentTextarea) {
         saveEditorState(vaultId, filePath, {
-          cursorPos: isWindowingMode 
+          cursorPos: isWindowingMode
             ? getGlobalIndex(currentTextarea.selectionStart, windowStartLine)
             : currentTextarea.selectionStart,
-          scrollPos: isWindowingMode 
+          scrollPos: isWindowingMode
             ? (viewportRef.current ? viewportRef.current.scrollTop : 0)
             : currentTextarea.scrollTop,
         });
@@ -1116,10 +1116,10 @@ export const Editor: React.FC<EditorProps> = ({
       window.removeEventListener('blur', handleWindowBlur);
       if (currentTextarea) {
         saveEditorState(vaultId, filePath, {
-          cursorPos: isWindowingMode 
+          cursorPos: isWindowingMode
             ? getGlobalIndex(currentTextarea.selectionStart, windowStartLine)
             : currentTextarea.selectionStart,
-          scrollPos: isWindowingMode 
+          scrollPos: isWindowingMode
             ? (currentViewport ? currentViewport.scrollTop : 0)
             : currentTextarea.scrollTop,
         });
@@ -1502,98 +1502,129 @@ export const Editor: React.FC<EditorProps> = ({
       )}
 
       {/* Main editor/preview flex container */}
-      <div className="flex flex-col md:flex-row w-full flex-1 bg-background relative">
+      <div className="flex flex-col md:flex-row w-full h-full flex-1 bg-background relative">
 
-      {/* Editor Pane */}
-      <div
-        className={cn(
-          "flex-col min-w-0 border-b md:border-b-0 md:border-r border-border bg-background transition-all duration-300 relative",
-          viewMode === 'preview' ? "hidden w-0 h-0" : "flex flex-1",
-          viewMode === 'edit' ? "w-full h-full" : "w-full md:w-1/2 h-[45%] md:h-full"
-        )}
-      >
-        <div className="h-10 bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
-          <span>Editor: {filePath.split('/').pop()}</span>
-          <div className="flex items-center gap-3">
-            {hasUnsavedChanges && (
-              <span className="text-amber-500 flex items-center gap-1.5 normal-case font-semibold animate-pulse-soft">
-                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
-                Unsaved Edits
-              </span>
-            )}
-            <button
-              onClick={handleCopyAll}
-              className="flex items-center gap-1 px-2.5 py-1 bg-border/40 hover:bg-border/80 text-foreground rounded-lg text-[0.6rem] font-bold transition-all cursor-pointer normal-case shrink-0"
-              title="Copy all file contents"
-            >
-              {copied ? (
-                <>
-                  <Check size={11} className="text-emerald-500" />
-                  <span className="text-emerald-500">Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={11} />
-                  <span>Copy Content</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        <div 
-          ref={viewportRef}
-          onScroll={isWindowingMode ? handleEditorScroll : undefined}
+        {/* Editor Pane */}
+        <div
           className={cn(
-            "flex-1 w-full h-[calc(100%-40px)] relative select-text",
-            isWindowingMode ? "overflow-y-auto overflow-x-hidden" : ""
+            "flex-col min-w-0 border-b md:border-b-0 md:border-r border-border bg-background transition-all duration-300 relative",
+            viewMode === 'preview' ? "hidden w-0 h-0" : "flex flex-1",
+            viewMode === 'edit' ? "w-full h-full" : "w-full md:w-1/2 h-[45%] md:h-full"
           )}
-          style={isWindowingMode ? {
-            position: 'relative',
-            width: '100%',
-            height: '100%',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-          } : undefined}
         >
-          {isWindowingMode ? (
-            <div
-              style={{
-                boxSizing: 'border-box',
-                paddingTop: `${windowStartLine * 24}px`,
-                paddingBottom: `${Math.max(0, virtualLines.length - windowEndLine) * 24 + 128}px`,
-                width: '100%',
-                display: 'flex',
-                flexDirection: 'row',
-                alignItems: 'stretch',
-              }}
-            >
-              {/* Line Counter */}
+          <div className="h-10 bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
+            <span>Editor: {filePath.split('/').pop()}</span>
+            <div className="flex items-center gap-3">
+              {hasUnsavedChanges && (
+                <span className="text-amber-500 flex items-center gap-1.5 normal-case font-semibold animate-pulse-soft">
+                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
+                  Unsaved Edits
+                </span>
+              )}
+              <button
+                onClick={handleCopyAll}
+                className="flex items-center gap-1 px-2.5 py-1 bg-border/40 hover:bg-border/80 text-foreground rounded-lg text-[0.6rem] font-bold transition-all cursor-pointer normal-case shrink-0"
+                title="Copy all file contents"
+              >
+                {copied ? (
+                  <>
+                    <Check size={11} className="text-emerald-500" />
+                    <span className="text-emerald-500">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={11} />
+                    <span>Copy Content</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={viewportRef}
+            onScroll={isWindowingMode ? handleEditorScroll : undefined}
+            className={cn(
+              "flex-1 w-full h-[calc(100%-40px)] relative select-text",
+              isWindowingMode ? "overflow-y-auto overflow-x-hidden" : ""
+            )}
+            style={isWindowingMode ? {
+              position: 'relative',
+              width: '100%',
+              height: '100%',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+            } : undefined}
+          >
+            {isWindowingMode ? (
               <div
                 style={{
-                  width: '48px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.02)',
-                  color: 'rgba(255, 255, 255, 0.3)',
-                  fontFamily: 'monospace',
-                  fontSize: '14.8px',
-                  lineHeight: '24px',
-                  textAlign: 'right',
-                  paddingRight: '12px',
-                  paddingLeft: '6px',
-                  userSelect: 'none',
-                  borderRight: '1px solid rgba(255, 255, 255, 0.08)',
                   boxSizing: 'border-box',
+                  paddingTop: `${windowStartLine * 24}px`,
+                  paddingBottom: `${Math.max(0, virtualLines.length - windowEndLine) * 24 + 128}px`,
+                  width: '100%',
                   display: 'flex',
-                  flexDirection: 'column',
-                  height: `${windowLineHeights.reduce((a, b) => a + b, 0)}px`,
+                  flexDirection: 'row',
+                  alignItems: 'stretch',
                 }}
               >
-                {Array.from({ length: windowEndLine - windowStartLine }, (_, idx) => windowStartLine + idx + 1).map((num, idx) => (
-                  <div key={num} style={{ height: `${windowLineHeights[idx] || 24}px` }}>{num}</div>
-                ))}
-              </div>
+                {/* Line Counter */}
+                <div
+                  style={{
+                    width: '48px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    color: 'rgba(255, 255, 255, 0.3)',
+                    fontFamily: 'monospace',
+                    fontSize: '14.8px',
+                    lineHeight: '24px',
+                    textAlign: 'right',
+                    paddingRight: '12px',
+                    paddingLeft: '6px',
+                    userSelect: 'none',
+                    borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: `${windowLineHeights.reduce((a, b) => a + b, 0)}px`,
+                  }}
+                >
+                  {Array.from({ length: windowEndLine - windowStartLine }, (_, idx) => windowStartLine + idx + 1).map((num, idx) => (
+                    <div key={num} style={{ height: `${windowLineHeights[idx] || 24}px` }}>{num}</div>
+                  ))}
+                </div>
 
-              {/* Textarea */}
+                {/* Textarea */}
+                <textarea
+                  ref={textareaRef}
+                  value={content}
+                  onChange={handleTextareaChange}
+                  onKeyDown={handleTextareaKeyDown}
+                  onPaste={handleTextareaPaste}
+                  onBlur={handleAutoSave}
+                  wrap="soft"
+                  style={{
+                    width: '100%',
+                    minWidth: '100%',
+                    height: `${windowLineHeights.reduce((a, b) => a + b, 0)}px`,
+                    lineHeight: '24px',
+                    fontSize: '14.8px',
+                    fontFamily: 'monospace',
+                    padding: '0 24px',
+                    margin: 0,
+                    border: 'none',
+                    outline: 'none',
+                    resize: 'none',
+                    overflow: 'hidden',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
+                    boxSizing: 'border-box',
+                    background: 'transparent',
+                  }}
+                  placeholder={`# ${filePath.split('/').pop()?.replace(/\.md$/, '').replace(/\.txt$/, '') || 'Untitled Note'}\n\nStart typing notes in Markdown... Use [[Links]] to connect notes!`}
+                  className="border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] resize-none outline-none focus:ring-0 select-text flex-1"
+                />
+              </div>
+            ) : (
               <textarea
                 ref={textareaRef}
                 value={content}
@@ -1601,165 +1632,134 @@ export const Editor: React.FC<EditorProps> = ({
                 onKeyDown={handleTextareaKeyDown}
                 onPaste={handleTextareaPaste}
                 onBlur={handleAutoSave}
-                wrap="soft"
-                style={{
-                  width: '100%',
-                  minWidth: '100%',
-                  height: `${windowLineHeights.reduce((a, b) => a + b, 0)}px`,
-                  lineHeight: '24px',
-                  fontSize: '14.8px',
-                  fontFamily: 'monospace',
-                  padding: '0 24px',
-                  margin: 0,
-                  border: 'none',
-                  outline: 'none',
-                  resize: 'none',
-                  overflow: 'hidden',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                  boxSizing: 'border-box',
-                  background: 'transparent',
-                }}
+                onScroll={handleEditorScroll}
                 placeholder={`# ${filePath.split('/').pop()?.replace(/\.md$/, '').replace(/\.txt$/, '') || 'Untitled Note'}\n\nStart typing notes in Markdown... Use [[Links]] to connect notes!`}
-                className="border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] resize-none outline-none focus:ring-0 select-text flex-1"
+                className="w-full h-full border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] p-6 pb-32 resize-none outline-none focus:ring-0 select-text overflow-y-auto"
               />
-            </div>
-          ) : (
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={handleTextareaChange}
-              onKeyDown={handleTextareaKeyDown}
-              onPaste={handleTextareaPaste}
-              onBlur={handleAutoSave}
-              onScroll={handleEditorScroll}
-              placeholder={`# ${filePath.split('/').pop()?.replace(/\.md$/, '').replace(/\.txt$/, '') || 'Untitled Note'}\n\nStart typing notes in Markdown... Use [[Links]] to connect notes!`}
-              className="w-full h-full border-none bg-background text-foreground font-mono text-[0.925rem] leading-[1.7] p-6 pb-32 resize-none outline-none focus:ring-0 select-text overflow-y-auto"
-            />
-          )}
+            )}
 
-          {/* Autocomplete suggestions overlay box */}
-          {showSuggestions && (
-            <>
-              {/* Click-away backdrop overlay */}
-              <div
-                className="fixed inset-0 z-30 bg-transparent cursor-default"
-                onClick={() => {
-                  setShowSuggestions(false);
-                  setSuggestionQuery('');
-                  setSuggestionSearchQuery('');
-                }}
-              />
+            {/* Autocomplete suggestions overlay box */}
+            {showSuggestions && (
+              <>
+                {/* Click-away backdrop overlay */}
+                <div
+                  className="fixed inset-0 z-30 bg-transparent cursor-default"
+                  onClick={() => {
+                    setShowSuggestions(false);
+                    setSuggestionQuery('');
+                    setSuggestionSearchQuery('');
+                  }}
+                />
 
-              {/* Premium Glassmorphic Popover suggestions box */}
-              <div
-                style={{
-                  top: `${suggestionPosition.top}px`,
-                  left: `${suggestionPosition.left}px`
-                }}
-                className="absolute w-[240px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-40 animate-in fade-in zoom-in-95 duration-100 max-h-[300px] overflow-hidden select-none animate-fade-in"
-              >
-                <div className="text-[0.6rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 py-0.5 select-none flex justify-between items-center">
-                  <span>Select Link Target</span>
-                  <span className="text-[0.5rem] lowercase tracking-normal font-semibold font-sans text-muted-foreground/45">enter to link</span>
-                </div>
-                <div className="h-[1px] bg-border/60 my-0.5 select-none" />
+                {/* Premium Glassmorphic Popover suggestions box */}
+                <div
+                  style={{
+                    top: `${suggestionPosition.top}px`,
+                    left: `${suggestionPosition.left}px`
+                  }}
+                  className="absolute w-[240px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-2.5 flex flex-col gap-1.5 z-40 animate-in fade-in zoom-in-95 duration-100 max-h-[300px] overflow-hidden select-none animate-fade-in"
+                >
+                  <div className="text-[0.6rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 py-0.5 select-none flex justify-between items-center">
+                    <span>Select Link Target</span>
+                    <span className="text-[0.5rem] lowercase tracking-normal font-semibold font-sans text-muted-foreground/45">enter to link</span>
+                  </div>
+                  <div className="h-[1px] bg-border/60 my-0.5 select-none" />
 
-                <div className="relative flex items-center px-1 py-1 border-b border-border/40 pb-1.5 shrink-0">
-                  <input
-                    type="text"
-                    value={suggestionSearchQuery}
-                    onChange={(e) => {
-                      setSuggestionSearchQuery(e.target.value);
-                      setSuggestionIndex(0);
-                    }}
-                    onKeyDown={handleSearchInputKeyDown}
-                    placeholder="Search notes/attachments..."
-                    className="w-full bg-muted/30 border border-border/40 text-foreground px-2 py-1 rounded-md text-[0.7rem] focus:outline-none focus:border-primary/60 transition-all duration-150"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </div>
+                  <div className="relative flex items-center px-1 py-1 border-b border-border/40 pb-1.5 shrink-0">
+                    <input
+                      type="text"
+                      value={suggestionSearchQuery}
+                      onChange={(e) => {
+                        setSuggestionSearchQuery(e.target.value);
+                        setSuggestionIndex(0);
+                      }}
+                      onKeyDown={handleSearchInputKeyDown}
+                      placeholder="Search notes/attachments..."
+                      className="w-full bg-muted/30 border border-border/40 text-foreground px-2 py-1 rounded-md text-[0.7rem] focus:outline-none focus:border-primary/60 transition-all duration-150"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
 
-                <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 pr-0.5 max-h-[160px]">
-                  {filteredSuggestions.map((path, idx) => {
-                    const isSelected = suggestionIndex === idx;
-                    const name = path.split('/').pop()?.replace(/\.md$/, '') || '';
-                    const dir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : null;
-                    return (
-                      <button
-                        key={path}
-                        type="button"
-                        onClick={() => insertSuggestion(path)}
-                        onMouseEnter={() => setSuggestionIndex(idx)}
-                        className={cn(
-                          "w-full text-left px-2 py-1.5 rounded-md text-[0.7rem] font-semibold transition-premium cursor-pointer flex items-center justify-between border border-transparent font-medium",
-                          isSelected
-                            ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent font-semibold border-primary/20"
-                            : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
-                        )}
-                      >
-                        <span className="flex items-center gap-1.5 truncate">
-                          {path.toLowerCase().endsWith('.png') ||
-                            path.toLowerCase().endsWith('.jpg') ||
-                            path.toLowerCase().endsWith('.jpeg') ||
-                            path.toLowerCase().endsWith('.gif') ||
-                            path.toLowerCase().endsWith('.webp') ||
-                            path.toLowerCase().endsWith('.svg') ? (
-                            <Image className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
-                          ) : path.toLowerCase().endsWith('.pdf') ? (
-                            <Paperclip className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
-                          ) : (
-                            <FileText className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                  <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 pr-0.5 max-h-[160px]">
+                    {filteredSuggestions.map((path, idx) => {
+                      const isSelected = suggestionIndex === idx;
+                      const name = path.split('/').pop()?.replace(/\.md$/, '') || '';
+                      const dir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : null;
+                      return (
+                        <button
+                          key={path}
+                          type="button"
+                          onClick={() => insertSuggestion(path)}
+                          onMouseEnter={() => setSuggestionIndex(idx)}
+                          className={cn(
+                            "w-full text-left px-2 py-1.5 rounded-md text-[0.7rem] font-semibold transition-premium cursor-pointer flex items-center justify-between border border-transparent font-medium",
+                            isSelected
+                              ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent font-semibold border-primary/20"
+                              : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
                           )}
-                          <span className="truncate">{name}</span>
-                        </span>
-                        {dir && (
-                          <span className="text-[0.55rem] font-semibold font-sans text-muted-foreground/45 shrink-0 select-none ml-2">
-                            {dir}
+                        >
+                          <span className="flex items-center gap-1.5 truncate">
+                            {path.toLowerCase().endsWith('.png') ||
+                              path.toLowerCase().endsWith('.jpg') ||
+                              path.toLowerCase().endsWith('.jpeg') ||
+                              path.toLowerCase().endsWith('.gif') ||
+                              path.toLowerCase().endsWith('.webp') ||
+                              path.toLowerCase().endsWith('.svg') ? (
+                              <Image className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                            ) : path.toLowerCase().endsWith('.pdf') ? (
+                              <Paperclip className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                            ) : (
+                              <FileText className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                            )}
+                            <span className="truncate">{name}</span>
                           </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                          {dir && (
+                            <span className="text-[0.55rem] font-semibold font-sans text-muted-foreground/45 shrink-0 select-none ml-2">
+                              {dir}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
 
-                  {filteredSuggestions.length === 0 && (
-                    <span className="text-[0.65rem] text-muted-foreground/50 italic p-2 text-center select-none">
-                      No matching notes.
-                    </span>
-                  )}
+                    {filteredSuggestions.length === 0 && (
+                      <span className="text-[0.65rem] text-muted-foreground/50 italic p-2 text-center select-none">
+                        No matching notes.
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Preview Pane */}
-      <div
-        className={cn(
-          "flex-col min-w-0 bg-background transition-all duration-300",
-          viewMode === 'edit' ? "hidden w-0 h-0" : "flex flex-1",
-          viewMode === 'preview' ? "w-full h-full" : "w-full md:w-1/2 h-[55%] md:h-full"
-        )}
-      >
-        <div className="h-10 bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
-          <span>Preview</span>
-          <span className="text-[0.65rem] text-muted-foreground/60 tracking-normal font-semibold normal-case">
-            DOMPurify Sanitized
-          </span>
-        </div>
+        {/* Preview Pane */}
         <div
-          ref={previewScrollContainerRef}
-          className="flex-1 p-6 pb-32 sm:p-8 sm:pb-32 overflow-y-auto bg-background"
-          onClick={handlePreviewClick}
-          onBlur={handlePreviewInput}
+          className={cn(
+            "flex-col min-w-0 bg-background transition-all duration-300",
+            viewMode === 'edit' ? "hidden w-0 h-0" : "flex flex-1",
+            viewMode === 'preview' ? "w-full h-full" : "w-full md:w-1/2 h-[55%] md:h-full"
+          )}
         >
+          <div className="h-10 bg-card/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-4 shrink-0 text-muted-foreground text-[0.7rem] font-bold uppercase tracking-wider select-none">
+            <span>Preview</span>
+            <span className="text-[0.65rem] text-muted-foreground/60 tracking-normal font-semibold normal-case">
+              DOMPurify Sanitized
+            </span>
+          </div>
           <div
-            ref={previewContainerRef}
-            className="markdown-preview"
-          />
+            ref={previewScrollContainerRef}
+            className="flex-1 p-6 pb-32 sm:p-8 sm:pb-32 overflow-y-auto bg-background"
+            onClick={handlePreviewClick}
+            onBlur={handlePreviewInput}
+          >
+            <div
+              ref={previewContainerRef}
+              className="markdown-preview"
+            />
+          </div>
         </div>
-      </div>
       </div>
 
       {/* Floating Panel Controls */}
