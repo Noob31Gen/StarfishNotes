@@ -561,7 +561,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="h-[60px] px-5 flex items-center justify-between border-b border-border select-none">
           <div className="flex items-center gap-2.5 font-heading font-bold text-lg bg-gradient-to-r from-white to-accent bg-clip-text text-transparent">
             <Compass className="w-[18px] h-[18px] text-secondary animate-pulse-soft" />
-            <span>StarfishNotes</span>
+            <span>Starfish Notes</span>
           </div>
 
           <div className="flex items-center gap-1">
@@ -599,7 +599,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-1 mb-1 select-none">
               New
             </span>
-            
+
             <div className="grid grid-cols-2 gap-2">
               {/* Note */}
               <button

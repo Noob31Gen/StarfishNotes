@@ -1,6 +1,6 @@
 {
-  "name": "StarfishNotes",
-  "short_name": "StarfishNotes",
+  "name": "Starfish Notes",
+  "short_name": "Starfish Notes",
   "description": "Secure Serverless Local & GitHub Notetaking",
   "start_url": "/",
   "display": "standalone",

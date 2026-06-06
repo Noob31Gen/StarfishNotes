@@ -826,7 +826,7 @@ export default function App() {
             const credential = new PasswordCred({
               id,
               password: seed,
-              name: 'StarfishNotes Local Offline Vault'
+              name: 'Starfish Notes Local Offline Vault'
             });
             await navigator.credentials.store(credential);
           }
@@ -1568,11 +1568,11 @@ export default function App() {
         let resultSha = '';
         if (isBinaryFileNode) {
           // contentToUpload is base64 encoded for binary files
-          const res = await commitAttachment(publishToken.trim(), publishRepo.trim(), publishBranch.trim(), fileRecord.path, contentToUpload, null, `upload local attachment "${fileRecord.path}" via StarfishNotes`);
+          const res = await commitAttachment(publishToken.trim(), publishRepo.trim(), publishBranch.trim(), fileRecord.path, contentToUpload, null, `upload local attachment "${fileRecord.path}" via Starfish Notes`);
           resultSha = res.sha;
         } else {
           // contentToUpload is plaintext for text/canvas files
-          const res = await commitFileContent(publishToken.trim(), publishRepo.trim(), publishBranch.trim(), fileRecord.path, contentToUpload, null, `publish local note "${fileRecord.path}" via StarfishNotes`);
+          const res = await commitFileContent(publishToken.trim(), publishRepo.trim(), publishBranch.trim(), fileRecord.path, contentToUpload, null, `publish local note "${fileRecord.path}" via Starfish Notes`);
           resultSha = res.sha;
         }
 
@@ -2348,7 +2348,7 @@ export default function App() {
               sha
             };
           } else {
-            const commitMessage = `create folder placeholder at "${gitkeepPath}" via StarfishNotes`;
+            const commitMessage = `create folder placeholder at "${gitkeepPath}" via Starfish Notes`;
             const result = await commitFileContent(githubToken, repoName, branchName, gitkeepPath, "", null, commitMessage);
             return {
               path: gitkeepPath,
@@ -2478,7 +2478,7 @@ export default function App() {
         });
         await offlineStorage.deleteFile(oldPath);
       } else {
-        const commitMessage = `rename note "${oldPath}" to "${newPath}" via StarfishNotes`;
+        const commitMessage = `rename note "${oldPath}" to "${newPath}" via Starfish Notes`;
         const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
         sha = result.sha;
         await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
@@ -2535,7 +2535,7 @@ export default function App() {
         });
         await refreshFilesOffline();
       } else {
-        const commitMessage = `create folder placeholder at "${targetPath}" via StarfishNotes`;
+        const commitMessage = `create folder placeholder at "${targetPath}" via Starfish Notes`;
         await commitFileContent(githubToken, repoName, branchName, targetPath, "", null, commitMessage);
         await refreshFiles();
       }
@@ -2595,7 +2595,7 @@ export default function App() {
           sha
         });
       } else {
-        const commitMessage = `copy note "${oldPath}" to "${newPath}" via StarfishNotes`;
+        const commitMessage = `copy note "${oldPath}" to "${newPath}" via Starfish Notes`;
         const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
         sha = result.sha;
       }
@@ -2672,7 +2672,7 @@ export default function App() {
         });
         await offlineStorage.deleteFile(oldPath);
       } else {
-        const commitMessage = `move note "${oldPath}" to "${newPath}" via StarfishNotes`;
+        const commitMessage = `move note "${oldPath}" to "${newPath}" via Starfish Notes`;
         const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
         sha = result.sha;
         await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
@@ -2848,7 +2848,7 @@ export default function App() {
                 setIsLoadingFile(false);
               });
             } else {
-              commitFileContent(githubToken, repoName, branchName, activeFilePath, initialText, null, `create ghost note "${activeFilePath}" via StarfishNotes`)
+              commitFileContent(githubToken, repoName, branchName, activeFilePath, initialText, null, `create ghost note "${activeFilePath}" via Starfish Notes`)
                 .then((result) => {
                   const newFile: VaultFile = {
                     path: activeFilePath,

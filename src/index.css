@@ -3,7 +3,7 @@
 @import "katex/dist/katex.min.css";
 @import "highlight.js/styles/github-dark.css";
 
-/* StarfishNotes - Design System & Modern Styling Core (Tailwind v4) */
+/* Starfish Notes - Design System & Modern Styling Core (Tailwind v4) */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -366,9 +366,11 @@
 .markdown-preview sup {
   @apply text-[75%] leading-none relative;
 }
+
 .markdown-preview sub {
   bottom: -0.25em;
 }
+
 .markdown-preview sup {
   top: -0.5em;
 }
@@ -417,7 +419,8 @@
 }
 
 .canvas-connection-line.selected {
-  stroke: oklch(0.60 0.22 25) !important; /* Premium crimson/destructive red accent */
+  stroke: oklch(0.60 0.22 25) !important;
+  /* Premium crimson/destructive red accent */
   stroke-width: 4px !important;
   filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.75)) !important;
 }
@@ -464,6 +467,7 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;

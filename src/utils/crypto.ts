@@ -1,5 +1,5 @@
 /**
- * StarfishNotes Cryptography & Protected Storage Utilities
+ * Starfish Notes Cryptography & Protected Storage Utilities
  * Secure client-side credentials management incorporating:
  * 1. Web Crypto API (AES-GCM-256 + PBKDF2 key derivation)
  * 2. W3C Credentials Management API (OS-Level Secure Vault/Keychain integration)
@@ -162,7 +162,7 @@ export async function saveTokenSecurely(
   token: string,
   mode: StorageMode,
   passphrase?: string,
-  repoName: string = 'StarfishNotes'
+  repoName: string = 'Starfish Notes'
 ): Promise<void> {
   // Always clean previous values to prevent storage confusion
   localStorage.removeItem(STORAGE_KEYS.ENCRYPTED_PAT);
@@ -206,7 +206,7 @@ export async function saveTokenSecurely(
         key,
         strToBuf(token) as BufferSource
       );
-      
+
       const ivHex = bufToHex(iv.buffer);
       const cipherHex = bufToHex(ciphertextBuffer);
       localStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, `${ivHex}:${cipherHex}`);
@@ -222,7 +222,7 @@ export async function saveTokenSecurely(
         const credential = new PasswordCred({
           id: repoName,         // Link the credential to this vault identifier
           password: token,      // The GitHub token acts as the credential password
-          name: 'StarfishNotes Synchronizer'
+          name: 'Starfish Notes Synchronizer'
         });
         await navigator.credentials.store(credential);
       } catch (err: unknown) {
@@ -251,11 +251,11 @@ export async function retrieveTokenSecurely(passphrase?: string, interactive = f
         const parts = stored.split(':');
         const ivHex = parts[0];
         const cipherHex = parts[1];
-        
+
         const iv = new Uint8Array(hexToBuf(ivHex));
         const cipherBuffer = hexToBuf(cipherHex);
         const key = await getOrCreateSystemKey();
-        
+
         const decryptedBuffer = await window.crypto.subtle.decrypt(
           {
             name: 'AES-GCM',
@@ -264,7 +264,7 @@ export async function retrieveTokenSecurely(passphrase?: string, interactive = f
           key,
           cipherBuffer
         );
-        
+
         return bufToStr(decryptedBuffer);
       } catch (e) {
         console.error('Failed to decrypt session mode token:', e);
@@ -286,11 +286,11 @@ export async function retrieveTokenSecurely(passphrase?: string, interactive = f
         const parts = stored.split(':');
         const ivHex = parts[0];
         const cipherHex = parts[1];
-        
+
         const iv = new Uint8Array(hexToBuf(ivHex));
         const cipherBuffer = hexToBuf(cipherHex);
         const key = await getOrCreateSystemKey();
-        
+
         const decryptedBuffer = await window.crypto.subtle.decrypt(
           {
             name: 'AES-GCM',
@@ -299,7 +299,7 @@ export async function retrieveTokenSecurely(passphrase?: string, interactive = f
           key,
           cipherBuffer
         );
-        
+
         return bufToStr(decryptedBuffer);
       } catch (e) {
         console.error('Failed to decrypt plain mode token:', e);

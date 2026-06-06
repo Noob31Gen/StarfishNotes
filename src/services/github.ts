@@ -1,5 +1,5 @@
 /**
- * StarfishNotes - GitHub Sync Engine
+ * Starfish Notes - GitHub Sync Engine
  * Performs 100% client-side REST API synchronization with the user's notes repository.
  * Implements robust tree traversal, UTF-8 base64 encoding/decoding, and conflict resolution (SHA checking).
  */
@@ -348,13 +348,13 @@ export async function initializeVault(
   branch: string
 ): Promise<void> {
   const metadata = {
-    appName: 'StarfishNotes',
+    appName: 'Starfish Notes',
     version: '1.0.0',
     initializedAt: new Date().toISOString(),
   };
 
   const payload = {
-    message: 'chore: initialize StarfishNotes compatibility metadata',
+    message: 'chore: initialize Starfish Notes compatibility metadata',
     content: safeB64Encode(JSON.stringify(metadata, null, 2)),
     branch,
   };
@@ -450,7 +450,7 @@ export async function commitFileContent(
   path: string,
   content: string,
   sha: string | null, // null indicates new file
-  commitMessage: string = 'update note via StarfishNotes'
+  commitMessage: string = 'update note via Starfish Notes'
 ): Promise<{ sha: string }> {
   const payload: { message: string; content: string; branch: string; sha?: string } = {
     message: commitMessage,
@@ -553,7 +553,7 @@ export async function deleteFile(
   sha: string
 ): Promise<void> {
   const payload = {
-    message: `delete note "${path}" via StarfishNotes`,
+    message: `delete note "${path}" via Starfish Notes`,
     sha,
     branch,
   };
@@ -627,7 +627,7 @@ export async function syncVault(
     console.log(`Fetching ${remainingFiles.length} remaining/failed files in parallel (concurrency: 5)...`);
     const concurrencyLimit = 5;
     const queue = [...remainingFiles];
-    
+
     const runWorker = async () => {
       while (queue.length > 0) {
         const remoteFile = queue.shift();
@@ -658,7 +658,7 @@ export async function commitAttachment(
   path: string,
   base64Content: string,
   sha: string | null, // null indicates new file
-  commitMessage: string = 'upload attachment via StarfishNotes'
+  commitMessage: string = 'upload attachment via Starfish Notes'
 ): Promise<{ sha: string }> {
   const payload: { message: string; content: string; branch: string; sha?: string } = {
     message: commitMessage,

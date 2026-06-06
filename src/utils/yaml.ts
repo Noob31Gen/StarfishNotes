@@ -1,4 +1,4 @@
-// Self-contained light YAML parser and stringifier for StarfishNotes (.base and note frontmatter)
+// Self-contained light YAML parser and stringifier for Starfish Notes (.base and note frontmatter)
 
 export function parseYaml(yaml: string): unknown {
   const lines = yaml.split(/\r?\n/).map(line => {
@@ -34,7 +34,7 @@ export function parseYaml(yaml: string): unknown {
     if (val === 'false') return false;
     if (val === 'null') return null;
     if (!isNaN(Number(val)) && val !== '') return Number(val);
-    
+
     // Remove surrounding quotes
     if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       return val.slice(1, -1);

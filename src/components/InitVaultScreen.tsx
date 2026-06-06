@@ -33,7 +33,7 @@ export const InitVaultScreen: React.FC<InitVaultScreenProps> = ({
         {isRepoEmpty ? (
           <div className="flex flex-col gap-3">
             <p className="text-secondary font-semibold text-sm bg-secondary/10 border-l-4 border-secondary px-4 py-3 rounded-xl text-left leading-relaxed">
-              📢 Your repository is completely empty! Clicking "Initialize" will automatically create the branch <strong>"{branchName}"</strong> and set up the StarfishNotes environment.
+              Your repository is completely empty! Clicking "Initialize" will automatically create the branch <strong>"{branchName}"</strong> and set up the Starfish Notes environment.
             </p>
             <p className="text-muted-foreground text-xs leading-relaxed text-left px-1">
               We will commit a secure compatibility file (<code>.vault-compat.json</code>) and a sample note file directly to establish the branch.
