@@ -649,6 +649,56 @@ export async function syncVault(
 }
 
 /**
+ * 9. Check GitHub API rate limit status
+ */
+export interface RateLimitStatus {
+  limit: number;
+  remaining: number;
+  reset: Date;
+  isLimited: boolean;
+}
+
+export async function checkApiRateLimit(token: string): Promise<RateLimitStatus> {
+  try {
+    const res = await githubRequest(token, '/rate_limit');
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch rate limit: HTTP ${res.status}`);
+    }
+
+    const data = (await res.json()) as {
+      resources?: {
+        core?: {
+          limit: number;
+          remaining: number;
+          reset: number;
+        };
+      };
+    };
+
+    const coreLimit = data.resources?.core;
+    if (!coreLimit) {
+      throw new Error('No core rate limit data in response');
+    }
+
+    const remaining = coreLimit.remaining;
+    const limit = coreLimit.limit;
+    const resetTime = new Date(coreLimit.reset * 1000); // Convert Unix epoch to milliseconds
+
+    return {
+      limit,
+      remaining,
+      reset: resetTime,
+      isLimited: remaining === 0,
+    };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Failed to check API rate limit.';
+    console.error('Rate limit check error:', msg);
+    throw new Error(msg, { cause: error });
+  }
+}
+
+/**
  * 8. Commit/Save an attachment to the repository
  */
 export async function commitAttachment(

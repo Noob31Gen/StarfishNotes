@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import {
   validateRepository, checkVaultCompatibility, initializeVault,
   fetchRepositoryTree, fetchFileContent, commitFileContent, deleteFile, syncVault,
-  commitAttachment, fetchBinaryFileContent, isTextFile, isBinaryBytes, registerDetectedTextFile, safeB64Decode
+  commitAttachment, fetchBinaryFileContent, isTextFile, isBinaryBytes, registerDetectedTextFile, safeB64Decode, checkApiRateLimit
 } from './services/github';
 import type { VaultFile } from './services/github';
 import {
@@ -91,6 +91,9 @@ export default function App() {
   const [showConflictModal, setShowConflictModal] = useState<boolean>(false);
   const [conflictingFiles, setConflictingFiles] = useState<VaultFile[]>([]);
   const [activeFileHasRemoteUpdate, setActiveFileHasRemoteUpdate] = useState<boolean>(false);
+  const [apiLimitReached, setApiLimitReached] = useState<boolean>(false);
+  const [apiLimitResetTime, setApiLimitResetTime] = useState<Date | null>(null);
+  const [isSyncPaused, setIsSyncPaused] = useState<boolean>(false);
   const lastActiveTimeRef = useRef<number>(0);
   const [authMode, setAuthMode] = useState<'github' | 'local'>(() => {
     return localStorage.getItem('starfishnotes-is-offline') === 'true' ? 'local' : 'github';
@@ -1086,10 +1089,15 @@ export default function App() {
         skippedPaths.push(activeFilePath);
       }
 
-      syncVault(token, repo, branch, tree, skippedPaths).then(() => {
-        console.log("Vault sync complete!");
-        preloadAllFilesContents(tree);
-      }).catch(console.error);
+      // Only sync if API limit hasn't been reached
+      if (!isSyncPaused) {
+        syncVault(token, repo, branch, tree, skippedPaths).then(() => {
+          console.log("Vault sync complete!");
+          preloadAllFilesContents(tree);
+        }).catch(console.error);
+      } else {
+        console.log("GitHub API rate limit reached. Sync paused.");
+      }
     } catch (err: unknown) {
       console.warn("Tree retrieval failed, checking if it is a network error...", err);
       const errMsg = err instanceof Error ? err.message : '';
@@ -1832,6 +1840,44 @@ export default function App() {
     };
   }, [githubToken, isOffline, refreshFiles, repoName, branchName]);
 
+  // Periodic API rate limit check
+  useEffect(() => {
+    if (isOffline || !githubToken) return;
+
+    const checkRateLimit = async () => {
+      try {
+        console.log('[API Check] Checking GitHub API rate limit status...');
+        const status = await checkApiRateLimit(githubToken);
+        console.log(`[API Status] Remaining: ${status.remaining}/${status.limit} requests`);
+        console.log(`[API Reset] Reset time: ${status.reset.toLocaleString()}`);
+        
+        if (status.isLimited) {
+          console.warn('[API Limit] GitHub API rate limit reached! Pausing sync operations...');
+          setApiLimitReached(true);
+          setApiLimitResetTime(status.reset);
+          setIsSyncPaused(true);
+        } else {
+          // If limit was previously reached but now it's reset, resume syncing
+          if (apiLimitReached && status.reset <= new Date()) {
+            console.log('[API Resume] API rate limit has been reset. Resuming sync...');
+            setApiLimitReached(false);
+            setApiLimitResetTime(null);
+            setIsSyncPaused(false);
+          }
+        }
+      } catch (error) {
+        console.error('[API Error] Failed to check API rate limit:', error);
+      }
+    };
+
+    // Check rate limit every 30 seconds
+    const interval = setInterval(checkRateLimit, 30 * 1000);
+    // Also check immediately on mount
+    checkRateLimit();
+
+    return () => clearInterval(interval);
+  }, [isOffline, githubToken, apiLimitReached]);
+
   // Cleanup handler: purge volatile caches when tab is closed or navigated away
   useEffect(() => {
     const handlePageHide = () => {
@@ -2229,6 +2275,29 @@ export default function App() {
       setIsLoadingFile(false);
     }
   }, [activeFilePath, files, githubToken, repoName]);
+
+  const retryApiLimitCheck = useCallback(async () => {
+    try {
+      console.log('[Manual Retry] Manually checking API rate limit status...');
+      const status = await checkApiRateLimit(githubToken);
+      console.log(`[API Status] Remaining: ${status.remaining}/${status.limit} requests`);
+      console.log(`[API Reset] Reset time: ${status.reset.toLocaleString()}`);
+      
+      if (status.isLimited) {
+        console.log('[API Limit] API rate limit still active. Sync remains paused.');
+        setApiLimitResetTime(status.reset);
+      } else {
+        console.log('[API Resume] API rate limit has been reset. Resuming sync...');
+        setApiLimitReached(false);
+        setApiLimitResetTime(null);
+        setIsSyncPaused(false);
+        // Trigger an immediate sync
+        await refreshFiles(githubToken, repoName, branchName);
+      }
+    } catch (error) {
+      console.error('[API Error] Failed to check API rate limit during retry:', error);
+    }
+  }, [githubToken, refreshFiles, repoName, branchName]);
 
   const createNewFile = async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
     if (isOffline) {
@@ -3140,6 +3209,33 @@ export default function App() {
                 Overwrite Remote
               </button>
             </div>
+          </div>
+        )}
+
+        {apiLimitReached && (
+          <div className="bg-red-500/10 border-b border-red-500/20 text-red-200/90 text-xs px-5 py-3 sm:px-6 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between shrink-0 gap-3 select-none animate-fade-in">
+            <div className="flex items-start gap-2.5">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-red-400 shrink-0 animate-pulse mt-0.5 sm:mt-0" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold leading-relaxed">
+                  GitHub API rate limit reached. Sync is paused.
+                </span>
+                {apiLimitResetTime && (
+                  <span className="text-red-300/80 text-[0.75rem]">
+                    Limit resets at {apiLimitResetTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={retryApiLimitCheck}
+              className="px-3 py-1.5 bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 text-red-300 text-[0.68rem] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shrink-0 w-full sm:w-auto justify-center"
+            >
+              Retry
+            </button>
           </div>
         )}
 
