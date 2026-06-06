@@ -514,8 +514,13 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     return activeView.filters.and || activeView.filters.or || activeView.filters.not || [];
   }, [activeView.filters]);
 
+  const isSavingRef = useRef(false);
+
   // Sync YAML text editor changes when config object changes
   const saveConfig = async (newConfig: BaseConfig) => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+
     setConfig(newConfig);
     const newYaml = stringifyYaml(newConfig);
     setYamlContent(newYaml);
@@ -528,11 +533,16 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     } catch (e) {
       setSaveStatus('error');
       setErrorMessage(e instanceof Error ? e.message : 'Failed to save base config');
+    } finally {
+      isSavingRef.current = false;
     }
   };
 
   // Handle direct YAML code editor saves
   const handleYamlSave = async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+
     setSaveStatus('saving');
     try {
       const parsed = parseYaml(yamlContent) as BaseConfig;
@@ -544,6 +554,8 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     } catch (e) {
       setSaveStatus('error');
       setErrorMessage(e instanceof Error ? e.message : 'Failed to save base YAML content');
+    } finally {
+      isSavingRef.current = false;
     }
   };
 
@@ -708,14 +720,26 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
   // Handle cell edit save
   const handleCellSave = async (rowPath: string, colKey: string, newValue: string) => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+
     setEditingCell(null);
-    if (colKey === 'file.name') return; // Cannot edit file.name this way (use rename)
+    if (colKey === 'file.name') {
+      isSavingRef.current = false;
+      return; // Cannot edit file.name this way (use rename)
+    }
 
     const row = allRows.find(r => r.path === rowPath);
-    if (!row) return;
+    if (!row) {
+      isSavingRef.current = false;
+      return;
+    }
 
     const currentVal = row.properties[colKey];
-    if (String(currentVal ?? '') === newValue) return; // No change
+    if (String(currentVal ?? '') === newValue) {
+      isSavingRef.current = false;
+      return; // No change
+    }
 
     const currentContent = fileContents[rowPath] || '';
     const updatedContent = updateFrontmatter(currentContent, { [colKey]: newValue });
@@ -728,6 +752,8 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     } catch (e) {
       setSaveStatus('error');
       setErrorMessage(e instanceof Error ? e.message : 'Failed to update note property');
+    } finally {
+      isSavingRef.current = false;
     }
   };
 
@@ -972,6 +998,9 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       initialProps
     );
 
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+
     setSaveStatus('saving');
     try {
       await onCreateFile('.md', folder || undefined);
@@ -984,6 +1013,8 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     } catch (e) {
       setSaveStatus('error');
       setErrorMessage(e instanceof Error ? e.message : 'Failed to create database row');
+    } finally {
+      isSavingRef.current = false;
     }
   };
 

@@ -205,6 +205,7 @@ export const Editor: React.FC<EditorProps> = ({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const previewScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const pendingCursorRef = useRef<{ start: number; end: number } | null>(null);
+  const isSavingRef = useRef(false);
 
   const getGlobalIndex = useCallback((localIndex: number, startLine: number) => {
     let globalIndex = 0;
@@ -1024,11 +1025,16 @@ export const Editor: React.FC<EditorProps> = ({
 
   // Unified save orchestration
   const performAutoSave = useCallback(async () => {
+    // Prevent concurrent saves - skip if already saving
+    if (isSavingRef.current) return;
+
     const currentVal = fullContentRef.current;
     const currentSha = shaRef.current;
     const origVal = originalContent.current;
 
     if (currentVal === origVal) return;
+
+    isSavingRef.current = true;
 
     // Save cursor position before saving
     if (textareaRef.current) {
@@ -1051,6 +1057,7 @@ export const Editor: React.FC<EditorProps> = ({
       const result = await onSaveRef.current(currentVal, currentSha);
       if (isMounted.current) {
         setSha(result.sha);
+        shaRef.current = result.sha;
         originalContent.current = currentVal;
         setSavedContent(currentVal);
         setSaveStatus('saved');
@@ -1068,6 +1075,8 @@ export const Editor: React.FC<EditorProps> = ({
           setErrorMessage(errMsg);
         }
       }
+    } finally {
+      isSavingRef.current = false;
     }
   }, [vaultId, filePath, isWindowingMode, windowStartLine, getGlobalIndex]);
 
@@ -1076,7 +1085,7 @@ export const Editor: React.FC<EditorProps> = ({
     const timer = setTimeout(() => {
       performAutoSave();
       pushEditorState(fullContentRef.current);
-    }, 3000); // 3 second debounce while typing
+    }, 5000); // 5 second debounce (increased from 3s to reduce conflicts)
 
     return () => clearTimeout(timer);
   }, [content, performAutoSave, pushEditorState]);
@@ -1467,7 +1476,33 @@ export const Editor: React.FC<EditorProps> = ({
   const hasUnsavedChanges = (isWindowingMode ? fullContent : content) !== savedContent;
 
   return (
-    <div className="flex flex-col md:flex-row w-full h-full bg-background relative select-none animate-fade-in">
+    <div className="flex flex-col w-full h-full bg-background relative select-none animate-fade-in">
+      {/* Error banner */}
+      {saveStatus === 'error' && (
+        <div className="bg-red-500/10 border-b border-red-500/20 text-red-200/90 text-xs px-5 py-3 sm:px-6 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between shrink-0 gap-3 select-none animate-fade-in">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0 animate-pulse mt-0.5 sm:mt-0" />
+            <span className="font-semibold leading-relaxed truncate">{errorMessage}</span>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 w-full sm:w-auto justify-end">
+            <button
+              onClick={() => setSaveStatus('idle')}
+              className="px-3 py-1.5 bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 text-red-300 text-[0.68rem] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+            >
+              Dismiss
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-3 py-1.5 bg-amber-500/20 border border-amber-500/30 hover:bg-amber-500/30 text-amber-300 text-[0.68rem] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main editor/preview flex container */}
+      <div className="flex flex-col md:flex-row w-full flex-1 bg-background relative">
 
       {/* Editor Pane */}
       <div
@@ -1725,6 +1760,7 @@ export const Editor: React.FC<EditorProps> = ({
           />
         </div>
       </div>
+      </div>
 
       {/* Floating Panel Controls */}
       <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 sm:bottom-6 sm:right-6 flex items-center gap-1.5 z-50 bg-card/60 backdrop-blur-xl border border-border px-3 py-2 rounded-full shadow-2xl animate-fade-in select-none max-w-[calc(100%-2rem)] overflow-x-auto flex-nowrap no-scrollbar">
@@ -1862,31 +1898,6 @@ export const Editor: React.FC<EditorProps> = ({
           </span>
         </button>
       </div>
-
-      {/* Error modal/alert banner */}
-      {saveStatus === 'error' && (
-        <div className="bg-card/75 backdrop-blur-xl border border-border rounded-xl p-5 shadow-2xl flex gap-3 max-w-[480px] absolute top-6 left-1/2 -translate-x-1/2 z-50 border-l-4 border-l-destructive animate-fade-in select-none">
-          <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
-          <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-            <span className="fontWeight-700 text-sm text-foreground">Save Failed</span>
-            <span className="text-xs text-muted-foreground leading-relaxed break-words">{errorMessage}</span>
-            <div className="flex gap-2 mt-2">
-              <button
-                onClick={() => setSaveStatus('idle')}
-                className="bg-muted hover:bg-border/60 border border-border text-foreground text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer transition-all"
-              >
-                Dismiss
-              </button>
-              <button
-                onClick={handleSave}
-                className="bg-primary hover:bg-primary/90 text-white text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer transition-all hover:shadow-md hover:shadow-primary/10"
-              >
-                Retry Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

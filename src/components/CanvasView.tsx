@@ -534,6 +534,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   const initialContentRef = useRef(initialContent);
   const onSaveRef = useRef(onSave);
   const isMounted = useRef(true);
+  const isSavingRef = useRef(false);
 
   // Render-phase prop synchronization
   const [prevProps, setPrevProps] = useState({ initialContent, initialSha });
@@ -618,6 +619,9 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
   }, [onSave]);
 
   const performAutoSave = useCallback(async () => {
+    // Prevent concurrent saves
+    if (isSavingRef.current) return;
+
     const currentNodes = nodesRef.current;
     const currentEdges = edgesRef.current;
     const currentSha = shaRef.current;
@@ -644,6 +648,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       // Ignore parse errors of original content
     }
 
+    isSavingRef.current = true;
     if (isMounted.current) {
       setSaveStatus('saving');
     }
@@ -652,6 +657,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
       const result = await onSaveRef.current(serialized, currentSha);
       if (isMounted.current) {
         setSha(result.sha);
+        shaRef.current = result.sha;
         initialContentRef.current = serialized;
         setSavedContent(serialized);
         setSaveStatus('saved');
@@ -666,6 +672,8 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
           if (isMounted.current) setSaveStatus('idle');
         }, 4000);
       }
+    } finally {
+      isSavingRef.current = false;
     }
   }, []);
 
