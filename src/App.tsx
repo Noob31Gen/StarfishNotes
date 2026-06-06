@@ -1850,7 +1850,7 @@ export default function App() {
         const status = await checkApiRateLimit(githubToken);
         console.log(`[API Status] Remaining: ${status.remaining}/${status.limit} requests`);
         console.log(`[API Reset] Reset time: ${status.reset.toLocaleString()}`);
-        
+
         if (status.isLimited) {
           console.warn('[API Limit] GitHub API rate limit reached! Pausing sync operations...');
           setApiLimitReached(true);
@@ -1871,7 +1871,7 @@ export default function App() {
     };
 
     // Check rate limit every 30 seconds
-    const interval = setInterval(checkRateLimit, 30 * 1000);
+    const interval = setInterval(checkRateLimit, 180 * 1000);
     // Also check immediately on mount
     checkRateLimit();
 
@@ -2282,7 +2282,7 @@ export default function App() {
       const status = await checkApiRateLimit(githubToken);
       console.log(`[API Status] Remaining: ${status.remaining}/${status.limit} requests`);
       console.log(`[API Reset] Reset time: ${status.reset.toLocaleString()}`);
-      
+
       if (status.isLimited) {
         console.log('[API Limit] API rate limit still active. Sync remains paused.');
         setApiLimitResetTime(status.reset);
