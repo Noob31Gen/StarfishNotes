@@ -1105,7 +1105,7 @@ export default function App() {
     } finally {
       setIsLoadingTree(false);
     }
-  }, [githubToken, repoName, branchName, activeFilePath, isOffline, refreshFilesOffline, preloadAllFilesContents, loadFilesFromLocalCache]);
+  }, [githubToken, repoName, branchName, isOffline, refreshFilesOffline, preloadAllFilesContents, loadFilesFromLocalCache]);
 
   const checkAndLoadVault = useCallback(async (token: string, repo: string, branch: string) => {
     try {
@@ -1392,6 +1392,8 @@ export default function App() {
       if (shouldNavigate) {
         setActiveFilePath(finalPathResolved);
       }
+      // Refresh tree from server to ensure consistency
+      refreshFiles(githubToken, repoName, branchName);
       return { path: finalPathResolved, name: newFile.name };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to upload attachment.';
@@ -2294,6 +2296,8 @@ export default function App() {
       setFileContents(prev => ({ ...prev, [finalPath]: initialText }));
       setActiveFilePath(finalPath);
       setViewTab('workspace'); // Toggle workspace active
+      // Refresh tree from server to ensure consistency
+      refreshFiles(githubToken, repoName, branchName);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to create new file.';
       setAuthError(msg);
@@ -2389,6 +2393,8 @@ export default function App() {
       if (activeFilePath === path) {
         setActiveFilePath(null);
       }
+      // Refresh tree from server to ensure consistency
+      refreshFiles(githubToken, repoName, branchName);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to delete file.';
       setAuthError(msg);
@@ -2497,6 +2503,8 @@ export default function App() {
       if (activeFilePath === oldPath) {
         setActiveFilePath(newPath);
       }
+      // Refresh tree from server to ensure consistency
+      refreshFiles(githubToken, repoName, branchName);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to rename note.';
       setAuthError(msg);
@@ -2605,6 +2613,8 @@ export default function App() {
         [newPath]: content
       }));
       setActiveFilePath(newPath);
+      // Refresh tree from server to ensure consistency
+      refreshFiles(githubToken, repoName, branchName);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to copy note.';
       setAuthError(msg);
@@ -2697,6 +2707,8 @@ export default function App() {
       if (activeFilePath === oldPath) {
         setActiveFilePath(newPath);
       }
+      // Refresh tree from server to ensure consistency
+      refreshFiles(githubToken, repoName, branchName);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to move note.';
       setAuthError(msg);
@@ -2733,6 +2745,8 @@ export default function App() {
       if (activeFilePath && (activeFilePath === folderPath || activeFilePath.startsWith(prefix))) {
         setActiveFilePath(null);
       }
+      // Refresh tree from server to ensure consistency
+      refreshFiles(githubToken, repoName, branchName);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to delete folder.';
       setAuthError(msg);
