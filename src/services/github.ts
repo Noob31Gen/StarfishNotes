@@ -348,7 +348,7 @@ export async function initializeVault(
   branch: string
 ): Promise<void> {
   const metadata = {
-    appName: 'Starfish Notes',
+    appName: 'StarfishNotes',
     version: '1.0.0',
     initializedAt: new Date().toISOString(),
   };
