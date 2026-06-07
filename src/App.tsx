@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings, Download, Paperclip } from 'lucide-react';
+import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings, Download, Paperclip, AlertTriangle } from 'lucide-react';
 import JSZip from 'jszip';
 import {
   validateRepository, checkVaultCompatibility, initializeVault,
@@ -216,6 +216,7 @@ export default function App() {
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [parentFolderPathForNewFolder, setParentFolderPathForNewFolder] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState('');
+  const [folderCreationError, setFolderCreationError] = useState('');
 
   const [pendingMoveCopyFile, setPendingMoveCopyFile] = useState<VaultFile | null>(null);
   const [moveCopyAction, setMoveCopyAction] = useState<'move' | 'copy'>('copy');
@@ -223,6 +224,7 @@ export default function App() {
   const [moveCopyFolderSelect, setMoveCopyFolderSelect] = useState('/');
   const [isMoveCopyFolderDropdownOpen, setIsMoveCopyFolderDropdownOpen] = useState(false);
   const [moveCopyFolderSearch, setMoveCopyFolderSearch] = useState('');
+  const [moveCopyError, setMoveCopyError] = useState('');
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<string | null>(null);
 
   // File system State
@@ -295,6 +297,7 @@ export default function App() {
   const [pendingRenameFile, setPendingRenameFile] = useState<{ path: string, name: string, sha: string } | null>(null);
   const [renameInputValue, setRenameInputValue] = useState('');
   const [renameError, setRenameError] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Stable handlers declared before checkSession mount hook to prevent Temporal Dead Zone (TDZ)
 
@@ -3174,11 +3177,19 @@ export default function App() {
             <div className="w-[1px] h-4.5 bg-border mx-1" />
 
             <button
-              onClick={() => refreshFiles()}
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-card border border-transparent hover:border-border transition-all cursor-pointer"
+              onClick={async () => {
+                setIsRefreshing(true);
+                try {
+                  await refreshFiles();
+                } finally {
+                  setIsRefreshing(false);
+                }
+              }}
+              disabled={isRefreshing}
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-card border border-transparent hover:border-border transition-all cursor-pointer disabled:opacity-50"
               title="Refresh Tree"
             >
-              <RefreshCw size={13.5} />
+              <RefreshCw size={13.5} className={cn(isRefreshing && 'animate-spin')} />
             </button>
           </div>
         </header>
@@ -3550,10 +3561,32 @@ export default function App() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (!newFolderName.trim()) return;
+              const cleanName = newFolderName.trim();
+
+              // Validation 1: Empty name
+              if (!cleanName) {
+                setFolderCreationError('Folder name cannot be empty.');
+                return;
+              }
+
+              // Validation 2: Invalid characters
+              if (/[/\\:*?"<>|]/.test(cleanName)) {
+                setFolderCreationError('Folder name contains invalid characters.');
+                return;
+              }
+
+              // Validation 3: Check for duplicate folder
               const targetPath = parentFolderPathForNewFolder && parentFolderPathForNewFolder !== '/'
-                ? `${parentFolderPathForNewFolder}/${newFolderName.trim()}`
-                : newFolderName.trim();
+                ? `${parentFolderPathForNewFolder}/${cleanName}`
+                : cleanName;
+              const gitkeepPath = `${targetPath}/.gitkeep`;
+
+              if (files.some(f => f.path === gitkeepPath || f.path.startsWith(targetPath + '/'))) {
+                setFolderCreationError(`A folder named "${cleanName}" already exists.`);
+                return;
+              }
+
+              setFolderCreationError('');
               handleCreateFolder(targetPath);
               setShowCreateFolderModal(false);
               setNewFolderName('');
@@ -3583,12 +3616,20 @@ export default function App() {
               <input
                 type="text"
                 value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
+                onChange={(e) => {
+                  setNewFolderName(e.target.value);
+                  setFolderCreationError('');
+                }}
                 placeholder="Enter folder name..."
                 autoFocus
                 required
                 className="w-full bg-muted/50 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200"
               />
+              {folderCreationError && (
+                <span className="text-[0.7rem] font-semibold text-destructive mt-1">
+                  {folderCreationError}
+                </span>
+              )}
             </div>
 
             <div className="flex gap-2.5 mt-2">
@@ -3597,6 +3638,7 @@ export default function App() {
                 onClick={() => {
                   setShowCreateFolderModal(false);
                   setNewFolderName('');
+                  setFolderCreationError('');
                 }}
                 className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
               >
@@ -3627,6 +3669,13 @@ export default function App() {
                 ? `${moveCopyFolderSelect}/${cleanName}`
                 : cleanName;
 
+              // Check if target file already exists (only for move/copy, not rename)
+              if (files.some(f => f.path === targetPath)) {
+                setMoveCopyError(`A file named "${cleanName}" already exists at the destination.`);
+                return;
+              }
+
+              setMoveCopyError('');
               if (moveCopyAction === 'copy') {
                 handleCopyFile(pendingMoveCopyFile.path, targetPath);
               } else {
@@ -3650,6 +3699,15 @@ export default function App() {
               </div>
             </div>
 
+            {moveCopyError && (
+              <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                <span className="text-[0.7rem] font-semibold text-destructive">
+                  {moveCopyError}
+                </span>
+              </div>
+            )}
+
             {/* File name input */}
             <div className="flex flex-col gap-1.5">
               <span className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-widest px-1">
@@ -3659,7 +3717,10 @@ export default function App() {
                 <input
                   type="text"
                   value={moveCopyNameInput}
-                  onChange={(e) => setMoveCopyNameInput(e.target.value)}
+                  onChange={(e) => {
+                    setMoveCopyNameInput(e.target.value);
+                    setMoveCopyError('');
+                  }}
                   placeholder="Enter name..."
                   required
                   className="w-full bg-muted/50 border border-border text-foreground pl-4 pr-16 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200"
@@ -3692,7 +3753,7 @@ export default function App() {
                   onClick={() => setIsMoveCopyFolderDropdownOpen(!isMoveCopyFolderDropdownOpen)}
                   className="w-full bg-muted/50 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200 cursor-pointer flex items-center justify-between text-left relative z-20"
                 >
-                  <span className="truncate flex items-center gap-2">
+                  <span className="flex items-center gap-2">
                     {moveCopyFolderSelect === '/' ? (
                       <>
                         <Compass className="w-3.5 h-3.5 text-accent" />
@@ -3799,7 +3860,10 @@ export default function App() {
             <div className="flex gap-2.5 mt-4">
               <button
                 type="button"
-                onClick={() => setPendingMoveCopyFile(null)}
+                onClick={() => {
+                  setPendingMoveCopyFile(null);
+                  setMoveCopyError('');
+                }}
                 className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
               >
                 Cancel

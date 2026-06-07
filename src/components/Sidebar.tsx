@@ -91,6 +91,9 @@ interface FolderTreeItemProps {
   onCreateFile: (folderPath: string, extension: '.md' | '.canvas' | '.base') => void;
   onCreateFolder: (parentPath: string) => void;
   onDeleteFolder: (folderPath: string) => void;
+  onRenameFolder: (folderPath: string) => void;
+  onMoveFolder: (folderPath: string) => void;
+  onCopyFolder: (folderPath: string) => void;
   onRenameFile: (path: string, name: string, sha: string) => void;
   onDeleteFile: (path: string, sha: string) => void;
   onCopyFile: (path: string, name: string) => void;
@@ -100,6 +103,8 @@ interface FolderTreeItemProps {
   // Coordination states for active 3-dots dropdown popover menu
   activeMenuPath: string | null;
   setActiveMenuPath: (path: string | null) => void;
+  activeFolderMenuPath: string | null;
+  setActiveFolderMenuPath: (path: string | null) => void;
 }
 
 export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
@@ -113,6 +118,9 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
   onCreateFile,
   onCreateFolder,
   onDeleteFolder,
+  onRenameFolder,
+  onMoveFolder,
+  onCopyFolder,
   onRenameFile,
   onDeleteFile,
   onCopyFile,
@@ -121,6 +129,8 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
 
   activeMenuPath,
   setActiveMenuPath,
+  activeFolderMenuPath,
+  setActiveFolderMenuPath,
 }) => {
   if (node.type === 'file') {
     const isActive = node.path === activeFilePath;
@@ -342,16 +352,82 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
           >
             <FolderPlus size={11.5} />
           </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeleteFolder(node.path);
-            }}
-            className="w-5 h-5 flex items-center justify-center rounded-full text-muted-foreground hover:bg-destructive/15 hover:text-destructive transition-all cursor-pointer"
-            title="Delete Folder"
-          >
-            <Trash2 size={11} />
-          </button>
+          
+          {/* 3-dot menu for folder operations */}
+          <div className="relative shrink-0 select-none">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveFolderMenuPath(activeFolderMenuPath === node.path ? null : node.path);
+              }}
+              className={cn(
+                "folder-actions-trigger w-5 h-5 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer",
+                activeFolderMenuPath === node.path ? "bg-muted text-foreground opacity-100" : "opacity-100"
+              )}
+              title="Folder Actions"
+            >
+              <MoreHorizontal size={11} />
+            </button>
+
+            {activeFolderMenuPath === node.path && (
+              <div
+                className="folder-actions-menu absolute right-0 top-full mt-1 w-[140px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1 flex flex-col gap-0.5 z-40 animate-in fade-in zoom-in-95 duration-100"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveFolderMenuPath(null);
+                    onCopyFolder(node.path);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
+                >
+                  <Copy size={11} className="text-muted-foreground/75" />
+                  <span>Copy Folder</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveFolderMenuPath(null);
+                    onMoveFolder(node.path);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
+                >
+                  <ArrowRight size={11} className="text-muted-foreground/75" />
+                  <span>Move Folder</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveFolderMenuPath(null);
+                    onRenameFolder(node.path);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
+                >
+                  <Edit3 size={11} className="text-muted-foreground/75" />
+                  <span>Rename Folder</span>
+                </button>
+
+                <div className="h-[1px] bg-border my-0.5" />
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveFolderMenuPath(null);
+                    onDeleteFolder(node.path);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer transition-all border border-transparent"
+                >
+                  <Trash2 size={11} className="text-destructive/75" />
+                  <span>Delete Folder</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -468,6 +544,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [activeMenuPath, setActiveMenuPath] = useState<string | null>(null);
+  const [activeFolderMenuPath, setActiveFolderMenuPath] = useState<string | null>(null);
+  
+  // Folder operation states
+  const [folderToRename, setFolderToRename] = useState<string | null>(null);
+  const [folderRenameInputValue, setFolderRenameInputValue] = useState('');
+  const [folderToMove, setFolderToMove] = useState<string | null>(null);
+  const [folderToCopy, setFolderToCopy] = useState<string | null>(null);
+  const [folderMoveCopyNameInput, setFolderMoveCopyNameInput] = useState('');
+  const [folderMoveCopyDestFolder, setFolderMoveCopyDestFolder] = useState('/');
+  const [isFolderMoveCopyDestDropdownOpen, setIsFolderMoveCopyDestDropdownOpen] = useState(false);
+  const [folderMoveCopyDestSearch, setFolderMoveCopyDestSearch] = useState('');
 
   const toggleFolder = (path: string) => {
     setOpenFolders(prev => ({
@@ -478,7 +565,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Close active 3-dots actions dropdown menu when clicking anywhere on the document (non-blocking!)
   useEffect(() => {
-    if (activeMenuPath === null) return;
+    if (activeMenuPath === null && activeFolderMenuPath === null) return;
 
     const handleDocumentClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -486,7 +573,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (target.closest('.note-actions-menu') || target.closest('.note-actions-trigger')) {
         return;
       }
+      if (target.closest('.folder-actions-menu') || target.closest('.folder-actions-trigger')) {
+        return;
+      }
       setActiveMenuPath(null);
+      setActiveFolderMenuPath(null);
     };
 
     const timer = setTimeout(() => {
@@ -497,7 +588,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       clearTimeout(timer);
       document.removeEventListener('click', handleDocumentClick);
     };
-  }, [activeMenuPath]);
+  }, [activeMenuPath, activeFolderMenuPath]);
 
   // Mouse drag listeners for resizer handle
   const handleMouseDown = (mouseDownEvent: React.MouseEvent) => {
@@ -924,6 +1015,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }}
                       onCreateFolder={(parentPath) => onCreateFolderClick(parentPath)}
                       onDeleteFolder={(folderPath) => onDeleteFolderClick(folderPath)}
+                      onRenameFolder={(folderPath) => {
+                        setFolderToRename(folderPath);
+                        setFolderRenameInputValue(folderPath.split('/').pop() || '');
+                      }}
+                      onMoveFolder={(folderPath) => {
+                        setFolderToMove(folderPath);
+                        const folderName = folderPath.split('/').pop() || '';
+                        setFolderMoveCopyNameInput(folderName);
+                        const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
+                        setFolderMoveCopyDestFolder(parentDir);
+                      }}
+                      onCopyFolder={(folderPath) => {
+                        setFolderToCopy(folderPath);
+                        const folderName = folderPath.split('/').pop() || '';
+                        setFolderMoveCopyNameInput(`${folderName} - Copy`);
+                        const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
+                        setFolderMoveCopyDestFolder(parentDir);
+                      }}
                       onRenameFile={onRenameClick}
                       onDeleteFile={onDeleteClick}
                       onCopyFile={onCopyClick}
@@ -931,6 +1040,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       onDownloadFile={onDownloadClick}
                       activeMenuPath={activeMenuPath}
                       setActiveMenuPath={setActiveMenuPath}
+                      activeFolderMenuPath={activeFolderMenuPath}
+                      setActiveFolderMenuPath={setActiveFolderMenuPath}
                     />
                   ));
                 })()
