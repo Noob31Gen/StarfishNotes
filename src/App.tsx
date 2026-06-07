@@ -3340,12 +3340,6 @@ export default function App() {
           setPendingDeleteFolder(folderPath);
         }}
         onCopyClick={async (path, name) => {
-          setIsLoadingTree(true);
-          try {
-            await refreshFiles();
-          } finally {
-            setIsLoadingTree(false);
-          }
           const matched = files.find(f => f.path === path);
           if (matched) {
             setPendingMoveCopyFile(matched);
@@ -3355,14 +3349,14 @@ export default function App() {
             const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
             setMoveCopyFolderSelect(parentDir);
           }
-        }}
-        onMoveClick={async (path, name) => {
           setIsLoadingTree(true);
           try {
             await refreshFiles();
           } finally {
             setIsLoadingTree(false);
           }
+        }}
+        onMoveClick={async (path, name) => {
           const matched = files.find(f => f.path === path);
           if (matched) {
             setPendingMoveCopyFile(matched);
@@ -3371,6 +3365,12 @@ export default function App() {
             setMoveCopyNameInput(cleanName);
             const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
             setMoveCopyFolderSelect(parentDir);
+          }
+          setIsLoadingTree(true);
+          try {
+            await refreshFiles();
+          } finally {
+            setIsLoadingTree(false);
           }
         }}
         onRenameFolderClick={(folderPath) => {
