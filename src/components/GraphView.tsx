@@ -881,6 +881,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
     dragNodeRef.current = null;
     isDraggingRef.current = false;
     touchActiveNodeRef.current = null;
+    
+    // If there's a remaining touch after pinch ends, update mouse position to prevent jump
+    if (e.touches.length === 1) {
+      const remainingTouch = e.touches[0];
+      mouseRef.current = { x: remainingTouch.clientX, y: remainingTouch.clientY };
+    }
+    
     setTimeout(() => {
       isTouchRef.current = false;
     }, 50);
