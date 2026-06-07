@@ -84,7 +84,7 @@ const FolderTreeItemComponent: React.FC<FolderTreeItemProps> = ({
   const fileCount = useMemo(() => {
     if (node.type === 'file') return 0;
     return countAllFiles((node as TreeFolder).children);
-  }, [node]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [node.type, node.type === 'folder' ? (node as TreeFolder).children : undefined]);
 
   if (node.type === 'file') {
     const isActive = node.path === activeFilePath;
