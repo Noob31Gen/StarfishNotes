@@ -567,19 +567,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar Navigation Shell */}
       <aside
         style={{
-          // Only apply width constraints when not in mobile sidebar mode
-          // On mobile when open, Tailwind classes handle sizing; when closed, transform handles it
-          ...(isMobileSidebarOpen ? {} : {
-            width: isSidebarCollapsed ? '0px' : `${sidebarWidth}px`,
-            minWidth: isSidebarCollapsed ? '0px' : `${sidebarWidth}px`,
-            maxWidth: isSidebarCollapsed ? '0px' : `${sidebarWidth}px`,
-          }),
+          width: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
+          minWidth: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
+          maxWidth: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
+          willChange: 'transform',
+          transform: 'translate3d(0, 0, 0)',
         }}
         className={cn(
-          "h-full bg-card/80 backdrop-blur-xl border-r border-border flex flex-col z-[1000] fixed top-0 left-0 md:relative md:top-auto md:left-auto transition-transform md:translate-x-0",
+          "h-full bg-card/80 backdrop-blur-xl border-r border-border flex flex-col z-[1000] fixed top-0 left-0 md:relative md:top-auto md:left-auto",
           isMobileSidebarOpen ? "translate-x-0 w-full min-w-full md:w-[280px] md:min-w-[280px]" : "-translate-x-full md:translate-x-0",
           isSidebarCollapsed && "overflow-hidden border-r-0 md:w-0!",
-          !isResizingSidebar && "transition-transform md:transition-all duration-300 ease-in-out"
+          "transition-transform md:transition-all duration-300 ease-in-out"
         )}
       >
         <div className="h-[60px] px-5 flex items-center justify-between border-b border-border select-none">
