@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Compass, Plus, Search, RefreshCw, Settings, FileText, Trash2, Edit3, GitBranch,
   Folder, FolderOpen, ChevronRight, ChevronDown, FolderPlus, Copy, ArrowRight, MoreHorizontal,
@@ -555,9 +555,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const highlightColor = activeFilePath ? getFileTypeColor(activeFilePath) : null;
 
   // Collapse root files when sidebar is dismissed/minimized
+  const hasClosedRootFilesRef = useRef(false);
   useEffect(() => {
-    if (!isMobileSidebarOpen) {
+    if (!isMobileSidebarOpen && !hasClosedRootFilesRef.current) {
       setIsRootFilesOpen(false);
+      hasClosedRootFilesRef.current = true;
+    } else if (isMobileSidebarOpen) {
+      hasClosedRootFilesRef.current = false;
     }
   }, [isMobileSidebarOpen]);
 
@@ -1183,7 +1187,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 setActiveMenuPath(null);
-                                                onRenameClick(file.path, file.name, (file as any).file?.sha);
+                                                onRenameClick(file.path, file.name, (file as TreeFile).file.sha);
                                               }}
                                               className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
                                             >
@@ -1207,7 +1211,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 setActiveMenuPath(null);
-                                                onMoveClick(file.path, file.name, (file as any).file?.sha);
+                                                onMoveClick(file.path, file.name, (file as TreeFile).file.sha);
                                               }}
                                               className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
                                             >
@@ -1219,7 +1223,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 setActiveMenuPath(null);
-                                                onDownloadClick(file.path, file.name, (file as any).file?.sha);
+                                                onDownloadClick(file.path, file.name, (file as TreeFile).file.sha);
                                               }}
                                               className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-point cursor-pointer transition-all border border-transparent"
                                             >
@@ -1231,7 +1235,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 setActiveMenuPath(null);
-                                                onDeleteClick(file.path, (file as any).file?.sha);
+                                                onDeleteClick(file.path, (file as TreeFile).file.sha);
                                               }}
                                               className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer transition-all border border-transparent"
                                             >
