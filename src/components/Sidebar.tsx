@@ -567,9 +567,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar Navigation Shell */}
       <aside
         style={{
-          width: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
-          minWidth: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
-          maxWidth: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
+          // Only apply width constraints when not in mobile sidebar mode
+          // On mobile when open, Tailwind classes handle sizing; when closed, transform handles it
+          ...(isMobileSidebarOpen ? {} : {
+            width: isSidebarCollapsed ? '0px' : `${sidebarWidth}px`,
+            minWidth: isSidebarCollapsed ? '0px' : `${sidebarWidth}px`,
+            maxWidth: isSidebarCollapsed ? '0px' : `${sidebarWidth}px`,
+          }),
         }}
         className={cn(
           "h-full bg-card/80 backdrop-blur-xl border-r border-border flex flex-col z-[1000] fixed top-0 left-0 md:relative md:top-auto md:left-auto transition-transform md:translate-x-0",
