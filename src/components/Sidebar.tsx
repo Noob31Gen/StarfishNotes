@@ -242,13 +242,13 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
   // Render Folder Node
   const isOpen = !!openFolders[node.path];
   const isHighlighted = (node.path === highlightedPath || isFolderInActiveFilePath(node.path)) && highlightedPath !== null && !isOpen;
-  
+
   const highlightClasses = isHighlighted && highlightColor ? {
     teal: 'bg-teal-500/10 text-teal-200 border border-teal-500/20',
     rose: 'bg-rose-500/10 text-rose-200 border border-rose-500/20',
     purple: 'bg-purple-500/10 text-purple-200 border border-purple-500/20',
   }[highlightColor] : '';
-  
+
   return (
     <div className="flex flex-col gap-0.5">
       {/* Folder Row Header */}
@@ -314,7 +314,7 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
           >
             <FolderPlus size={11.5} />
           </button>
-          
+
           {/* 3-dot menu for folder operations */}
           <div className="relative shrink-0 select-none">
             <button
@@ -1056,10 +1056,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 "flex items-center gap-2 px-2 py-1.5 text-xs font-semibold rounded-lg transition-all",
                                 highlightedPath === null && highlightColor && !isRootFilesOpen
                                   ? {
-                                      teal: 'bg-teal-500/10 text-teal-200 border border-teal-500/20 hover:text-teal-200 hover:bg-teal-500/15',
-                                      rose: 'bg-rose-500/10 text-rose-200 border border-rose-500/20 hover:text-rose-200 hover:bg-rose-500/15',
-                                      purple: 'bg-purple-500/10 text-purple-200 border border-purple-500/20 hover:text-purple-200 hover:bg-purple-500/15',
-                                    }[highlightColor]
+                                    teal: 'bg-teal-500/10 text-teal-200 border border-teal-500/20 hover:text-teal-200 hover:bg-teal-500/15',
+                                    rose: 'bg-rose-500/10 text-rose-200 border border-rose-500/20 hover:text-rose-200 hover:bg-rose-500/15',
+                                    purple: 'bg-purple-500/10 text-purple-200 border border-purple-500/20 hover:text-purple-200 hover:bg-purple-500/15',
+                                  }[highlightColor]
                                   : 'text-muted-foreground/75 hover:text-foreground hover:bg-white/[0.04]'
                               )}
                             >
@@ -1070,185 +1070,185 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   isRootFilesOpen && "rotate-90"
                                 )}
                               />
-                              <span className="text-[0.65rem] uppercase tracking-wider">Files</span>
+                              <span className="text-[0.65rem] uppercase tracking-wider">Files in Vault Root</span>
                               <span className="text-[0.6rem] text-muted-foreground/50 font-normal">
                                 ({rootFiles.length})
                               </span>
                             </button>
 
-                          {isRootFilesOpen && (
-                            <div className="flex flex-col gap-1 pl-2">
-                              {rootFiles.map((file) => {
-                                const isActive = file.path === activeFilePath;
-                                const isCanvas = file.path.endsWith('.canvas');
-                                const isBase = file.path.endsWith('.base');
-                                return (
-                                  <div
-                                    key={file.path}
-                                    title={file.name}
-                                    className={cn(
-                                      "group flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg cursor-pointer text-xs font-medium border border-transparent transition-all duration-150 hover:bg-white/[0.05] hover:text-foreground relative",
-                                      isActive
-                                        ? isCanvas
-                                          ? "bg-teal-500/10 text-teal-300 font-semibold border-teal-500/15"
-                                          : isBase
-                                            ? "bg-rose-500/10 text-rose-300 font-semibold border-rose-500/15"
-                                            : "bg-purple-500/10 text-purple-300 font-semibold border-purple-500/15"
-                                        : "text-muted-foreground/80"
-                                    )}
-                                    onClick={() => {
-                                      setActiveFilePath(file.path);
-                                      setViewTab('workspace');
-                                      setIsMobileSidebarOpen(false);
-                                    }}
-                                  >
-                                    {file.path.toLowerCase().endsWith('.png') ||
-                                      file.path.toLowerCase().endsWith('.jpg') ||
-                                      file.path.toLowerCase().endsWith('.jpeg') ||
-                                      file.path.toLowerCase().endsWith('.gif') ||
-                                      file.path.toLowerCase().endsWith('.webp') ||
-                                      file.path.toLowerCase().endsWith('.svg') ? (
-                                      <Image
-                                        className={cn(
-                                          "w-3.5 h-3.5 shrink-0 transition-colors",
-                                          isActive ? "text-purple-300" : "text-muted-foreground/60"
-                                        )}
-                                      />
-                                    ) : file.path.toLowerCase().endsWith('.pdf') ? (
-                                      <Paperclip
-                                        className={cn(
-                                          "w-3.5 h-3.5 shrink-0 transition-colors",
-                                          isActive ? "text-purple-300" : "text-muted-foreground/60"
-                                        )}
-                                      />
-                                    ) : isBase ? (
-                                      <Database
-                                        className={cn(
-                                          "w-3.5 h-3.5 shrink-0 transition-colors",
-                                          isActive ? "text-rose-400" : "text-rose-500/80"
-                                        )}
-                                      />
-                                    ) : isCanvas ? (
-                                      <Compass
-                                        className={cn(
-                                          "w-3.5 h-3.5 shrink-0 transition-colors",
-                                          isActive ? "text-teal-400" : "text-teal-500/80"
-                                        )}
-                                      />
-                                    ) : (
-                                      <FileText
-                                        className={cn(
-                                          "w-3.5 h-3.5 shrink-0 transition-colors",
-                                          isActive ? "text-purple-400" : "text-purple-500/80"
-                                        )}
-                                      />
-                                    )}
-                                    <span className="truncate flex-1">
-                                      {file.name.replace(/\.(md|canvas|base)$/, '')}
-                                    </span>
-                                    {isCanvas && (
-                                      <span className="text-[0.55rem] bg-teal-500/15 text-teal-400 px-1.5 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
-                                        Board
-                                      </span>
-                                    )}
-                                    {isBase && (
-                                      <span className="text-[0.55rem] bg-rose-500/15 text-rose-400 px-1.5 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
-                                        Base
-                                      </span>
-                                    )}
-
-                                    {/* 3-dots menu for root files */}
-                                    <div className="relative shrink-0 select-none">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setActiveMenuPath(activeMenuPath === file.path ? null : file.path);
-                                        }}
-                                        className={cn(
-                                          "note-actions-trigger w-5 h-5 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition-all cursor-pointer",
-                                          activeMenuPath === file.path ? "bg-white/[0.06] text-foreground" : "opacity-0 group-hover:opacity-100"
-                                        )}
-                                        title="File Actions"
-                                      >
-                                        <MoreHorizontal size={12} />
-                                      </button>
-
-                                      {activeMenuPath === file.path && (
-                                        <div
-                                          className="note-actions-menu absolute right-0 top-full mt-1 w-[140px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1 flex flex-col gap-0.5 z-40 animate-in fade-in zoom-in-95 duration-100"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setActiveMenuPath(null);
-                                              onRenameClick(file.path, file.name, (file as any).file?.sha);
-                                            }}
-                                            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
-                                          >
-                                            <Edit3 size={11} />
-                                            <span>Rename</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setActiveMenuPath(null);
-                                              onCopyClick(file.path, file.name);
-                                            }}
-                                            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
-                                          >
-                                            <Copy size={11} />
-                                            <span>Copy</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setActiveMenuPath(null);
-                                              onMoveClick(file.path, file.name, (file as any).file?.sha);
-                                            }}
-                                            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
-                                          >
-                                            <ArrowRight size={11} />
-                                            <span>Move</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setActiveMenuPath(null);
-                                              onDownloadClick(file.path, file.name, (file as any).file?.sha);
-                                            }}
-                                            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-point cursor-pointer transition-all border border-transparent"
-                                          >
-                                            <Download size={11} />
-                                            <span>Download</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setActiveMenuPath(null);
-                                              onDeleteClick(file.path, (file as any).file?.sha);
-                                            }}
-                                            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer transition-all border border-transparent"
-                                          >
-                                            <Trash2 size={11} className="text-destructive/75" />
-                                            <span>Delete</span>
-                                          </button>
-                                        </div>
+                            {isRootFilesOpen && (
+                              <div className="flex flex-col gap-1 pl-2">
+                                {rootFiles.map((file) => {
+                                  const isActive = file.path === activeFilePath;
+                                  const isCanvas = file.path.endsWith('.canvas');
+                                  const isBase = file.path.endsWith('.base');
+                                  return (
+                                    <div
+                                      key={file.path}
+                                      title={file.name}
+                                      className={cn(
+                                        "group flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg cursor-pointer text-xs font-medium border border-transparent transition-all duration-150 hover:bg-white/[0.05] hover:text-foreground relative",
+                                        isActive
+                                          ? isCanvas
+                                            ? "bg-teal-500/10 text-teal-300 font-semibold border-teal-500/15"
+                                            : isBase
+                                              ? "bg-rose-500/10 text-rose-300 font-semibold border-rose-500/15"
+                                              : "bg-purple-500/10 text-purple-300 font-semibold border-purple-500/15"
+                                          : "text-muted-foreground/80"
                                       )}
+                                      onClick={() => {
+                                        setActiveFilePath(file.path);
+                                        setViewTab('workspace');
+                                        setIsMobileSidebarOpen(false);
+                                      }}
+                                    >
+                                      {file.path.toLowerCase().endsWith('.png') ||
+                                        file.path.toLowerCase().endsWith('.jpg') ||
+                                        file.path.toLowerCase().endsWith('.jpeg') ||
+                                        file.path.toLowerCase().endsWith('.gif') ||
+                                        file.path.toLowerCase().endsWith('.webp') ||
+                                        file.path.toLowerCase().endsWith('.svg') ? (
+                                        <Image
+                                          className={cn(
+                                            "w-3.5 h-3.5 shrink-0 transition-colors",
+                                            isActive ? "text-purple-300" : "text-muted-foreground/60"
+                                          )}
+                                        />
+                                      ) : file.path.toLowerCase().endsWith('.pdf') ? (
+                                        <Paperclip
+                                          className={cn(
+                                            "w-3.5 h-3.5 shrink-0 transition-colors",
+                                            isActive ? "text-purple-300" : "text-muted-foreground/60"
+                                          )}
+                                        />
+                                      ) : isBase ? (
+                                        <Database
+                                          className={cn(
+                                            "w-3.5 h-3.5 shrink-0 transition-colors",
+                                            isActive ? "text-rose-400" : "text-rose-500/80"
+                                          )}
+                                        />
+                                      ) : isCanvas ? (
+                                        <Compass
+                                          className={cn(
+                                            "w-3.5 h-3.5 shrink-0 transition-colors",
+                                            isActive ? "text-teal-400" : "text-teal-500/80"
+                                          )}
+                                        />
+                                      ) : (
+                                        <FileText
+                                          className={cn(
+                                            "w-3.5 h-3.5 shrink-0 transition-colors",
+                                            isActive ? "text-purple-400" : "text-purple-500/80"
+                                          )}
+                                        />
+                                      )}
+                                      <span className="truncate flex-1">
+                                        {file.name.replace(/\.(md|canvas|base)$/, '')}
+                                      </span>
+                                      {isCanvas && (
+                                        <span className="text-[0.55rem] bg-teal-500/15 text-teal-400 px-1.5 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
+                                          Board
+                                        </span>
+                                      )}
+                                      {isBase && (
+                                        <span className="text-[0.55rem] bg-rose-500/15 text-rose-400 px-1.5 py-0.5 rounded-md font-bold tracking-wide uppercase shrink-0">
+                                          Base
+                                        </span>
+                                      )}
+
+                                      {/* 3-dots menu for root files */}
+                                      <div className="relative shrink-0 select-none">
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveMenuPath(activeMenuPath === file.path ? null : file.path);
+                                          }}
+                                          className={cn(
+                                            "note-actions-trigger w-5 h-5 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition-all cursor-pointer",
+                                            activeMenuPath === file.path ? "bg-white/[0.06] text-foreground" : "opacity-0 group-hover:opacity-100"
+                                          )}
+                                          title="File Actions"
+                                        >
+                                          <MoreHorizontal size={12} />
+                                        </button>
+
+                                        {activeMenuPath === file.path && (
+                                          <div
+                                            className="note-actions-menu absolute right-0 top-full mt-1 w-[140px] bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1 flex flex-col gap-0.5 z-40 animate-in fade-in zoom-in-95 duration-100"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenuPath(null);
+                                                onRenameClick(file.path, file.name, (file as any).file?.sha);
+                                              }}
+                                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
+                                            >
+                                              <Edit3 size={11} />
+                                              <span>Rename</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenuPath(null);
+                                                onCopyClick(file.path, file.name);
+                                              }}
+                                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
+                                            >
+                                              <Copy size={11} />
+                                              <span>Copy</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenuPath(null);
+                                                onMoveClick(file.path, file.name, (file as any).file?.sha);
+                                              }}
+                                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-pointer transition-all border border-transparent"
+                                            >
+                                              <ArrowRight size={11} />
+                                              <span>Move</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenuPath(null);
+                                                onDownloadClick(file.path, file.name, (file as any).file?.sha);
+                                              }}
+                                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-muted-foreground hover:bg-white/[0.05] hover:text-foreground cursor-point cursor-pointer transition-all border border-transparent"
+                                            >
+                                              <Download size={11} />
+                                              <span>Download</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenuPath(null);
+                                                onDeleteClick(file.path, (file as any).file?.sha);
+                                              }}
+                                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[0.72rem] font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer transition-all border border-transparent"
+                                            >
+                                              <Trash2 size={11} className="text-destructive/75" />
+                                              <span>Delete</span>
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </>
                   );
                 })()
