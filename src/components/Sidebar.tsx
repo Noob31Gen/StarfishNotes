@@ -33,6 +33,11 @@ interface FolderTreeItemProps {
   setActiveMenuPath: (path: string | null) => void;
   activeFolderMenuPath: string | null;
   setActiveFolderMenuPath: (path: string | null) => void;
+
+  // Highlighting for parent folder of active file
+  highlightedPath: string | null;
+  highlightColor: 'purple' | 'teal' | 'rose' | null;
+  isFolderInActiveFilePath: (folderPath: string) => boolean;
 }
 
 export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
@@ -59,6 +64,10 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
   setActiveMenuPath,
   activeFolderMenuPath,
   setActiveFolderMenuPath,
+
+  highlightedPath,
+  highlightColor,
+  isFolderInActiveFilePath,
 }) => {
   if (node.type === 'file') {
     const isActive = node.path === activeFilePath;
@@ -232,12 +241,21 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
 
   // Render Folder Node
   const isOpen = !!openFolders[node.path];
+  const isHighlighted = (node.path === highlightedPath || isFolderInActiveFilePath(node.path)) && highlightedPath !== null && !isOpen;
+  
+  const highlightClasses = isHighlighted && highlightColor ? {
+    teal: 'bg-teal-500/10 text-teal-200 border border-teal-500/20',
+    rose: 'bg-rose-500/10 text-rose-200 border border-rose-500/20',
+    purple: 'bg-purple-500/10 text-purple-200 border border-purple-500/20',
+  }[highlightColor] : '';
+  
   return (
     <div className="flex flex-col gap-0.5">
       {/* Folder Row Header */}
       <div
         className={cn(
-          "group flex items-center justify-between py-1.5 px-2 rounded-lg text-xs font-semibold text-muted-foreground/80 hover:text-foreground transition-all hover:bg-white/[0.03]"
+          "group flex items-center justify-between py-1.5 px-2 rounded-lg text-xs font-semibold transition-all hover:bg-white/[0.03]",
+          isHighlighted ? highlightClasses : "text-muted-foreground/80 hover:text-foreground"
         )}
       >
         <div
@@ -246,14 +264,30 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
           onClick={() => toggleFolder(node.path)}
         >
           {isOpen ? (
-            <ChevronDown size={13} className="text-muted-foreground/50 shrink-0" />
+            <ChevronDown size={13} className={cn("shrink-0", isHighlighted && highlightColor ? {
+              teal: 'text-teal-300',
+              rose: 'text-rose-300',
+              purple: 'text-purple-300',
+            }[highlightColor] : "text-muted-foreground/50")} />
           ) : (
-            <ChevronRight size={13} className="text-muted-foreground/50 shrink-0" />
+            <ChevronRight size={13} className={cn("shrink-0", isHighlighted && highlightColor ? {
+              teal: 'text-teal-300',
+              rose: 'text-rose-300',
+              purple: 'text-purple-300',
+            }[highlightColor] : "text-muted-foreground/50")} />
           )}
           {isOpen ? (
-            <FolderOpen size={14} className="text-blue-400 shrink-0" />
+            <FolderOpen size={14} className={cn("shrink-0", isHighlighted && highlightColor ? {
+              teal: 'text-teal-400',
+              rose: 'text-rose-400',
+              purple: 'text-purple-400',
+            }[highlightColor] : "text-blue-400")} />
           ) : (
-            <Folder size={14} className="text-blue-500/80 shrink-0" />
+            <Folder size={14} className={cn("shrink-0", isHighlighted && highlightColor ? {
+              teal: 'text-teal-500/80',
+              rose: 'text-rose-500/80',
+              purple: 'text-purple-500/80',
+            }[highlightColor] : "text-blue-500/80")} />
           )}
           <span className="truncate">{node.name}</span>
         </div>
@@ -392,6 +426,9 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
                 setActiveMenuPath={setActiveMenuPath}
                 activeFolderMenuPath={activeFolderMenuPath}
                 setActiveFolderMenuPath={setActiveFolderMenuPath}
+                highlightedPath={highlightedPath}
+                highlightColor={highlightColor}
+                isFolderInActiveFilePath={isFolderInActiveFilePath}
               />
             ))
           )}
@@ -492,6 +529,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
       [path]: !prev[path],
     }));
   };
+
+  // Get the color class for a file based on its type
+  const getFileTypeColor = (filePath: string): 'purple' | 'teal' | 'rose' => {
+    if (filePath.endsWith('.canvas')) return 'teal';
+    if (filePath.endsWith('.base')) return 'rose';
+    return 'purple';
+  };
+
+  // Get parent folder path from file path
+  const getParentFolderPath = (filePath: string): string | null => {
+    const lastSlashIndex = filePath.lastIndexOf('/');
+    if (lastSlashIndex === -1) return null; // Root file
+    return filePath.substring(0, lastSlashIndex);
+  };
+
+  // Check if a folder is an ancestor (or parent) of the active file
+  const isFolderInActiveFilePath = (folderPath: string): boolean => {
+    if (!activeFilePath) return false;
+    return activeFilePath.startsWith(folderPath + '/');
+  };
+
+  // Get the path that should be highlighted based on active file
+  const highlightedPath = activeFilePath ? getParentFolderPath(activeFilePath) : null;
+  const highlightColor = activeFilePath ? getFileTypeColor(activeFilePath) : null;
 
   // Collapse root files when sidebar is dismissed/minimized
   useEffect(() => {
@@ -974,6 +1035,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               setActiveMenuPath={setActiveMenuPath}
                               activeFolderMenuPath={activeFolderMenuPath}
                               setActiveFolderMenuPath={setActiveFolderMenuPath}
+                              highlightedPath={highlightedPath}
+                              highlightColor={highlightColor}
+                              isFolderInActiveFilePath={isFolderInActiveFilePath}
                             />
                           ))}
                         </div>
@@ -988,7 +1052,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <div className="flex flex-col gap-1">
                             <button
                               onClick={() => setIsRootFilesOpen(!isRootFilesOpen)}
-                              className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-muted-foreground/75 hover:text-foreground hover:bg-white/[0.04] rounded-lg transition-all"
+                              className={cn(
+                                "flex items-center gap-2 px-2 py-1.5 text-xs font-semibold rounded-lg transition-all",
+                                highlightedPath === null && highlightColor && !isRootFilesOpen
+                                  ? {
+                                      teal: 'bg-teal-500/10 text-teal-200 border border-teal-500/20 hover:text-teal-200 hover:bg-teal-500/15',
+                                      rose: 'bg-rose-500/10 text-rose-200 border border-rose-500/20 hover:text-rose-200 hover:bg-rose-500/15',
+                                      purple: 'bg-purple-500/10 text-purple-200 border border-purple-500/20 hover:text-purple-200 hover:bg-purple-500/15',
+                                    }[highlightColor]
+                                  : 'text-muted-foreground/75 hover:text-foreground hover:bg-white/[0.04]'
+                              )}
                             >
                               <ChevronRight
                                 size={14}
