@@ -3768,8 +3768,9 @@ export default function App() {
 
       {/* Rename Prompt Modal */}
       {pendingRenameFile && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setPendingRenameFile(null)}>
           <form
+            onClick={(e) => e.stopPropagation()}
             onSubmit={handleRenameFile}
             className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
           >
