@@ -28,7 +28,7 @@ import { InitVaultScreen } from './components/InitVaultScreen';
 import { Sidebar } from './components/Sidebar';
 import { cn } from './utils/cn';
 import { resolveVaultFilePath } from './utils/pathResolver';
-import { buildFolderTree } from './utils/folderTree';
+import { buildFolderTree, type TreeFolder, type TreeFile } from './utils/folderTree';
 import { getLocalFile, saveLocalFile, deleteLocalFile, getAllLocalFilePaths, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase, clearAllLocalFiles, clearStorageCrypto } from './services/storage';
 
 // Initialize offline storage crypto callbacks to avoid circular dependencies
@@ -4450,11 +4450,11 @@ export default function App() {
                           </button>
                         )}
                         {buildFolderTree(files).map((node) => {
-                          const renderFolderOption = (folder: any, depth: number): React.ReactNode[] => {
+                          const renderFolderOption = (folder: TreeFolder | TreeFile, depth: number): React.ReactNode[] => {
                             if (folder.type !== 'folder') return [];
                             if (folder.path === pendingMoveCopyFolder) return [];
                             if (!folder.path.toLowerCase().includes(folderMoveCopyDestSearch.toLowerCase())) {
-                              if (!folder.children?.some((c: any) => c.type === 'folder' && c.path.toLowerCase().includes(folderMoveCopyDestSearch.toLowerCase()))) {
+                              if (!(folder as TreeFolder).children?.some((c) => c.type === 'folder' && c.path.toLowerCase().includes(folderMoveCopyDestSearch.toLowerCase()))) {
                                 return [];
                               }
                             }

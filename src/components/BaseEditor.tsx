@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Database, Eye, Code, Plus, ArrowUpDown, 
   Filter, FileText, Check, X, RefreshCw, PlusCircle, Folders,
@@ -517,7 +517,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   const isSavingRef = useRef(false);
 
   // Sync YAML text editor changes when config object changes
-  const saveConfig = async (newConfig: BaseConfig) => {
+  const saveConfig = useCallback(async (newConfig: BaseConfig) => {
     if (isSavingRef.current) return;
     isSavingRef.current = true;
 
@@ -536,10 +536,10 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     } finally {
       isSavingRef.current = false;
     }
-  };
+  }, [onSave, sha]);
 
   // Handle direct YAML code editor saves
-  const handleYamlSave = async () => {
+  const handleYamlSave = useCallback(async () => {
     if (isSavingRef.current) return;
     isSavingRef.current = true;
 
@@ -557,7 +557,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     } finally {
       isSavingRef.current = false;
     }
-  };
+  }, [yamlContent, onSave, sha]);
 
   // Source Folder path prefixing
   const folder = typeof config.source?.folder === 'string' ? config.source.folder : '';
@@ -758,7 +758,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   };
 
   // Add/Remove/Toggle Column config
-  const toggleColumnVisibility = (colKey: string) => {
+  const toggleColumnVisibility = useCallback((colKey: string) => {
     const currentCols = activeView.columns || [];
     const matchedIdx = currentCols.findIndex((c) => c.property === colKey);
     const newCols = [...currentCols];
@@ -775,7 +775,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     const updatedViews = [...config.views];
     updatedViews[0] = { ...activeView, columns: newCols };
     saveConfig({ ...config, views: updatedViews });
-  };
+  }, [activeView, config, saveConfig]);
 
   const dropdownPropertiesList = useMemo(() => {
     const customKeys = availableProperties.filter(p => 
@@ -816,6 +816,14 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     if (!query) return false;
     return !dropdownPropertiesList.some(p => p.key.toLowerCase() === query.toLowerCase());
   }, [dropdownPropertiesList, propertySearchQuery]);
+
+  const handlePropertyToggleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const div = e.currentTarget;
+    const key = div.getAttribute('data-prop-key');
+    if (key) {
+      toggleColumnVisibility(key);
+    }
+  }, [toggleColumnVisibility]);
 
   const handleCreateCustomProperty = (name: string) => {
     const cleanName = name.trim();
@@ -1082,7 +1090,8 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
             return (
               <div
                 key={prop.key}
-                onClick={() => toggleColumnVisibility(prop.key)}
+                data-prop-key={prop.key}
+                onClick={handlePropertyToggleClick}
                 className="group px-2 py-1.5 hover:bg-white/[0.04] rounded-xl flex items-center justify-between cursor-pointer transition-colors"
               >
                 <div className="flex items-center gap-2.5">
@@ -1320,7 +1329,12 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                           {/* Hide Column / dropdown operations */}
                           {col.property !== 'file.name' && col.property !== 'file name' && (
                             <button
-                              onClick={() => toggleColumnVisibility(col.property)}
+                              type="button"
+                              data-prop-key={col.property}
+                              onClick={(e) => {
+                                const key = (e.currentTarget as HTMLButtonElement).getAttribute('data-prop-key');
+                                if (key) toggleColumnVisibility(key);
+                              }}
                               title="Hide Column"
                               className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-md hover:bg-white/[0.05] hover:text-foreground text-muted-foreground/45 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
                             >

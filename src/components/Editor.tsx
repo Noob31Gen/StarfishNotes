@@ -232,6 +232,7 @@ export const Editor: React.FC<EditorProps> = ({
     }
     return [];
   });
+  const lastMeasuredHeightsRef = useRef<number[] | null>(null);
 
   const measureLineHeights = useCallback(() => {
     const textarea = textareaRef.current;
@@ -272,8 +273,8 @@ export const Editor: React.FC<EditorProps> = ({
   useLayoutEffect(() => {
     if (isWindowingMode) {
       const heights = measureLineHeights();
-      if (heights) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (heights && (lastMeasuredHeightsRef.current === null || JSON.stringify(heights) !== JSON.stringify(lastMeasuredHeightsRef.current))) {
+        lastMeasuredHeightsRef.current = heights;
         setWindowLineHeights(heights);
       }
     }
