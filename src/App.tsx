@@ -28,6 +28,7 @@ import { InitVaultScreen } from './components/InitVaultScreen';
 import { Sidebar } from './components/Sidebar';
 import { cn } from './utils/cn';
 import { resolveVaultFilePath } from './utils/pathResolver';
+import { buildFolderTree } from './utils/folderTree';
 import { getLocalFile, saveLocalFile, deleteLocalFile, getAllLocalFilePaths, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase, clearAllLocalFiles, clearStorageCrypto } from './services/storage';
 
 // Initialize offline storage crypto callbacks to avoid circular dependencies
@@ -226,6 +227,18 @@ export default function App() {
   const [moveCopyFolderSearch, setMoveCopyFolderSearch] = useState('');
   const [moveCopyError, setMoveCopyError] = useState('');
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<string | null>(null);
+  
+  // Folder operation states for rename/move/copy
+  const [pendingRenameFolder, setPendingRenameFolder] = useState<string | null>(null);
+  const [folderRenameInputValue, setFolderRenameInputValue] = useState('');
+  const [folderRenameError, setFolderRenameError] = useState('');
+  const [pendingMoveCopyFolder, setPendingMoveCopyFolder] = useState<string | null>(null);
+  const [folderMoveCopyAction, setFolderMoveCopyAction] = useState<'move' | 'copy'>('copy');
+  const [folderMoveCopyNameInput, setFolderMoveCopyNameInput] = useState('');
+  const [folderMoveCopyDestFolder, setFolderMoveCopyDestFolder] = useState('/');
+  const [isFolderMoveCopyDestDropdownOpen, setIsFolderMoveCopyDestDropdownOpen] = useState(false);
+  const [folderMoveCopyDestSearch, setFolderMoveCopyDestSearch] = useState('');
+  const [folderMoveCopyError, setFolderMoveCopyError] = useState('');
 
   // File system State
   const [files, setFilesRaw] = useState<VaultFile[]>([]);
@@ -2789,6 +2802,247 @@ export default function App() {
     }
   };
 
+  const handleRenameFolder = async (oldFolderPath: string, newFolderName: string) => {
+    try {
+      setIsLoadingTree(true);
+      const newFolderPath = oldFolderPath.includes('/')
+        ? oldFolderPath.substring(0, oldFolderPath.lastIndexOf('/')) + '/' + newFolderName
+        : newFolderName;
+
+      if (newFolderPath === oldFolderPath) {
+        setPendingRenameFolder(null);
+        return;
+      }
+
+      // Get all files in this folder
+      const prefix = `${oldFolderPath}/`;
+      const filesInFolder = files.filter(f => f.path.startsWith(prefix));
+
+      // Move each file to the new folder path
+      for (const file of filesInFolder) {
+        const newPath = file.path.replace(prefix, `${newFolderPath}/`);
+        let content = fileContents[file.path];
+        if (content === undefined) {
+          if (isOffline) {
+            const stored = await offlineStorage.getFile(file.path);
+            content = stored ? stored.content : '';
+          } else {
+            content = await fetchFileContent(githubToken, repoName, file.path, file.sha);
+          }
+        }
+
+        if (isOffline) {
+          const sha = 'offline-sha-' + Date.now();
+          let savedContent = content;
+          if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
+            if (masterPassphrase) {
+              savedContent = await encryptToken(content, masterPassphrase);
+            }
+          }
+          const isBinary = !isTextFile(file.path) && !file.path.toLowerCase().endsWith('.canvas');
+          await offlineStorage.saveFile({
+            path: newPath,
+            name: newPath.split('/').pop() || '',
+            type: isBinary ? 'blob' : 'text',
+            content: savedContent,
+            size: content.length,
+            sha
+          });
+          await offlineStorage.deleteFile(file.path);
+        } else {
+          const commitMessage = `rename folder "${oldFolderPath}" to "${newFolderPath}" via Starfish Notes`;
+          await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+          await deleteFile(githubToken, repoName, branchName, file.path, file.sha);
+        }
+      }
+
+      // Update state with renamed files
+      setFiles(prev => {
+        const updated = prev.map(f => {
+          if (f.path.startsWith(prefix)) {
+            return {
+              ...f,
+              path: f.path.replace(prefix, `${newFolderPath}/`),
+              name: f.path.split('/').pop() || ''
+            };
+          }
+          return f;
+        });
+        return updated;
+      });
+
+      setFileContents(prev => {
+        const updated = { ...prev };
+        for (const file of filesInFolder) {
+          const newPath = file.path.replace(prefix, `${newFolderPath}/`);
+          updated[newPath] = updated[file.path];
+          delete updated[file.path];
+        }
+        return updated;
+      });
+
+      setPendingRenameFolder(null);
+      refreshFiles(githubToken, repoName, branchName);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to rename folder.';
+      setFolderRenameError(msg);
+    } finally {
+      setIsLoadingTree(false);
+    }
+  };
+
+  const handleMoveFolder = async (oldFolderPath: string, newFolderPath: string) => {
+    try {
+      setIsLoadingTree(true);
+      const folderName = oldFolderPath.split('/').pop() || '';
+      const finalNewPath = newFolderPath && newFolderPath !== '/'
+        ? `${newFolderPath}/${folderName}`
+        : folderName;
+
+      if (finalNewPath === oldFolderPath) {
+        setPendingMoveCopyFolder(null);
+        return;
+      }
+
+      // Get all files in this folder
+      const prefix = `${oldFolderPath}/`;
+      const filesInFolder = files.filter(f => f.path.startsWith(prefix));
+
+      // Move each file to the new location
+      for (const file of filesInFolder) {
+        const newPath = file.path.replace(prefix, `${finalNewPath}/`);
+        let content = fileContents[file.path];
+        if (content === undefined) {
+          if (isOffline) {
+            const stored = await offlineStorage.getFile(file.path);
+            content = stored ? stored.content : '';
+          } else {
+            content = await fetchFileContent(githubToken, repoName, file.path, file.sha);
+          }
+        }
+
+        if (isOffline) {
+          const sha = 'offline-sha-' + Date.now();
+          let savedContent = content;
+          if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
+            if (masterPassphrase) {
+              savedContent = await encryptToken(content, masterPassphrase);
+            }
+          }
+          const isBinary = !isTextFile(file.path) && !file.path.toLowerCase().endsWith('.canvas');
+          await offlineStorage.saveFile({
+            path: newPath,
+            name: newPath.split('/').pop() || '',
+            type: isBinary ? 'blob' : 'text',
+            content: savedContent,
+            size: content.length,
+            sha
+          });
+          await offlineStorage.deleteFile(file.path);
+        } else {
+          const commitMessage = `move folder "${oldFolderPath}" to "${finalNewPath}" via Starfish Notes`;
+          await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+          await deleteFile(githubToken, repoName, branchName, file.path, file.sha);
+        }
+      }
+
+      // Update state
+      setFiles(prev => {
+        const updated = prev.map(f => {
+          if (f.path.startsWith(prefix)) {
+            return {
+              ...f,
+              path: f.path.replace(prefix, `${finalNewPath}/`),
+              name: f.path.split('/').pop() || ''
+            };
+          }
+          return f;
+        });
+        return updated;
+      });
+
+      setFileContents(prev => {
+        const updated = { ...prev };
+        for (const file of filesInFolder) {
+          const newPath = file.path.replace(prefix, `${finalNewPath}/`);
+          updated[newPath] = updated[file.path];
+          delete updated[file.path];
+        }
+        return updated;
+      });
+
+      setPendingMoveCopyFolder(null);
+      refreshFiles(githubToken, repoName, branchName);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to move folder.';
+      setFolderMoveCopyError(msg);
+    } finally {
+      setIsLoadingTree(false);
+    }
+  };
+
+  const handleCopyFolder = async (sourceFolderPath: string, destFolderPath: string, newFolderName: string) => {
+    try {
+      setIsLoadingTree(true);
+      const finalDestPath = destFolderPath && destFolderPath !== '/'
+        ? `${destFolderPath}/${newFolderName}`
+        : newFolderName;
+
+      const prefix = `${sourceFolderPath}/`;
+      const filesInFolder = files.filter(f => f.path.startsWith(prefix));
+
+      // Copy each file to the new location
+      for (const file of filesInFolder) {
+        const newPath = file.path.replace(prefix, `${finalDestPath}/`);
+        let content = fileContents[file.path];
+        if (content === undefined) {
+          if (isOffline) {
+            const stored = await offlineStorage.getFile(file.path);
+            content = stored ? stored.content : '';
+          } else {
+            content = await fetchFileContent(githubToken, repoName, file.path, file.sha);
+          }
+        }
+
+        if (isOffline) {
+          const sha = 'offline-sha-' + Date.now();
+          let savedContent = content;
+          if (storageMode === 'encrypted' || storageMode === 'keychain' || storageMode === 'plain') {
+            if (masterPassphrase) {
+              savedContent = await encryptToken(content, masterPassphrase);
+            }
+          }
+          const isBinary = !isTextFile(file.path) && !file.path.toLowerCase().endsWith('.canvas');
+          await offlineStorage.saveFile({
+            path: newPath,
+            name: newPath.split('/').pop() || '',
+            type: isBinary ? 'blob' : 'text',
+            content: savedContent,
+            size: content.length,
+            sha
+          });
+        } else {
+          const commitMessage = `copy folder "${sourceFolderPath}" to "${finalDestPath}" via Starfish Notes`;
+          await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+        }
+
+        // Add to file contents cache
+        setFileContents(prev => ({
+          ...prev,
+          [newPath]: content
+        }));
+      }
+
+      setPendingMoveCopyFolder(null);
+      refreshFiles(githubToken, repoName, branchName);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to copy folder.';
+      setFolderMoveCopyError(msg);
+    } finally {
+      setIsLoadingTree(false);
+    }
+  };
+
   const handleConfirmDeleteFolder = async (folderPath: string) => {
     try {
       setIsLoadingTree(true);
@@ -3117,6 +3371,29 @@ export default function App() {
             const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
             setMoveCopyFolderSelect(parentDir);
           }
+        }}
+        onRenameFolderClick={(folderPath) => {
+          setPendingRenameFolder(folderPath);
+          setFolderRenameInputValue(folderPath.split('/').pop() || '');
+          setFolderRenameError('');
+        }}
+        onMoveFolderClick={(folderPath) => {
+          setPendingMoveCopyFolder(folderPath);
+          setFolderMoveCopyAction('move');
+          const folderName = folderPath.split('/').pop() || '';
+          setFolderMoveCopyNameInput(folderName);
+          const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
+          setFolderMoveCopyDestFolder(parentDir);
+          setFolderMoveCopyError('');
+        }}
+        onCopyFolderClick={(folderPath) => {
+          setPendingMoveCopyFolder(folderPath);
+          setFolderMoveCopyAction('copy');
+          const folderName = folderPath.split('/').pop() || '';
+          setFolderMoveCopyNameInput(`${folderName} - Copy`);
+          const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
+          setFolderMoveCopyDestFolder(parentDir);
+          setFolderMoveCopyError('');
         }}
       />
 
@@ -3658,8 +3935,9 @@ export default function App() {
 
       {/* Move/Copy Selection Modal */}
       {pendingMoveCopyFile && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setPendingMoveCopyFile(null)}>
           <form
+            onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => {
               e.preventDefault();
               if (!moveCopyNameInput.trim()) return;
@@ -3797,7 +4075,7 @@ export default function App() {
                             setMoveCopyFolderSearch('');
                           }}
                           className={cn(
-                            "w-full text-left px-3 py-2 rounded-lg text-xs transition-premium cursor-pointer truncate font-semibold border border-transparent flex items-center justify-between",
+                            "w-full text-left px-3 py-2 rounded-lg text-xs transition-premium cursor-pointer font-semibold border border-transparent flex items-center justify-between",
                             moveCopyFolderSelect === '/'
                               ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent"
                               : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
@@ -3835,15 +4113,15 @@ export default function App() {
                               }}
                               style={{ paddingLeft: `${depth * 8 + 8}px` }}
                               className={cn(
-                                "w-full text-left pr-3 py-2 rounded-lg text-xs transition-premium cursor-pointer truncate font-semibold border border-transparent flex items-center justify-between",
+                                "w-full text-left pr-3 py-2 rounded-lg text-xs transition-premium cursor-pointer font-semibold border border-transparent flex items-center justify-between",
                                 isSelected
                                   ? "bg-gradient-to-r from-primary/15 to-accent/10 text-accent"
                                   : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
                               )}
                             >
-                              <span className="flex items-center gap-2 truncate">
+                              <span className="flex items-center gap-2">
                                 <Folder className="w-3.5 h-3.5 text-primary/70 shrink-0" />
-                                <span className="truncate">{folder}</span>
+                                <span>{folder}</span>
                               </span>
                               {isSelected && (
                                 <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-soft shrink-0 ml-2" />
@@ -3881,8 +4159,8 @@ export default function App() {
 
       {/* Delete Folder Modal */}
       {pendingDeleteFolder && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setPendingDeleteFolder(null)}>
+          <div className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-destructive/15 flex items-center justify-center text-destructive shrink-0">
                 <Trash2 className="w-5 h-5" />
@@ -3921,6 +4199,312 @@ export default function App() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Rename Folder Modal */}
+      {pendingRenameFolder && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setPendingRenameFolder(null)}>
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const cleanName = folderRenameInputValue.trim();
+              
+              if (!cleanName) {
+                setFolderRenameError('Folder name cannot be empty.');
+                return;
+              }
+              
+              if (/[/\\:*?"<>|]/.test(cleanName)) {
+                setFolderRenameError('Folder name contains invalid characters.');
+                return;
+              }
+              
+              const oldName = pendingRenameFolder.split('/').pop() || '';
+              if (cleanName === oldName) {
+                setPendingRenameFolder(null);
+                return;
+              }
+              
+              const parentPath = pendingRenameFolder.includes('/') ? pendingRenameFolder.substring(0, pendingRenameFolder.lastIndexOf('/')) : '';
+              const newFolderPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
+              
+              // Check if folder already exists
+              const gitkeepPath = `${newFolderPath}/.gitkeep`;
+              if (files.some(f => f.path === gitkeepPath || f.path.startsWith(newFolderPath + '/'))) {
+                setFolderRenameError(`A folder named "${cleanName}" already exists.`);
+                return;
+              }
+              
+              setFolderRenameError('');
+              handleRenameFolder(pendingRenameFolder, cleanName);
+              setPendingRenameFolder(null);
+              setFolderRenameInputValue('');
+            }}
+            className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary shrink-0">
+                <Edit3 className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-heading font-bold text-base text-foreground">
+                  Rename Folder
+                </h3>
+                <span className="text-[0.7rem] text-muted-foreground font-medium">
+                  Change the folder name in the repository.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                New Folder Name
+              </span>
+              <input
+                type="text"
+                value={folderRenameInputValue}
+                onChange={(e) => {
+                  setFolderRenameInputValue(e.target.value);
+                  setFolderRenameError('');
+                }}
+                placeholder="Enter folder name..."
+                autoFocus
+                className="w-full bg-muted/50 border border-border text-foreground pl-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200"
+              />
+              {folderRenameError && (
+                <span className="text-[0.7rem] text-destructive font-medium px-1 mt-0.5 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  {folderRenameError}
+                </span>
+              )}
+            </div>
+
+            <div className="flex gap-2.5 mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingRenameFolder(null);
+                  setFolderRenameInputValue('');
+                  setFolderRenameError('');
+                }}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 h-10 rounded-xl bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-primary/20"
+              >
+                Rename
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Move/Copy Folder Modal */}
+      {pendingMoveCopyFolder && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setPendingMoveCopyFolder(null)}>
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!folderMoveCopyNameInput.trim()) return;
+
+              const targetFolderPath = folderMoveCopyDestFolder && folderMoveCopyDestFolder !== '/'
+                ? `${folderMoveCopyDestFolder}/${folderMoveCopyNameInput}`
+                : folderMoveCopyNameInput;
+
+              // Check if target folder already exists
+              const gitkeepPath = `${targetFolderPath}/.gitkeep`;
+              if (files.some(f => f.path === gitkeepPath || f.path.startsWith(targetFolderPath + '/'))) {
+                setFolderMoveCopyError(`A folder named "${folderMoveCopyNameInput}" already exists at the destination.`);
+                return;
+              }
+
+              setFolderMoveCopyError('');
+              if (folderMoveCopyAction === 'copy') {
+                handleCopyFolder(pendingMoveCopyFolder, folderMoveCopyDestFolder, folderMoveCopyNameInput);
+              } else {
+                handleMoveFolder(pendingMoveCopyFolder, folderMoveCopyDestFolder);
+              }
+              setPendingMoveCopyFolder(null);
+            }}
+            className="w-full max-w-md bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary shrink-0">
+                {folderMoveCopyAction === 'copy' ? <Copy className="w-5 h-5" /> : <ArrowRight className="w-5 h-5" />}
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-heading font-bold text-base text-foreground">
+                  {folderMoveCopyAction === 'copy' ? 'Copy Folder' : 'Move Folder'}
+                </h3>
+                <span className="text-[0.7rem] text-muted-foreground font-medium">
+                  Specify a new folder location and name.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2.5">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                  {folderMoveCopyAction === 'copy' ? 'New Folder Name' : 'Folder Name'}
+                </span>
+                <input
+                  type="text"
+                  value={folderMoveCopyNameInput}
+                  onChange={(e) => {
+                    setFolderMoveCopyNameInput(e.target.value);
+                    setFolderMoveCopyError('');
+                  }}
+                  placeholder="Enter folder name..."
+                  autoFocus
+                  className="w-full bg-muted/50 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                  Destination Folder
+                </span>
+
+                {folderMoveCopyError && (
+                  <div className="text-[0.7rem] text-destructive font-medium px-3 py-2 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-2">
+                    <AlertTriangle className="w-3 h-3 text-destructive shrink-0 mt-0.5" />
+                    {folderMoveCopyError}
+                  </div>
+                )}
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsFolderMoveCopyDestDropdownOpen(!isFolderMoveCopyDestDropdownOpen)}
+                    className="w-full bg-muted/50 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200 cursor-pointer flex items-center justify-between text-left relative z-20"
+                  >
+                    <span className="flex items-center gap-2">
+                      {folderMoveCopyDestFolder === '/' ? (
+                        <>
+                          <Compass className="w-3.5 h-3.5 text-accent" />
+                          <span>Vault Root ( / )</span>
+                        </>
+                      ) : (
+                        <>
+                          <Folder className="w-3.5 h-3.5 text-primary" />
+                          <span>{folderMoveCopyDestFolder}</span>
+                        </>
+                      )}
+                    </span>
+                    <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform shrink-0 ml-2", isFolderMoveCopyDestDropdownOpen && "transform rotate-180")} />
+                  </button>
+
+                  {isFolderMoveCopyDestDropdownOpen && (
+                    <div className="absolute top-full left-0 w-full mt-1.5 bg-[#12131a]/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 z-30 animate-in fade-in zoom-in-95 duration-100">
+                      <div className="relative flex items-center px-1 py-1 border-b border-border/40 pb-1.5">
+                        <Compass className="absolute left-2.5 w-3.5 h-3.5 text-muted-foreground/60" />
+                        <input
+                          type="text"
+                          value={folderMoveCopyDestSearch}
+                          onChange={(e) => setFolderMoveCopyDestSearch(e.target.value)}
+                          placeholder="Search folders..."
+                          className="w-full bg-muted/30 border border-border/40 text-foreground pl-7 pr-3 py-1.5 rounded-lg text-xs focus:outline-none focus:border-primary/60 transition-all duration-150"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+
+                      <div className="max-h-[160px] overflow-y-auto flex flex-col gap-0.5 mt-1 pr-0.5">
+                        {('/'.toLowerCase().includes(folderMoveCopyDestSearch.toLowerCase()) || 'vault root'.includes(folderMoveCopyDestSearch.toLowerCase())) && (
+                          <button
+                            key="root-opt"
+                            type="button"
+                            onClick={() => {
+                              setFolderMoveCopyDestFolder('/');
+                              setIsFolderMoveCopyDestDropdownOpen(false);
+                              setFolderMoveCopyDestSearch('');
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-primary/20 rounded-lg text-xs font-medium text-foreground flex items-center gap-2.5 transition-all cursor-pointer"
+                          >
+                            <Compass className="w-3.5 h-3.5 text-accent" />
+                            <span>Vault Root ( / )</span>
+                            {folderMoveCopyDestFolder === '/' && (
+                              <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-soft shrink-0 ml-2" />
+                            )}
+                          </button>
+                        )}
+                        {buildFolderTree(files).map((node) => {
+                          const renderFolderOption = (folder: any, depth: number): React.ReactNode[] => {
+                            if (folder.type !== 'folder') return [];
+                            if (folder.path === pendingMoveCopyFolder) return [];
+                            if (!folder.path.toLowerCase().includes(folderMoveCopyDestSearch.toLowerCase())) {
+                              if (!folder.children?.some((c: any) => c.type === 'folder' && c.path.toLowerCase().includes(folderMoveCopyDestSearch.toLowerCase()))) {
+                                return [];
+                              }
+                            }
+
+                            const isSelected = folderMoveCopyDestFolder === folder.path;
+                            const nodes: React.ReactNode[] = [];
+
+                            if (folder.path.toLowerCase().includes(folderMoveCopyDestSearch.toLowerCase())) {
+                              nodes.push(
+                                <button
+                                  key={`folder-${folder.path}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setFolderMoveCopyDestFolder(folder.path);
+                                    setIsFolderMoveCopyDestDropdownOpen(false);
+                                    setFolderMoveCopyDestSearch('');
+                                  }}
+                                  style={{ paddingLeft: `${(depth + 1) * 12}px` }}
+                                  className="w-full text-left px-3 py-1.5 hover:bg-primary/20 rounded-lg text-xs font-medium text-foreground flex items-center gap-2.5 transition-all cursor-pointer"
+                                >
+                                  <Folder className="w-3.5 h-3.5 text-primary shrink-0" />
+                                  <span>{folder.name}</span>
+                                  {isSelected && (
+                                    <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-soft shrink-0 ml-2" />
+                                  )}
+                                </button>
+                              );
+                            }
+
+                            if (folder.children) {
+                              for (const child of folder.children) {
+                                nodes.push(...renderFolderOption(child, depth + 1));
+                              }
+                            }
+
+                            return nodes;
+                          };
+
+                          return renderFolderOption(node, 0);
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingMoveCopyFolder(null);
+                  setFolderMoveCopyError('');
+                }}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 h-10 rounded-xl bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-primary/20"
+              >
+                Confirm {folderMoveCopyAction === 'copy' ? 'Copy' : 'Move'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

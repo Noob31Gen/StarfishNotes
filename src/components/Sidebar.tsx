@@ -6,79 +6,7 @@ import {
 } from 'lucide-react';
 import type { VaultFile } from '../services/github';
 import { cn } from '../utils/cn';
-
-export interface TreeFolder {
-  type: 'folder';
-  name: string;
-  path: string;
-  children: (TreeFolder | TreeFile)[];
-}
-
-export interface TreeFile {
-  type: 'file';
-  name: string;
-  path: string;
-  file: VaultFile;
-}
-
-function buildFolderTree(files: VaultFile[]): (TreeFolder | TreeFile)[] {
-  const root: (TreeFolder | TreeFile)[] = [];
-
-  for (const file of files) {
-    const parts = file.path.split('/');
-    let currentChildren = root;
-    let currentPath = '';
-
-    for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i];
-      currentPath = currentPath ? `${currentPath}/${part}` : part;
-
-      let folder = currentChildren.find(
-        c => c.type === 'folder' && c.name === part
-      ) as TreeFolder;
-
-      if (!folder) {
-        folder = {
-          type: 'folder',
-          name: part,
-          path: currentPath,
-          children: []
-        };
-        currentChildren.push(folder);
-      }
-
-      currentChildren = folder.children;
-    }
-
-    if (file.name !== '.gitkeep') {
-      currentChildren.push({
-        type: 'file',
-        name: file.name,
-        path: file.path,
-        file
-      });
-    }
-  }
-
-  const sortNode = (a: TreeFolder | TreeFile, b: TreeFolder | TreeFile): number => {
-    if (a.type !== b.type) {
-      return a.type === 'folder' ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name);
-  };
-
-  const recursiveSort = (nodes: (TreeFolder | TreeFile)[]) => {
-    nodes.sort(sortNode);
-    for (const node of nodes) {
-      if (node.type === 'folder') {
-        recursiveSort(node.children);
-      }
-    }
-  };
-
-  recursiveSort(root);
-  return root;
-}
+import { buildFolderTree, type TreeFolder, type TreeFile } from '../utils/folderTree';
 
 interface FolderTreeItemProps {
   node: TreeFolder | TreeFile;
@@ -489,6 +417,9 @@ interface SidebarProps {
   // Folder actions
   onCreateFolderClick: (parentPath: string) => void;
   onDeleteFolderClick: (folderPath: string) => void;
+  onRenameFolderClick: (folderPath: string) => void;
+  onMoveFolderClick: (folderPath: string) => void;
+  onCopyFolderClick: (folderPath: string) => void;
   onCopyClick: (path: string, name: string) => void;
   onMoveClick: (path: string, name: string, sha: string) => void;
   onUploadAttachment: (file: File, folderPath?: string) => Promise<{ path: string; name: string }>;
@@ -527,6 +458,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   onCreateFolderClick,
   onDeleteFolderClick,
+  onRenameFolderClick,
+  onMoveFolderClick,
+  onCopyFolderClick,
   onCopyClick,
   onMoveClick,
   onUploadAttachment,
@@ -545,16 +479,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [activeMenuPath, setActiveMenuPath] = useState<string | null>(null);
   const [activeFolderMenuPath, setActiveFolderMenuPath] = useState<string | null>(null);
-  
-  // Folder operation states
-  const [folderToRename, setFolderToRename] = useState<string | null>(null);
-  const [folderRenameInputValue, setFolderRenameInputValue] = useState('');
-  const [folderToMove, setFolderToMove] = useState<string | null>(null);
-  const [folderToCopy, setFolderToCopy] = useState<string | null>(null);
-  const [folderMoveCopyNameInput, setFolderMoveCopyNameInput] = useState('');
-  const [folderMoveCopyDestFolder, setFolderMoveCopyDestFolder] = useState('/');
-  const [isFolderMoveCopyDestDropdownOpen, setIsFolderMoveCopyDestDropdownOpen] = useState(false);
-  const [folderMoveCopyDestSearch, setFolderMoveCopyDestSearch] = useState('');
 
   const toggleFolder = (path: string) => {
     setOpenFolders(prev => ({
@@ -1015,24 +939,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }}
                       onCreateFolder={(parentPath) => onCreateFolderClick(parentPath)}
                       onDeleteFolder={(folderPath) => onDeleteFolderClick(folderPath)}
-                      onRenameFolder={(folderPath) => {
-                        setFolderToRename(folderPath);
-                        setFolderRenameInputValue(folderPath.split('/').pop() || '');
-                      }}
-                      onMoveFolder={(folderPath) => {
-                        setFolderToMove(folderPath);
-                        const folderName = folderPath.split('/').pop() || '';
-                        setFolderMoveCopyNameInput(folderName);
-                        const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
-                        setFolderMoveCopyDestFolder(parentDir);
-                      }}
-                      onCopyFolder={(folderPath) => {
-                        setFolderToCopy(folderPath);
-                        const folderName = folderPath.split('/').pop() || '';
-                        setFolderMoveCopyNameInput(`${folderName} - Copy`);
-                        const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
-                        setFolderMoveCopyDestFolder(parentDir);
-                      }}
+                      onRenameFolder={(folderPath) => onRenameFolderClick(folderPath)}
+                      onMoveFolder={(folderPath) => onMoveFolderClick(folderPath)}
+                      onCopyFolder={(folderPath) => onCopyFolderClick(folderPath)}
                       onRenameFile={onRenameClick}
                       onDeleteFile={onDeleteClick}
                       onCopyFile={onCopyClick}
