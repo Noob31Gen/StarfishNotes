@@ -3810,9 +3810,12 @@ export default function App() {
                 </span>
               </div>
               {renameError && (
-                <span className="text-[0.7rem] text-destructive font-medium px-1 mt-0.5">
-                  {renameError}
-                </span>
+                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 flex items-start gap-2.5 mt-1.5">
+                  <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                  <span className="text-[0.7rem] font-semibold text-destructive">
+                    {renameError}
+                  </span>
+                </div>
               )}
             </div>
 
@@ -3906,9 +3909,12 @@ export default function App() {
                 className="w-full bg-muted/50 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200"
               />
               {folderCreationError && (
-                <span className="text-[0.7rem] font-semibold text-destructive mt-1">
-                  {folderCreationError}
-                </span>
+                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                  <span className="text-[0.7rem] font-semibold text-destructive">
+                    {folderCreationError}
+                  </span>
+                </div>
               )}
             </div>
 
@@ -3982,7 +3988,7 @@ export default function App() {
             </div>
 
             {moveCopyError && (
-              <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 flex items-start gap-2.5">
+              <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 flex items-start gap-2.5 mt-1.5">
                 <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
                 <span className="text-[0.7rem] font-semibold text-destructive">
                   {moveCopyError}
@@ -4279,10 +4285,12 @@ export default function App() {
                 className="w-full bg-muted/50 border border-border text-foreground pl-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200"
               />
               {folderRenameError && (
-                <span className="text-[0.7rem] text-destructive font-medium px-1 mt-0.5 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  {folderRenameError}
-                </span>
+                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                  <span className="text-[0.7rem] font-semibold text-destructive">
+                    {folderRenameError}
+                  </span>
+                </div>
               )}
             </div>
 
@@ -4378,9 +4386,11 @@ export default function App() {
                 </span>
 
                 {folderMoveCopyError && (
-                  <div className="text-[0.7rem] text-destructive font-medium px-3 py-2 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-2">
-                    <AlertTriangle className="w-3 h-3 text-destructive shrink-0 mt-0.5" />
-                    {folderMoveCopyError}
+                  <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                    <span className="text-[0.7rem] font-semibold text-destructive">
+                      {folderMoveCopyError}
+                    </span>
                   </div>
                 )}
 
