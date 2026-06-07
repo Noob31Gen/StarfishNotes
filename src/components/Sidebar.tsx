@@ -249,15 +249,25 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
     purple: 'bg-purple-500/10 text-purple-200 border border-purple-500/20',
   }[highlightColor] : '';
 
-  // Count direct file children (not folders)
-  const fileCount = node.children.filter(child => child.type === 'file').length;
+  // Count all files (including nested subfolders)
+  const countAllFiles = (children: (TreeFolder | TreeFile)[]): number => {
+    return children.reduce((total, child) => {
+      if (child.type === 'file') {
+        return total + 1;
+      } else {
+        return total + countAllFiles(child.children);
+      }
+    }, 0);
+  };
+  
+  const fileCount = countAllFiles(node.children);
 
   return (
     <div className="flex flex-col gap-0.5">
       {/* Folder Row Header */}
       <div
         className={cn(
-          "group flex items-center justify-between py-1.5 px-2 rounded-lg text-xs font-semibold transition-all hover:bg-white/[0.03]",
+          "group flex items-center justify-between py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all hover:bg-white/[0.03]",
           isHighlighted ? highlightClasses : "text-muted-foreground/80 hover:text-foreground"
         )}
       >
@@ -1062,10 +1072,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <div className="h-px bg-border/30 my-0.5" />
                           )}
                           <div className="flex flex-col gap-1">
-                            <button
+                            <div
                               onClick={() => setIsRootFilesOpen(!isRootFilesOpen)}
                               className={cn(
-                                "flex items-center gap-2.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all",
+                                "group flex items-center justify-between py-1.5 px-2.5 rounded-lg text-xs font-semibold cursor-pointer transition-all",
                                 highlightedPath === null && highlightColor && !isRootFilesOpen
                                   ? {
                                     teal: 'bg-teal-500/10 text-teal-200 border border-teal-500/20 hover:text-teal-200 hover:bg-teal-500/15',
@@ -1075,18 +1085,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   : 'text-muted-foreground/75 hover:text-foreground hover:bg-white/[0.03]'
                               )}
                             >
-                              <ChevronRight
-                                size={13}
-                                className={cn(
-                                  "shrink-0 transition-transform duration-200",
-                                  isRootFilesOpen && "rotate-90"
-                                )}
-                              />
-                              <span>Files in Vault Root</span>
-                              <span className="text-muted-foreground/50 ml-auto">
-                                ({rootFiles.length})
-                              </span>
-                            </button>
+                              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                <ChevronRight
+                                  size={13}
+                                  className={cn(
+                                    "shrink-0 transition-transform duration-200",
+                                    isRootFilesOpen && "rotate-90"
+                                  )}
+                                />
+                                <span>Files in Vault Root</span>
+                                <span className="text-muted-foreground/50 ml-auto">
+                                  ({rootFiles.length})
+                                </span>
+                              </div>
+                              <div className="flex gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    createNewFile('.md', '/');
+                                    setIsMobileSidebarOpen(false);
+                                  }}
+                                  className="w-5 h-5 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer"
+                                  title="New Note in Root"
+                                >
+                                  <Plus size={11.5} />
+                                </button>
+                              </div>
+                            </div>
 
                             {isRootFilesOpen && (
                               <div className="flex flex-col gap-1 pl-2">
