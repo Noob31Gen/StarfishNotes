@@ -199,6 +199,15 @@
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
+  /* Will-change utilities for smooth animations */
+  .will-change-transform {
+    will-change: transform;
+  }
+
+  .will-change-opacity {
+    will-change: opacity;
+  }
+
   /* Soft glowing states for premium UI wow factors */
   .glow-primary {
     filter: drop-shadow(0 0 10px var(--primary));
