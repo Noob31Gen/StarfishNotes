@@ -249,6 +249,9 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
     purple: 'bg-purple-500/10 text-purple-200 border border-purple-500/20',
   }[highlightColor] : '';
 
+  // Count direct file children (not folders)
+  const fileCount = node.children.filter(child => child.type === 'file').length;
+
   return (
     <div className="flex flex-col gap-0.5">
       {/* Folder Row Header */}
@@ -290,6 +293,11 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
             }[highlightColor] : "text-blue-500/80")} />
           )}
           <span className="truncate">{node.name}</span>
+          {fileCount > 0 && (
+            <span className="text-muted-foreground/50 text-[0.7rem] shrink-0 ml-1">
+              ({fileCount})
+            </span>
+          )}
         </div>
 
         {/* Actions for Folder */}
@@ -1057,25 +1065,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <button
                               onClick={() => setIsRootFilesOpen(!isRootFilesOpen)}
                               className={cn(
-                                "flex items-center gap-2 px-2 py-1.5 text-xs font-semibold rounded-lg transition-all",
+                                "flex items-center gap-2.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all",
                                 highlightedPath === null && highlightColor && !isRootFilesOpen
                                   ? {
                                     teal: 'bg-teal-500/10 text-teal-200 border border-teal-500/20 hover:text-teal-200 hover:bg-teal-500/15',
                                     rose: 'bg-rose-500/10 text-rose-200 border border-rose-500/20 hover:text-rose-200 hover:bg-rose-500/15',
                                     purple: 'bg-purple-500/10 text-purple-200 border border-purple-500/20 hover:text-purple-200 hover:bg-purple-500/15',
                                   }[highlightColor]
-                                  : 'text-muted-foreground/75 hover:text-foreground hover:bg-white/[0.04]'
+                                  : 'text-muted-foreground/75 hover:text-foreground hover:bg-white/[0.03]'
                               )}
                             >
                               <ChevronRight
-                                size={14}
+                                size={13}
                                 className={cn(
                                   "shrink-0 transition-transform duration-200",
                                   isRootFilesOpen && "rotate-90"
                                 )}
                               />
-                              <span className="text-[0.65rem] uppercase tracking-wider">Files in Vault Root</span>
-                              <span className="text-[0.6rem] text-muted-foreground/50 font-normal">
+                              <span>Files in Vault Root</span>
+                              <span className="text-muted-foreground/50 ml-auto">
                                 ({rootFiles.length})
                               </span>
                             </button>
