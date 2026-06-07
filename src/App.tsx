@@ -2513,7 +2513,8 @@ export default function App() {
       return;
     }
 
-    if (files.some(f => f.path === newPath)) {
+    const newPathLower = newPath.toLowerCase();
+    if (files.some(f => f.path.toLowerCase() === newPathLower)) {
       setRenameError(`A note named "${cleanNewName}${extension}" already exists.`);
       return;
     }
@@ -3858,8 +3859,9 @@ export default function App() {
                 ? `${parentFolderPathForNewFolder}/${cleanName}`
                 : cleanName;
               const gitkeepPath = `${targetPath}/.gitkeep`;
+              const targetPathLower = targetPath.toLowerCase();
 
-              if (files.some(f => f.path === gitkeepPath || f.path.startsWith(targetPath + '/'))) {
+              if (files.some(f => f.path.toLowerCase() === gitkeepPath.toLowerCase() || f.path.toLowerCase().startsWith(targetPathLower + '/'))) {
                 setFolderCreationError(`A folder named "${cleanName}" already exists.`);
                 return;
               }
@@ -3949,7 +3951,8 @@ export default function App() {
                 : cleanName;
 
               // Check if target file already exists (only for move/copy, not rename)
-              if (files.some(f => f.path === targetPath)) {
+              const targetPathLower = targetPath.toLowerCase();
+              if (files.some(f => f.path.toLowerCase() === targetPathLower)) {
                 setMoveCopyError(`A file named "${cleanName}" already exists at the destination.`);
                 return;
               }
@@ -4231,9 +4234,10 @@ export default function App() {
               const parentPath = pendingRenameFolder.includes('/') ? pendingRenameFolder.substring(0, pendingRenameFolder.lastIndexOf('/')) : '';
               const newFolderPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
               
-              // Check if folder already exists
+              // Check if folder already exists (case-insensitive)
               const gitkeepPath = `${newFolderPath}/.gitkeep`;
-              if (files.some(f => f.path === gitkeepPath || f.path.startsWith(newFolderPath + '/'))) {
+              const newFolderPathLower = newFolderPath.toLowerCase();
+              if (files.some(f => f.path.toLowerCase() === gitkeepPath.toLowerCase() || f.path.toLowerCase().startsWith(newFolderPathLower + '/'))) {
                 setFolderRenameError(`A folder named "${cleanName}" already exists.`);
                 return;
               }
@@ -4318,9 +4322,10 @@ export default function App() {
                 ? `${folderMoveCopyDestFolder}/${folderMoveCopyNameInput}`
                 : folderMoveCopyNameInput;
 
-              // Check if target folder already exists
+              // Check if target folder already exists (case-insensitive)
               const gitkeepPath = `${targetFolderPath}/.gitkeep`;
-              if (files.some(f => f.path === gitkeepPath || f.path.startsWith(targetFolderPath + '/'))) {
+              const targetFolderPathLower = targetFolderPath.toLowerCase();
+              if (files.some(f => f.path.toLowerCase() === gitkeepPath.toLowerCase() || f.path.toLowerCase().startsWith(targetFolderPathLower + '/'))) {
                 setFolderMoveCopyError(`A folder named "${folderMoveCopyNameInput}" already exists at the destination.`);
                 return;
               }
