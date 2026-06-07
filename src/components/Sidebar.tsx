@@ -572,10 +572,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           maxWidth: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
         }}
         className={cn(
-          "h-full bg-card/80 backdrop-blur-xl border-r border-border flex flex-col z-[1000] fixed top-0 left-0 md:relative md:top-auto md:left-auto",
+          "h-full bg-card/80 backdrop-blur-xl border-r border-border flex flex-col z-[1000] fixed top-0 left-0 md:relative md:top-auto md:left-auto transition-transform md:translate-x-0",
           isMobileSidebarOpen ? "translate-x-0 w-full min-w-full md:w-[280px] md:min-w-[280px]" : "-translate-x-full md:translate-x-0",
           isSidebarCollapsed && "overflow-hidden border-r-0 md:w-0!",
-          "md:transition-all duration-300 ease-out"
+          !isResizingSidebar && "transition-transform md:transition-all duration-300 ease-in-out"
         )}
       >
         <div className="h-[60px] px-5 flex items-center justify-between border-b border-border select-none">
