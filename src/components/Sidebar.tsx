@@ -380,6 +380,9 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
                 onCreateFile={onCreateFile}
                 onCreateFolder={onCreateFolder}
                 onDeleteFolder={onDeleteFolder}
+                onRenameFolder={onRenameFolder}
+                onMoveFolder={onMoveFolder}
+                onCopyFolder={onCopyFolder}
                 onRenameFile={onRenameFile}
                 onDeleteFile={onDeleteFile}
                 onCopyFile={onCopyFile}
@@ -387,6 +390,8 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
                 onDownloadFile={onDownloadFile}
                 activeMenuPath={activeMenuPath}
                 setActiveMenuPath={setActiveMenuPath}
+                activeFolderMenuPath={activeFolderMenuPath}
+                setActiveFolderMenuPath={setActiveFolderMenuPath}
               />
             ))
           )}
