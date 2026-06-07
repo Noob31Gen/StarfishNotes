@@ -467,7 +467,7 @@ export default function App() {
     } finally {
       setIsLoadingTree(false);
     }
-  }, [activeFilePath, preloadAllFilesContents]);
+  }, [activeFilePath, preloadAllFilesContents, setFiles]);
 
   const loadFileContentOffline = useCallback(async (path: string, providedKey?: string) => {
     if (fileContents[path] !== undefined) return;
@@ -670,7 +670,7 @@ export default function App() {
     }
   };
 
-  const handleSaveFileOffline = async (path: string, content: string) => {
+  const handleSaveFileOffline = useCallback(async (path: string, content: string) => {
     let savedContent = content;
     const mode = storageMode;
     if (mode === 'encrypted' || mode === 'keychain' || mode === 'plain') {
@@ -702,7 +702,7 @@ export default function App() {
     }));
 
     return { sha };
-  };
+  }, [storageMode, masterPassphrase, setFileContents, setFiles]);
 
   const createNewFileOffline = async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
     if (isLoadingFile) return;
@@ -940,7 +940,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to load local files from cache:', e);
     }
-  }, [activeFilePath, preloadAllFilesContents]);
+  }, [activeFilePath, preloadAllFilesContents, setFiles]);
 
   const refreshFiles = useCallback(async (
     token: string = githubToken,
@@ -1129,7 +1129,7 @@ export default function App() {
     } finally {
       setIsLoadingTree(false);
     }
-  }, [githubToken, repoName, branchName, isOffline, refreshFilesOffline, preloadAllFilesContents, loadFilesFromLocalCache]);
+  }, [githubToken, repoName, branchName, isOffline, refreshFilesOffline, preloadAllFilesContents, loadFilesFromLocalCache, setFiles, activeFilePath, isSyncPaused]);
 
   const checkAndLoadVault = useCallback(async (token: string, repo: string, branch: string) => {
     try {
@@ -2131,7 +2131,7 @@ export default function App() {
       console.error(`Failed to push local conflict resolution for ${file.path}:`, e);
       throw e;
     }
-  }, [githubToken, repoName, branchName]);
+  }, [githubToken, repoName, branchName, setFiles, setConflictingFiles]);
 
   const resolveKeepRemote = useCallback(async (file: VaultFile) => {
     try {
@@ -2170,7 +2170,7 @@ export default function App() {
       console.error(`Failed to pull remote conflict resolution for ${file.path}:`, e);
       throw e;
     }
-  }, [githubToken, repoName, activeFilePath]);
+  }, [githubToken, repoName, activeFilePath, setFileContents, setFiles, setConflictingFiles, setActiveFilePath]);
 
   const resolveAllLocal = useCallback(async () => {
     console.log("Resolving all conflicts: Keeping local versions...");
@@ -2194,7 +2194,7 @@ export default function App() {
     }
   }, [conflictingFiles, resolveKeepRemote]);
 
-  const handleSaveFile = async (path: string, content: string, fileSha: string | null) => {
+  const handleSaveFile = useCallback(async (path: string, content: string, fileSha: string | null) => {
     if (isOffline) {
       return handleSaveFileOffline(path, content);
     }
@@ -2259,7 +2259,7 @@ export default function App() {
         throw err;
       }
     }
-  };
+  }, [isOffline, githubToken, repoName, branchName, handleSaveFileOffline, setFileContents, setFiles, setActiveFileHasRemoteUpdate]);
 
   const resolveActiveKeepLocal = useCallback(async () => {
     if (!activeFilePath) return;
@@ -3198,7 +3198,7 @@ export default function App() {
         }
       }
     }
-  }, [activeFilePath, files, loadFileContent, loadBinaryFile, loadUnknownFile, detectedTextFiles, githubToken, repoName, branchName, isLoadingFile, isOffline, storageMode, masterPassphrase]);
+  }, [activeFilePath, files, loadFileContent, loadBinaryFile, loadUnknownFile, detectedTextFiles, githubToken, repoName, branchName, isLoadingFile, isOffline, storageMode, masterPassphrase, setFiles, setFileContents, setIsLoadingFile]);
 
   // Sidebar note rendering filters
   const filteredFiles = files.filter(

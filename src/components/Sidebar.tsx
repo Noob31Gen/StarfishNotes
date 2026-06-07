@@ -84,7 +84,7 @@ const FolderTreeItemComponent: React.FC<FolderTreeItemProps> = ({
   const fileCount = useMemo(() => {
     if (node.type === 'file') return 0;
     return countAllFiles((node as TreeFolder).children);
-  }, [node]);
+  }, [node]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (node.type === 'file') {
     const isActive = node.path === activeFilePath;
@@ -649,22 +649,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleCreateNote = useCallback(() => {
     createNewFile('.md');
     setIsMobileSidebarOpen(false);
-  }, [createNewFile]);
+  }, [createNewFile, setIsMobileSidebarOpen]);
 
   const handleCreateCanvas = useCallback(() => {
     createNewFile('.canvas');
     setIsMobileSidebarOpen(false);
-  }, [createNewFile]);
+  }, [createNewFile, setIsMobileSidebarOpen]);
 
   const handleCreateBase = useCallback(() => {
     createNewFile('.base');
     setIsMobileSidebarOpen(false);
-  }, [createNewFile]);
+  }, [createNewFile, setIsMobileSidebarOpen]);
 
   const handleCreateFolder = useCallback(() => {
     onCreateFolderClick('/');
     setIsMobileSidebarOpen(false);
-  }, [onCreateFolderClick]);
+  }, [onCreateFolderClick, setIsMobileSidebarOpen]);
 
   return (
     <>
