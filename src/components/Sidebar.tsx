@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Compass, Plus, Search, RefreshCw, Settings, FileText, Trash2, Edit3, GitBranch,
   Folder, FolderOpen, ChevronRight, ChevronDown, FolderPlus, Copy, ArrowRight, MoreHorizontal,
@@ -40,7 +40,7 @@ interface FolderTreeItemProps {
   isFolderInActiveFilePath: (folderPath: string) => boolean;
 }
 
-export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
+const FolderTreeItemComponent: React.FC<FolderTreeItemProps> = ({
   node,
   activeFilePath,
   setActiveFilePath,
@@ -69,6 +69,23 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
   highlightColor,
   isFolderInActiveFilePath,
 }) => {
+  // Count all files (including nested subfolders) - must be before early return
+  const countAllFiles = (children: (TreeFolder | TreeFile)[]): number => {
+    return children.reduce((total, child) => {
+      if (child.type === 'file') {
+        return total + 1;
+      } else {
+        return total + countAllFiles(child.children);
+      }
+    }, 0);
+  };
+  
+  // fileCount is 0 for files, computed for folders (hook must be called unconditionally)
+  const fileCount = useMemo(() => {
+    if (node.type === 'file') return 0;
+    return countAllFiles((node as TreeFolder).children);
+  }, [node]);
+
   if (node.type === 'file') {
     const isActive = node.path === activeFilePath;
     const isCanvas = node.path.endsWith('.canvas');
@@ -248,19 +265,6 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
     rose: 'bg-rose-500/10 text-rose-200 border border-rose-500/20',
     purple: 'bg-purple-500/10 text-purple-200 border border-purple-500/20',
   }[highlightColor] : '';
-
-  // Count all files (including nested subfolders)
-  const countAllFiles = (children: (TreeFolder | TreeFile)[]): number => {
-    return children.reduce((total, child) => {
-      if (child.type === 'file') {
-        return total + 1;
-      } else {
-        return total + countAllFiles(child.children);
-      }
-    }, 0);
-  };
-  
-  const fileCount = countAllFiles(node.children);
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -456,6 +460,8 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
   );
 };
 
+export const FolderTreeItem = React.memo(FolderTreeItemComponent);
+
 interface SidebarProps {
   isMobileSidebarOpen: boolean;
   setIsMobileSidebarOpen: (open: boolean) => void;
@@ -541,36 +547,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [activeFolderMenuPath, setActiveFolderMenuPath] = useState<string | null>(null);
   const [isRootFilesOpen, setIsRootFilesOpen] = useState(false);
 
-  const toggleFolder = (path: string) => {
+  const toggleFolder = useCallback((path: string) => {
     setOpenFolders(prev => ({
       ...prev,
       [path]: !prev[path],
     }));
-  };
+  }, []);
 
-  // Get the color class for a file based on its type
-  const getFileTypeColor = (filePath: string): 'purple' | 'teal' | 'rose' => {
+  const getFileTypeColor = useCallback((filePath: string): 'purple' | 'teal' | 'rose' => {
     if (filePath.endsWith('.canvas')) return 'teal';
     if (filePath.endsWith('.base')) return 'rose';
     return 'purple';
-  };
+  }, []);
 
-  // Get parent folder path from file path
-  const getParentFolderPath = (filePath: string): string | null => {
+  const getParentFolderPath = useCallback((filePath: string): string | null => {
     const lastSlashIndex = filePath.lastIndexOf('/');
-    if (lastSlashIndex === -1) return null; // Root file
+    if (lastSlashIndex === -1) return null;
     return filePath.substring(0, lastSlashIndex);
-  };
+  }, []);
 
-  // Check if a folder is an ancestor (or parent) of the active file
-  const isFolderInActiveFilePath = (folderPath: string): boolean => {
+  const isFolderInActiveFilePath = useCallback((folderPath: string): boolean => {
     if (!activeFilePath) return false;
     return activeFilePath.startsWith(folderPath + '/');
-  };
+  }, [activeFilePath]);
+
+
 
   // Get the path that should be highlighted based on active file
-  const highlightedPath = activeFilePath ? getParentFolderPath(activeFilePath) : null;
-  const highlightColor = activeFilePath ? getFileTypeColor(activeFilePath) : null;
+  const highlightedPath = useMemo(() => activeFilePath ? getParentFolderPath(activeFilePath) : null, [activeFilePath, getParentFolderPath]);
+  const highlightColor = useMemo(() => activeFilePath ? getFileTypeColor(activeFilePath) : null, [activeFilePath, getFileTypeColor]);
+
+  // Build folder tree structure from files
+  const tree = useMemo(() => buildFolderTree(files), [files]);
 
   // Collapse root files when sidebar is dismissed/minimized
   const hasClosedRootFilesRef = useRef(false);
@@ -583,31 +591,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [isMobileSidebarOpen]);
 
-  // Close active 3-dots actions dropdown menu when clicking anywhere on the document (non-blocking!)
+  // Close active 3-dots actions dropdown menu when clicking anywhere on the document
   useEffect(() => {
-    if (activeMenuPath === null && activeFolderMenuPath === null) return;
-
     const handleDocumentClick = (e: MouseEvent) => {
+      if (activeMenuPath === null && activeFolderMenuPath === null) return;
       const target = e.target as HTMLElement;
-      // Do not close if clicking inside the menu or on the trigger button
-      if (target.closest('.note-actions-menu') || target.closest('.note-actions-trigger')) {
-        return;
-      }
-      if (target.closest('.folder-actions-menu') || target.closest('.folder-actions-trigger')) {
-        return;
-      }
+      if (target.closest('.note-actions-menu') || target.closest('.note-actions-trigger')) return;
+      if (target.closest('.folder-actions-menu') || target.closest('.folder-actions-trigger')) return;
       setActiveMenuPath(null);
       setActiveFolderMenuPath(null);
     };
 
-    const timer = setTimeout(() => {
-      document.addEventListener('click', handleDocumentClick);
-    }, 0);
-
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('click', handleDocumentClick);
-    };
+    document.addEventListener('click', handleDocumentClick);
+    return () => document.removeEventListener('click', handleDocumentClick);
   }, [activeMenuPath, activeFolderMenuPath]);
 
   // Mouse drag listeners for resizer handle
@@ -616,8 +612,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsResizingSidebar(true);
     const startWidth = sidebarWidth;
     const startX = mouseDownEvent.clientX;
+    let lastUpdateTime = Date.now();
 
     const handleMouseMove = (mouseMoveEvent: MouseEvent) => {
+      const now = Date.now();
+      if (now - lastUpdateTime < 16) return; // Throttle to ~60fps
+      lastUpdateTime = now;
+
       const deltaX = mouseMoveEvent.clientX - startX;
       let newWidth = startWidth + deltaX;
 
@@ -644,6 +645,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setSidebarWidth(260);
     setIsSidebarCollapsed(false);
   };
+
+  const handleCreateNote = useCallback(() => {
+    createNewFile('.md');
+    setIsMobileSidebarOpen(false);
+  }, [createNewFile]);
+
+  const handleCreateCanvas = useCallback(() => {
+    createNewFile('.canvas');
+    setIsMobileSidebarOpen(false);
+  }, [createNewFile]);
+
+  const handleCreateBase = useCallback(() => {
+    createNewFile('.base');
+    setIsMobileSidebarOpen(false);
+  }, [createNewFile]);
+
+  const handleCreateFolder = useCallback(() => {
+    onCreateFolderClick('/');
+    setIsMobileSidebarOpen(false);
+  }, [onCreateFolderClick]);
 
   return (
     <>
@@ -715,10 +736,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {/* Note */}
               <button
                 type="button"
-                onClick={() => {
-                  createNewFile('.md');
-                  setIsMobileSidebarOpen(false);
-                }}
+                onClick={handleCreateNote}
                 className="group flex flex-col items-center justify-center p-3 rounded-2xl bg-muted/20 border border-border/40 hover:border-purple-500/40 hover:bg-purple-500/5 hover:shadow-xs transition-all text-center cursor-pointer"
                 title="Create New Markdown Note"
               >
@@ -731,10 +749,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {/* Canvas */}
               <button
                 type="button"
-                onClick={() => {
-                  createNewFile('.canvas');
-                  setIsMobileSidebarOpen(false);
-                }}
+                onClick={handleCreateCanvas}
                 className="group flex flex-col items-center justify-center p-3 rounded-2xl bg-muted/20 border border-border/40 hover:border-teal-500/40 hover:bg-teal-500/5 hover:shadow-xs transition-all text-center cursor-pointer"
                 title="Create New Canvas Board"
               >
@@ -747,10 +762,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {/* Base */}
               <button
                 type="button"
-                onClick={() => {
-                  createNewFile('.base');
-                  setIsMobileSidebarOpen(false);
-                }}
+                onClick={handleCreateBase}
                 className="group flex flex-col items-center justify-center p-3 rounded-2xl bg-muted/20 border border-border/40 hover:border-rose-500/40 hover:bg-rose-500/5 hover:shadow-xs transition-all text-center cursor-pointer"
                 title="Create New Database Base"
               >
@@ -763,10 +775,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {/* Folder */}
               <button
                 type="button"
-                onClick={() => {
-                  onCreateFolderClick('/');
-                  setIsMobileSidebarOpen(false);
-                }}
+                onClick={handleCreateFolder}
                 className="group flex flex-col items-center justify-center p-3 rounded-2xl bg-muted/20 border border-border/40 hover:border-blue-500/40 hover:bg-blue-500/5 hover:shadow-xs transition-all text-center cursor-pointer"
                 title="Create New Folder"
               >
@@ -1011,7 +1020,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               ) : (
                 // TREE VIEW ACTIVE: Render organized recursive folders & files tree!
                 (() => {
-                  const tree = buildFolderTree(files);
                   if (tree.length === 0) {
                     return (
                       <span className="text-xs text-muted-foreground/60 italic p-3 text-center">
