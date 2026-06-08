@@ -229,7 +229,7 @@ export default function App() {
     error: ''
   });
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<string | null>(null);
-  
+
   // Folder operation states for rename/move/copy
   const [folderOpState, setFolderOpState] = useState({
     pendingRenameFolder: null as string | null,
@@ -3288,13 +3288,6 @@ export default function App() {
         </div>
       )}
 
-      {isNetworkOffline && (
-        <div className="fixed bottom-6 left-6 right-6 sm:right-auto z-[2000] bg-[#1c1d24]/95 border border-amber-500/30 text-amber-500 text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-fade-in backdrop-blur-xl select-text max-w-[calc(100vw-48px)] sm:max-w-md">
-          <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
-          <span>Offline Mode: Working with cached notes. Edits will sync when connection is restored.</span>
-        </div>
-      )}
-
       {/* 1. Left Side Navigation Drawer */}
       <Sidebar
         isMobileSidebarOpen={isMobileSidebarOpen}
@@ -3482,7 +3475,18 @@ export default function App() {
             </button>
           </div>
         </header>
-
+        {isNetworkOffline && (
+          <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-200/90 text-xs px-2 py-1 sm:px-2 sm:py-1.5 flex flex-col sm:flex-row sm:items-center justify-between shrink-0 gap-3 select-none animate-fade-in">
+            <div className="flex items-start gap-2.5">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-amber-400 shrink-0 animate-pulse mt-0.5 sm:mt-0" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span className="font-semibold leading-relaxed">
+                Offline Mode: Working with cached notes. Edits will sync when connection is restored.
+              </span>
+            </div>
+          </div>
+        )}
         {activeFileHasRemoteUpdate && (
           <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-200/90 text-xs px-5 py-3 sm:px-6 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between shrink-0 gap-3 select-none animate-fade-in">
             <div className="flex items-start gap-2.5">
@@ -4224,26 +4228,26 @@ export default function App() {
             onSubmit={(e) => {
               e.preventDefault();
               const cleanName = folderOpState.renameInputValue.trim();
-              
+
               if (!cleanName) {
                 updateFolderOpState({ renameError: 'Folder name cannot be empty.' });
                 return;
               }
-              
+
               if (/[/\\:*?"<>|]/.test(cleanName)) {
                 updateFolderOpState({ renameError: 'Folder name contains invalid characters.' });
                 return;
               }
-              
+
               const oldName = folderOpState.pendingRenameFolder!.split('/').pop() || '';
               if (cleanName === oldName) {
                 updateFolderOpState({ pendingRenameFolder: null });
                 return;
               }
-              
+
               const parentPath = folderOpState.pendingRenameFolder!.includes('/') ? folderOpState.pendingRenameFolder!.substring(0, folderOpState.pendingRenameFolder!.lastIndexOf('/')) : '';
               const newFolderPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
-              
+
               // Check if folder already exists (case-insensitive)
               const gitkeepPath = `${newFolderPath}/.gitkeep`;
               const newFolderPathLower = newFolderPath.toLowerCase();
@@ -4251,7 +4255,7 @@ export default function App() {
                 updateFolderOpState({ renameError: `A folder named "${cleanName}" already exists.` });
                 return;
               }
-              
+
               updateFolderOpState({ renameError: '' });
               handleRenameFolder(folderOpState.pendingRenameFolder!, cleanName);
               updateFolderOpState({ pendingRenameFolder: null, renameInputValue: '' });
