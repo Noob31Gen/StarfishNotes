@@ -35,6 +35,8 @@ npm i
 npm run dev
 ```
 
+Or you can grab a release from [Releases](https://github.com/Noob31Gen/starfish-notes/releases/latest)
+
 Project built using React, Vite and Tailwind CSS.
 
 This project is AGPL-3.0 licensed.
