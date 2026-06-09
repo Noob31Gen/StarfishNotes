@@ -35,7 +35,7 @@ npm i
 npm run dev
 ```
 
-Or you can grab a release from [Releases](https://github.com/Noob31Gen/starfish-notes/releases/latest)
+Or you can grab a release from [Releases](https://github.com/Noob31Gen/StarfishNotes/releases/latest)
 
 Project built using React, Vite and Tailwind CSS.
 
