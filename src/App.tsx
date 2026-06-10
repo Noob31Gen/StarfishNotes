@@ -129,7 +129,15 @@ export default function App() {
   const [masterPassphrase, setMasterPassphrase] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [authError, setAuthError] = useState('');
+  const [authError, setAuthErrorRaw] = useState('');
+  const setAuthError = useCallback((val: string | ((prev: string) => string)) => {
+    setAuthErrorRaw(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      if (!githubToken) return next;
+      const escapedToken = githubToken.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      return next.replace(new RegExp(escapedToken, 'g'), '[REDACTED_TOKEN]');
+    });
+  }, [githubToken]);
 
   // Lockscreen (for encrypted storage upon fresh session)
   const [showLockScreen, setShowLockScreen] = useState(false);
@@ -158,7 +166,15 @@ export default function App() {
   const failedGhostNotesRef = React.useRef<Set<string>>(new Set());
 
   // Global premium toast error notification system (replaces blocking alerts)
-  const [globalError, setGlobalError] = useState('');
+  const [globalError, setGlobalErrorRaw] = useState('');
+  const setGlobalError = useCallback((val: string | ((prev: string) => string)) => {
+    setGlobalErrorRaw(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      if (!githubToken) return next;
+      const escapedToken = githubToken.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      return next.replace(new RegExp(escapedToken, 'g'), '[REDACTED_TOKEN]');
+    });
+  }, [githubToken]);
 
   // Settings State & Storage sync
   const [settings, setSettings] = useState<StarfishSettings>(() => {
