@@ -330,6 +330,28 @@ export default function App() {
 
   // Modal States
   const [pendingDeleteFile, setPendingDeleteFile] = useState<{ path: string, sha: string } | null>(null);
+  const [isGitHubIndexing, setIsGitHubIndexing] = useState(false);
+  const indexingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerGitHubIndexingNotice = useCallback(() => {
+    if (isOffline) return;
+    setIsGitHubIndexing(true);
+    if (indexingTimeoutRef.current) {
+      clearTimeout(indexingTimeoutRef.current);
+    }
+    indexingTimeoutRef.current = setTimeout(() => {
+      setIsGitHubIndexing(false);
+    }, 5000); // Show notice for 5 seconds
+  }, [isOffline]);
+
+  useEffect(() => {
+    return () => {
+      if (indexingTimeoutRef.current) {
+        clearTimeout(indexingTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const [pendingRenameFile, setPendingRenameFile] = useState<{ path: string, name: string, sha: string } | null>(null);
   const [renameInputValue, setRenameInputValue] = useState('');
   const [renameError, setRenameError] = useState('');
@@ -2480,6 +2502,7 @@ export default function App() {
         resultSha = result.sha;
         // Also save to local cache for offline access
         await saveLocalFile(finalPath, { content: initialText, sha: resultSha });
+        triggerGitHubIndexingNotice();
       } catch (commitErr: unknown) {
         const errMsg = commitErr instanceof Error ? commitErr.message : '';
         const isNetworkError = commitErr instanceof TypeError || errMsg.includes('fetch') || errMsg.includes('Network') || errMsg.includes('Failed to fetch');
@@ -2515,7 +2538,7 @@ export default function App() {
     } finally {
       setIsLoadingFile(false);
     }
-  }, [isOffline, createNewFileOffline, isLoadingFile, files, githubToken, repoName, branchName, refreshFiles, setAuthError]);
+  }, [isOffline, createNewFileOffline, isLoadingFile, files, githubToken, repoName, branchName, refreshFiles, setAuthError, triggerGitHubIndexingNotice]);
 
   const ensureGitkeepForEmptyParent = async (deletedFilePath: string, currentFiles: VaultFile[]): Promise<VaultFile | null> => {
     if (!deletedFilePath.includes('/')) return null;
@@ -2587,6 +2610,7 @@ export default function App() {
     setIsLoadingFile(true);
     try {
       await deleteFile(githubToken, repoName, branchName, path, sha);
+      triggerGitHubIndexingNotice();
 
       const gitkeepFile = await ensureGitkeepForEmptyParent(path, files);
       setFiles(prev => {
@@ -2694,6 +2718,7 @@ export default function App() {
         const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
         sha = result.sha;
         await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
+        triggerGitHubIndexingNotice();
       }
 
       // 4. Update states
@@ -2749,6 +2774,7 @@ export default function App() {
       } else {
         const commitMessage = `create folder placeholder at "${targetPath}" via Starfish Notes`;
         await commitFileContent(githubToken, repoName, branchName, targetPath, "", null, commitMessage);
+        triggerGitHubIndexingNotice();
         await refreshFiles();
       }
     } catch (e: unknown) {
@@ -2810,6 +2836,7 @@ export default function App() {
         const commitMessage = `copy note "${oldPath}" to "${newPath}" via Starfish Notes`;
         const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
         sha = result.sha;
+        triggerGitHubIndexingNotice();
       }
 
       const newFile: VaultFile = {
@@ -2888,6 +2915,7 @@ export default function App() {
         const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
         sha = result.sha;
         await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
+        triggerGitHubIndexingNotice();
       }
 
       let gitkeepFile: VaultFile | null = null;
@@ -3009,6 +3037,9 @@ export default function App() {
       });
 
       updateFolderOpState({ pendingRenameFolder: null });
+      if (!isOffline) {
+        triggerGitHubIndexingNotice();
+      }
       refreshFiles(githubToken, repoName, branchName);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to rename folder.';
@@ -3099,6 +3130,9 @@ export default function App() {
       });
 
       updateFolderOpState({ pendingMoveCopyFolder: null });
+      if (!isOffline) {
+        triggerGitHubIndexingNotice();
+      }
       refreshFiles(githubToken, repoName, branchName);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to move folder.';
@@ -3161,6 +3195,9 @@ export default function App() {
       }
 
       updateFolderOpState({ pendingMoveCopyFolder: null });
+      if (!isOffline) {
+        triggerGitHubIndexingNotice();
+      }
       refreshFiles(githubToken, repoName, branchName);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to copy folder.';
@@ -3197,6 +3234,9 @@ export default function App() {
 
       if (activeFilePath && (activeFilePath === folderPath || activeFilePath.startsWith(prefix))) {
         setActiveFilePath(null);
+      }
+      if (!isOffline) {
+        triggerGitHubIndexingNotice();
       }
       // Refresh tree from server to ensure consistency
       refreshFiles(githubToken, repoName, branchName);
@@ -3582,6 +3622,8 @@ export default function App() {
         repoName={repoName}
         branchName={branchName}
         onDownloadClick={handleDownloadFile}
+        isNetworkOffline={isNetworkOffline}
+        isGitHubIndexing={isGitHubIndexing}
 
         // Resize and collapse control props
         sidebarWidth={sidebarWidth}
@@ -3782,7 +3824,7 @@ export default function App() {
                       {(activeFile.size / (1024 * 1024)).toFixed(1)} MB (Too Large)
                     </span>
                   </div>
-                  
+
                   <div className="w-full flex flex-col gap-3 items-center justify-center min-h-[300px] border border-dashed border-border/80 rounded-xl bg-background/50 p-6 text-center select-none animate-fade-in">
                     <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center border border-red-500/20">
                       <AlertTriangle className="w-6 h-6 text-red-500 animate-pulse-soft" />
@@ -4915,34 +4957,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Category 3: Repo Connections & Authentication */}
-              <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl">
-                <h4 className="text-[0.72rem] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5 select-none">
-                  <Compass size={11.5} />
-                  Repository Settings
-                </h4>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col min-w-0 flex-1 pr-4">
-                    <span className="text-[0.72rem] font-bold text-foreground truncate block" title={repoName}>
-                      {repoName}
-                    </span>
-                    <span className="text-[0.62rem] text-muted-foreground mt-0.5 block font-semibold">
-                      Branch: {branchName}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowPurgeConfirmModal(true);
-                    }}
-                    className="bg-destructive/15 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer shrink-0"
-                  >
-                    Logout & Purge Local Data
-                  </button>
-                </div>
-              </div>
-
               {/* Category 3.5: GitHub API Rate Limit Status */}
               {!isOffline && (
                 <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl animate-fade-in">
@@ -5105,6 +5119,34 @@ export default function App() {
                   </div>
                 </div>
               )}
+
+              {/* Category 3: Repo Connections & Authentication */}
+              <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl">
+                <h4 className="text-[0.72rem] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5 select-none">
+                  <Compass size={11.5} />
+                  Repository Settings
+                </h4>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col min-w-0 flex-1 pr-4">
+                    <span className="text-[0.72rem] font-bold text-foreground truncate block" title={repoName}>
+                      {repoName}
+                    </span>
+                    <span className="text-[0.62rem] text-muted-foreground mt-0.5 block font-semibold">
+                      Branch: {branchName}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPurgeConfirmModal(true);
+                    }}
+                    className="bg-destructive/15 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer shrink-0"
+                  >
+                    Logout & Purge Local Data
+                  </button>
+                </div>
+              </div>
 
             </div>
 

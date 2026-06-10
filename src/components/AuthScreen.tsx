@@ -6,10 +6,10 @@ import { cn } from '../utils/cn';
 const isSharedHostingDomain = (): boolean => {
   const host = window.location.hostname;
   return host.endsWith('.github.io') ||
-         host.endsWith('.netlify.app') ||
-         host.endsWith('.vercel.app') ||
-         host.endsWith('.pages.dev') ||
-         host.endsWith('.ondigitalocean.app');
+    host.endsWith('.netlify.app') ||
+    host.endsWith('.vercel.app') ||
+    host.endsWith('.pages.dev') ||
+    host.endsWith('.ondigitalocean.app');
 };
 
 interface AuthScreenProps {
@@ -154,7 +154,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            GitHub Cloud Vault
+            GitHub Cloud
           </button>
           <button
             type="button"
@@ -166,7 +166,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            Local Offline Vault
+            Local Offline
           </button>
         </div>
 
@@ -406,13 +406,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </div>
         )}
 
-        <div className="flex flex-col gap-2 mt-1 pt-3 border-t border-border/20">
+        <div className="flex flex-col gap-2 border-t border-border/20">
           <button
             type="button"
             onClick={() => setShowPurgeConfirm(true)}
             className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-destructive/20 hover:border-destructive/40 bg-destructive/5 hover:bg-destructive/10 text-destructive text-xs font-semibold cursor-pointer transition-all duration-200 select-none"
           >
-            <Trash2 size={13} className="text-destructive/75" />
+            <Trash2 size={16} className="text-destructive/75" />
             <span>Purge Local Storage & Cache</span>
           </button>
         </div>
@@ -434,7 +434,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
       {/* Purge Confirmation Modal */}
       {showPurgeConfirm && (
-        <div 
+        <div
           className="fixed inset-0 z-[1300] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
           onClick={() => setShowPurgeConfirm(false)}
         >
