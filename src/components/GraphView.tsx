@@ -48,8 +48,6 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [zoom, setZoom] = useState(0.5);
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
 
   // Animation/Physics references
   const nodesRef = useRef<Node[]>([]);
@@ -104,8 +102,8 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
   const searchHighlightRef = useRef(searchHighlight);
 
   const zoomRef = useRef(zoom);
-  const panXRef = useRef(panX);
-  const panYRef = useRef(panY);
+  const panXRef = useRef(0);
+  const panYRef = useRef(0);
 
   useEffect(() => {
     repulsionRef.current = repulsionStrength;
@@ -114,14 +112,6 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
-
-  useEffect(() => {
-    panXRef.current = panX;
-  }, [panX]);
-
-  useEffect(() => {
-    panYRef.current = panY;
-  }, [panY]);
 
   useEffect(() => {
     springLengthRef.current = springLength;
@@ -685,8 +675,6 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
       panYRef.current = nextPanY;
 
       setZoom(newZoom);
-      setPanX(nextPanX);
-      setPanY(nextPanY);
     };
 
     canvas.addEventListener('wheel', handleWheelEvent, { passive: false });
@@ -756,12 +744,8 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     else if (e.buttons === 1) {
       const dx = e.clientX - mouseRef.current.x;
       const dy = e.clientY - mouseRef.current.y;
-      const nextPanX = panXRef.current + dx;
-      const nextPanY = panYRef.current + dy;
-      panXRef.current = nextPanX;
-      panYRef.current = nextPanY;
-      setPanX(nextPanX);
-      setPanY(nextPanY);
+      panXRef.current += dx;
+      panYRef.current += dy;
       mouseRef.current = { x: e.clientX, y: e.clientY };
     }
   };
@@ -854,12 +838,8 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     } else {
       const dx = touch.clientX - mouseRef.current.x;
       const dy = touch.clientY - mouseRef.current.y;
-      const nextPanX = panXRef.current + dx;
-      const nextPanY = panYRef.current + dy;
-      panXRef.current = nextPanX;
-      panYRef.current = nextPanY;
-      setPanX(nextPanX);
-      setPanY(nextPanY);
+      panXRef.current += dx;
+      panYRef.current += dy;
       mouseRef.current = { x: touch.clientX, y: touch.clientY };
     }
   }, []);
@@ -911,9 +891,10 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
   }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
 
   const resetViewport = () => {
+    zoomRef.current = 1.0;
+    panXRef.current = 0;
+    panYRef.current = 0;
     setZoom(1);
-    setPanX(0);
-    setPanY(0);
   };
 
   return (
@@ -1081,14 +1062,22 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
       {/* Floating Canvas controls */}
       <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 sm:bottom-6 sm:right-6 flex items-center gap-1.5 z-50 bg-card/60 backdrop-blur-xl border border-border px-3 py-2 rounded-full shadow-2xl animate-fade-in select-none max-w-[calc(100%-2rem)] overflow-x-auto flex-nowrap no-scrollbar">
         <button
-          onClick={() => setZoom(z => Math.min(z * 1.15, 2.5))}
+          onClick={() => {
+            const nextZoom = Math.min(zoomRef.current * 1.15, 2.5);
+            zoomRef.current = nextZoom;
+            setZoom(nextZoom);
+          }}
           className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer border border-transparent hover:border-border"
           title="Zoom In"
         >
           <ZoomIn size={14.5} />
         </button>
         <button
-          onClick={() => setZoom(z => Math.max(z / 1.15, 0.25))}
+          onClick={() => {
+            const nextZoom = Math.max(zoomRef.current / 1.15, 0.25);
+            zoomRef.current = nextZoom;
+            setZoom(nextZoom);
+          }}
           className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-border/60 hover:text-foreground transition-all cursor-pointer border border-transparent hover:border-border"
           title="Zoom Out"
         >

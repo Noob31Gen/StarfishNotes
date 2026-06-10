@@ -33,10 +33,20 @@ function bufToStr(buf: ArrayBuffer): string {
   return new TextDecoder().decode(buf);
 }
 
+function assertCryptoSupported(): void {
+  if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
+    throw new Error(
+      'Web Cryptography API (window.crypto.subtle) is not available. ' +
+      'This application requires a secure context (HTTPS or localhost) to perform encryption and handle credentials.'
+    );
+  }
+}
+
 /**
  * Retrieve or generate a non-extractable 256-bit AES-GCM key stored in IndexedDB meta store
  */
 async function getOrCreateSystemKey(): Promise<CryptoKey> {
+  assertCryptoSupported();
   const existingKey = await offlineStorage.getMeta<CryptoKey>('system_cryptokey');
   if (existingKey) {
     return existingKey;
@@ -59,6 +69,7 @@ async function getOrCreateSystemKey(): Promise<CryptoKey> {
  * Derives a cryptographic key from a user passphrase and salt using PBKDF2
  */
 async function deriveKey(passphrase: string, salt: Uint8Array, iterations = 600000): Promise<CryptoKey> {
+  assertCryptoSupported();
   const baseKey = await window.crypto.subtle.importKey(
     'raw',
     strToBuf(passphrase) as BufferSource, // Cast to BufferSource to satisfy browser subtle crypto API constraints
