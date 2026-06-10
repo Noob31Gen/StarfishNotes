@@ -1,7 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lock, CheckCircle2, RefreshCw, ShieldAlert, ChevronDown, ShieldCheck, Shield } from 'lucide-react';
 import type { StorageMode } from '../utils/crypto';
 import { cn } from '../utils/cn';
+
+const isSharedHostingDomain = (): boolean => {
+  const host = window.location.hostname;
+  return host.endsWith('.github.io') ||
+         host.endsWith('.netlify.app') ||
+         host.endsWith('.vercel.app') ||
+         host.endsWith('.pages.dev') ||
+         host.endsWith('.ondigitalocean.app');
+};
 
 interface AuthScreenProps {
   githubToken: string;
@@ -51,14 +60,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [isRequestingPersist, setIsRequestingPersist] = useState(false);
   const [storageFeedback, setStorageFeedback] = useState<string | null>(null);
 
-  const storageOptions: { value: StorageMode; label: string; desc: string }[] = [
+  const sharedDomain = isSharedHostingDomain();
+
+  useEffect(() => {
+    if (sharedDomain && storageMode === 'keychain') {
+      setStorageMode('session');
+    }
+  }, [sharedDomain, storageMode, setStorageMode]);
+
+  const storageOptions: { value: StorageMode; label: string; desc: string; disabled?: boolean }[] = [
     { value: 'session', label: 'Tab Session Storage (Default)', desc: 'Survives F5 page refresh, wiped when closed' },
     {
       value: 'keychain',
-      label: 'Browser Saved Passwords (Keychain)',
-      desc: authMode === 'github'
-        ? 'Stores token inside your browser\'s secure credential manager'
-        : 'Stores vault seed inside your browser\'s secure credential manager'
+      label: sharedDomain ? 'Browser Saved Passwords (Keychain) ⚠️' : 'Browser Saved Passwords (Keychain)',
+      desc: sharedDomain
+        ? 'Disabled: Keychain cannot be securely isolated on shared hosting domains (e.g. vercel, netlify, github pages).'
+        : authMode === 'github'
+          ? 'Stores token inside your browser\'s secure credential manager'
+          : 'Stores vault seed inside your browser\'s secure credential manager',
+      disabled: sharedDomain
     },
     {
       value: 'encrypted',
@@ -279,6 +299,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 <div className="absolute bottom-full mb-2 sm:top-full sm:bottom-auto sm:mt-2 left-0 w-full bg-[#12131a] border border-border rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5 z-20 animate-in fade-in zoom-in-95 duration-100 max-h-[220px] overflow-y-auto">
                   {storageOptions.map((opt) => {
                     const isSelected = opt.value === storageMode;
+                    if (opt.disabled) {
+                      return (
+                        <div
+                          key={opt.value}
+                          className="w-full text-left px-4 py-2.5 rounded-xl text-xs flex flex-col gap-0.5 border border-transparent opacity-50 bg-black/25 cursor-not-allowed select-none"
+                        >
+                          <span className="font-semibold text-muted-foreground">{opt.label}</span>
+                          <span className="text-[0.65rem] text-destructive font-medium leading-normal">{opt.desc}</span>
+                        </div>
+                      );
+                    }
                     return (
                       <button
                         key={opt.value}

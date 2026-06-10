@@ -58,7 +58,7 @@ async function getOrCreateSystemKey(): Promise<CryptoKey> {
 /**
  * Derives a cryptographic key from a user passphrase and salt using PBKDF2
  */
-async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveKey(passphrase: string, salt: Uint8Array, iterations = 600000): Promise<CryptoKey> {
   const baseKey = await window.crypto.subtle.importKey(
     'raw',
     strToBuf(passphrase) as BufferSource, // Cast to BufferSource to satisfy browser subtle crypto API constraints
@@ -71,7 +71,7 @@ async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKe
     {
       name: 'PBKDF2',
       salt: salt as BufferSource, // Cast to BufferSource to satisfy browser subtle crypto API constraints
-      iterations: 100000,
+      iterations: iterations,
       hash: 'SHA-256'
     },
     baseKey,
@@ -90,7 +90,7 @@ export async function encryptToken(plainText: string, passphrase: string): Promi
   const salt = window.crypto.getRandomValues(new Uint8Array(16));
   const iv = window.crypto.getRandomValues(new Uint8Array(12));
 
-  const key = await deriveKey(passphrase, salt);
+  const key = await deriveKey(passphrase, salt, 600000);
 
   const cipherBuffer = await window.crypto.subtle.encrypt(
     {
@@ -124,9 +124,9 @@ export async function decryptToken(encryptedData: string, passphrase: string): P
   const iv = new Uint8Array(hexToBuf(ivHex));
   const cipherBuffer = hexToBuf(cipherHex);
 
-  const key = await deriveKey(passphrase, salt);
-
+  // 1. Try with the new stronger standard of 600,000 PBKDF2 iterations
   try {
+    const key = await deriveKey(passphrase, salt, 600000);
     const plainBuffer = await window.crypto.subtle.decrypt(
       {
         name: 'AES-GCM',
@@ -137,7 +137,21 @@ export async function decryptToken(encryptedData: string, passphrase: string): P
     );
     return bufToStr(plainBuffer);
   } catch (error: unknown) {
-    throw new Error('Incorrect master passphrase or corrupted token.', { cause: error });
+    // 2. Fallback: try with the legacy 100,000 PBKDF2 iterations for backwards compatibility
+    try {
+      const key = await deriveKey(passphrase, salt, 100000);
+      const plainBuffer = await window.crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv as BufferSource
+        },
+        key,
+        cipherBuffer
+      );
+      return bufToStr(plainBuffer);
+    } catch (fallbackError: unknown) {
+      throw new Error('Incorrect master passphrase or corrupted token.', { cause: fallbackError });
+    }
   }
 }
 

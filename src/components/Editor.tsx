@@ -75,19 +75,24 @@ function parseCSV(text: string, delimiter: string = ','): string[][] {
 }
 
 function stringifyCSV(rows: string[][], delimiter: string = ','): string {
+  const formulaTriggers = ['=', '+', '-', '@', '\t', '\r'];
   return rows
     .map(row =>
       row
         .map(cell => {
-          const needsQuotes =
-            cell.includes(delimiter) ||
-            cell.includes('"') ||
-            cell.includes('\n') ||
-            cell.includes('\r');
-          if (needsQuotes) {
-            return `"${cell.replace(/"/g, '""')}"`;
+          let escapedCell = cell;
+          if (escapedCell && formulaTriggers.includes(escapedCell.charAt(0))) {
+            escapedCell = `'${escapedCell}`;
           }
-          return cell;
+          const needsQuotes =
+            escapedCell.includes(delimiter) ||
+            escapedCell.includes('"') ||
+            escapedCell.includes('\n') ||
+            escapedCell.includes('\r');
+          if (needsQuotes) {
+            return `"${escapedCell.replace(/"/g, '""')}"`;
+          }
+          return escapedCell;
         })
         .join(delimiter)
     )
@@ -641,7 +646,7 @@ const EditorComponent: React.FC<EditorProps> = ({
         USE_PROFILES: { html: true, mathMl: true, svg: true },
         ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border', 'sandbox'],
         ADD_TAGS: ['iframe', 'svg', 'line'],
-        ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|sms|blob|data):|[^&:/?#]*(?:[/?#]|$))/i
+        ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|blob):|[^&:/?#]*(?:[/?#]|$))/i
       });
     } catch {
       return `<p class="text-destructive font-medium">Error parsing content.</p>`;
@@ -1030,7 +1035,7 @@ const EditorComponent: React.FC<EditorProps> = ({
           m.initialize({
             startOnLoad: false,
             theme: 'dark',
-            securityLevel: 'loose',
+            securityLevel: 'strict',
             fontFamily: 'Inter, sans-serif',
           });
           m.run({ nodes: mermaidNodes as NodeListOf<HTMLElement> }).catch(() => {

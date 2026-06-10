@@ -477,7 +477,7 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
         USE_PROFILES: { html: true, mathMl: true, svg: true },
         ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border', 'sandbox'],
         ADD_TAGS: ['iframe', 'svg', 'line'],
-        ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|sms|blob|data):|[^&:/?#]*(?:[/?#]|$))/i
+        ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|blob):|[^&:/?#]*(?:[/?#]|$))/i
       });
     } catch {
       return `<span class="text-destructive font-medium">Error parsing Markdown.</span>`;
