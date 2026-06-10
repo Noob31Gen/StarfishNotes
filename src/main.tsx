@@ -1,7 +1,15 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import DOMPurify from 'dompurify'
 import './index.css'
 import App from './App.tsx'
+
+// Global DOMPurify sanitization rules
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'IFRAME') {
+    node.setAttribute('sandbox', 'allow-scripts allow-popups');
+  }
+});
 
 // Register Service Worker for PWA Offline Caching
 if ('serviceWorker' in navigator) {

@@ -475,8 +475,8 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
 
       return DOMPurify.sanitize(html, {
         USE_PROFILES: { html: true, mathMl: true, svg: true },
-        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border'],
-        ADD_TAGS: ['embed', 'iframe', 'svg', 'line'],
+        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border', 'sandbox'],
+        ADD_TAGS: ['iframe', 'svg', 'line'],
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|sms|blob|data):|[^&:/?#]*(?:[/?#]|$))/i
       });
     } catch {

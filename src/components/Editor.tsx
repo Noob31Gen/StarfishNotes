@@ -620,8 +620,8 @@ export const Editor: React.FC<EditorProps> = ({
       // 5. Bulletproof sanitize through DOMPurify to eliminate any script injection vectors
       return DOMPurify.sanitize(html, {
         USE_PROFILES: { html: true, mathMl: true, svg: true },
-        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border'],
-        ADD_TAGS: ['embed', 'iframe', 'svg', 'line'],
+        ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border', 'sandbox'],
+        ADD_TAGS: ['iframe', 'svg', 'line'],
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|sms|blob|data):|[^&:/?#]*(?:[/?#]|$))/i
       });
     } catch {

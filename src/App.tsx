@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings, Download, Paperclip, AlertTriangle } from 'lucide-react';
 import JSZip from 'jszip';
 import {
@@ -3202,10 +3202,22 @@ export default function App() {
   }, [activeFilePath, files, loadFileContent, loadBinaryFile, loadUnknownFile, detectedTextFiles, githubToken, repoName, branchName, isLoadingFile, isOffline, storageMode, masterPassphrase, setFiles, setFileContents, setIsLoadingFile]);
 
   // Sidebar note rendering filters
-  const filteredFiles = files.filter(
+  const filteredFiles = useMemo(() => files.filter(
     f => f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       f.path.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ), [files, searchTerm]);
+
+  // Memoized folder tree to prevent rebuilding on every render
+  const folderTree = useMemo(() => buildFolderTree(files), [files]);
+
+  // Memoized unique folders array for relocation modals
+  const uniqueFolders = useMemo(() => {
+    return Array.from(new Set(
+      files
+        .map(f => f.path.substring(0, f.path.lastIndexOf('/')))
+        .filter(folder => folder !== '')
+    )).sort();
+  }, [files]);
 
   const activeFile = files.find(f => f.path === activeFilePath);
 
@@ -4113,12 +4125,7 @@ export default function App() {
                       )}
 
                       {/* All Other Folders */}
-                      {Array.from(new Set(
-                        files
-                          .map(f => f.path.substring(0, f.path.lastIndexOf('/')))
-                          .filter(folder => folder !== '')
-                      ))
-                        .sort()
+                      {uniqueFolders
                         .filter(folder => folder.toLowerCase().includes(moveCopyState.folderSearch.toLowerCase()))
                         .map(folder => {
                           const isSelected = moveCopyState.folderSelect === folder;
@@ -4450,7 +4457,7 @@ export default function App() {
                             )}
                           </button>
                         )}
-                        {buildFolderTree(files).map((node) => {
+                        {folderTree.map((node) => {
                           const renderFolderOption = (folder: TreeFolder | TreeFile, depth: number): React.ReactNode[] => {
                             if (folder.type !== 'folder') return [];
                             if (folder.path === folderOpState.pendingMoveCopyFolder) return [];

@@ -113,6 +113,23 @@ export function parseYaml(yaml: string): unknown {
           cleanKey = key.slice(1, -1);
         }
 
+        if (cleanKey === '__proto__' || cleanKey === 'constructor' || cleanKey === 'prototype') {
+          if (valueStr === '') {
+            lineIdx++;
+            let nextIndent = indent + 2;
+            for (let i = lineIdx; i < lines.length; i++) {
+              if (lines[i].trim() !== '') {
+                nextIndent = getIndent(lines[i]);
+                break;
+              }
+            }
+            parseBlock(nextIndent);
+          } else {
+            lineIdx++;
+          }
+          continue;
+        }
+
         if (valueStr === '') {
           lineIdx++;
           let nextIndent = indent + 2;
