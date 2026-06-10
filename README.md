@@ -17,9 +17,9 @@ This was created as an alternative to Obsidian on web.
 
 Demo: https://notes.noob31.com/
 
-**Critical**: 2.0 update introduces some security and performance improvements. 2.0 is backwards compatible with pre-2.0 vaults but earlier versions will not work with 2.0 vaults. This only applied to data stored in browser and will not affect content stored in github in any way(I mean they're just files anyway). To refresh, just clear site data and login again.
+**Critical**: v2.0 update introduces some security and performance improvements. v2.0 is backwards compatible with pre-2.0 vaults but v1.5 will not work with v2.0 vaults. This only applies to data stored in browser and will not affect content stored in github in any way (I mean they're just files anyway).
 
-Note: When initializing an empty repo, this app creates a .vault-compat.json file which is used to verify if the repo is known. Also it creates .gitkeep files when creating new folders to make sure it sticks. Do not delete these two files from the repo.
+Note: When initializing an empty repo, this app creates a .vault-compat.json file which is used to verify if the repo is known. Also it creates .gitkeep files when creating new folders to make sure it sticks. Do not delete these files from the repo.
 
 Build and deploy:
 
