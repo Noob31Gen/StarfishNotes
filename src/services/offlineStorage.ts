@@ -132,40 +132,40 @@ class OfflineStorageService {
   public async getFilesList(): Promise<OfflineFile[]> {
     try {
       const records = await this.getAllRawRecords();
-      const filesList: OfflineFile[] = [];
-
-      for (const record of records) {
+      
+      const decryptedRecords = await Promise.all(records.map(async (record) => {
         if (record.isMetadataEncrypted) {
           if (this.passphrase && this.decryptFn) {
             try {
               const decryptedPath = await this.decryptFn(record.encryptedPath!, this.passphrase);
               const decryptedName = await this.decryptFn(record.encryptedName!, this.passphrase);
-              filesList.push({
+              return {
                 path: decryptedPath,
                 name: decryptedName,
                 type: record.type,
                 content: record.content,
                 size: record.size,
                 sha: record.sha
-              });
+              };
             } catch (e) {
               console.error('Failed to decrypt record in list:', e);
+              return null;
             }
-          } else {
-            // Do not expose encrypted files in metadata list if the vault is locked/key is missing
           }
-        } else {
-          filesList.push({
-            path: record.path,
-            name: record.name,
-            type: record.type,
-            content: record.content,
-            size: record.size,
-            sha: record.sha
-          });
+          return null; // Do not expose encrypted files in metadata list if the vault is locked/key is missing
         }
-      }
-      return filesList;
+        
+        return {
+          path: record.path,
+          name: record.name,
+          type: record.type,
+          content: record.content,
+          size: record.size,
+          sha: record.sha
+        };
+      }));
+
+      return decryptedRecords.filter((f): f is OfflineFile => f !== null);
     } catch (e) {
       console.error('Failed to retrieve local offline files list:', e);
       return [];

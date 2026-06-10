@@ -262,38 +262,37 @@ export async function deleteLocalFile(path: string): Promise<void> {
 
 export async function getAllLocalFilePaths(): Promise<string[]> {
     const allKeys = await keys();
-    const paths: string[] = [];
+    
+    const hashKeys = allKeys.filter((k): k is string => typeof k === 'string' && k.startsWith('file_hash_'));
+    const legacyKeys = allKeys.filter((k): k is string => typeof k === 'string' && k.startsWith('file_'));
 
-    for (const key of allKeys) {
-        if (typeof key !== 'string') continue;
-        
-        if (key.startsWith('file_hash_')) {
-            if (passphrase && decryptFn) {
-                try {
-                    const record = await get<LocalFile>(key);
-                    if (record && record.isEncrypted && record.encryptedPath) {
-                        const decryptedPath = await decryptFn(record.encryptedPath, passphrase);
-                        paths.push(decryptedPath);
+    // Fetch all records concurrently
+    const records = await Promise.all(hashKeys.map(key => get<LocalFile>(key)));
+
+    // Decrypt all paths concurrently
+    const decryptedPaths = await Promise.all(
+        records.map(async (record) => {
+            if (record && record.isEncrypted && record.encryptedPath) {
+                if (passphrase && decryptFn) {
+                    try {
+                        return await decryptFn(record.encryptedPath, passphrase);
+                    } catch (e) {
+                        console.error('Failed to decrypt local file path:', e);
                     }
-                } catch (e) {
-                    console.error('Failed to decrypt local file path:', e);
-                }
-            } else {
-                // Try system-key decryption
-                try {
-                    const record = await get<LocalFile>(key);
-                    if (record && record.isEncrypted && record.encryptedPath) {
-                        const decryptedPath = await systemKeyDecrypt(record.encryptedPath);
-                        paths.push(decryptedPath);
+                } else {
+                    try {
+                        return await systemKeyDecrypt(record.encryptedPath);
+                    } catch (e) {
+                        console.error('Failed to decrypt system-key encrypted path:', e);
                     }
-                } catch (e) {
-                    console.error('Failed to decrypt system-key encrypted path:', e);
                 }
             }
-        } else if (key.startsWith('file_')) {
-            paths.push(key.substring(5)); // Legacy plaintext path
-        }
-    }
+            return null;
+        })
+    );
+
+    const paths = decryptedPaths.filter((p): p is string => p !== null);
+    legacyKeys.forEach(key => paths.push(key.substring(5)));
 
     return paths;
 }

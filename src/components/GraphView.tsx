@@ -61,6 +61,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
   const initialPinchDistance = useRef<number | null>(null);
   const initialPinchZoom = useRef<number>(0.5);
   const isTouchRef = useRef<boolean>(false);
+  const alphaRef = useRef<number>(1.0);
 
   // Collapsible settings & physics filters states
   const [showCanvas, setShowCanvas] = useState(true);
@@ -107,22 +108,27 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
 
   useEffect(() => {
     repulsionRef.current = repulsionStrength;
+    alphaRef.current = 1.0;
   }, [repulsionStrength]);
 
   useEffect(() => {
     zoomRef.current = zoom;
+    alphaRef.current = 1.0;
   }, [zoom]);
 
   useEffect(() => {
     springLengthRef.current = springLength;
+    alphaRef.current = 1.0;
   }, [springLength]);
 
   useEffect(() => {
     gravityRef.current = gravity;
+    alphaRef.current = 1.0;
   }, [gravity]);
 
   useEffect(() => {
     searchHighlightRef.current = searchHighlight;
+    alphaRef.current = 1.0;
   }, [searchHighlight]);
 
   useEffect(() => {
@@ -379,6 +385,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
 
     nodesRef.current = allNodes;
     linksRef.current = allLinks;
+    alphaRef.current = 1.0;
   }, [files, fileContents, activeFilePath, showCanvas, showGhosts, showOrphans]);
 
   // Keep canvas resolution in sync with parent element size
@@ -420,6 +427,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
       const springLength = springLengthRef.current;
       const gravity = gravityRef.current * 0.08;
       const friction = 0.8;
+      const alpha = alphaRef.current;
 
       // 1. Center of Gravity
       const cx = canvas.width / 2;
@@ -439,7 +447,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
 
           if (dist < 400) {
             // Stronger force at closer distance
-            const force = (repulsionStrength / distSqr) * 15;
+            const force = (repulsionStrength / distSqr) * 15 * alpha;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
 
@@ -451,8 +459,8 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
         }
 
         // Pull to center
-        n1.vx += (cx - n1.x) * gravity;
-        n1.vy += (cy - n1.y) * gravity;
+        n1.vx += (cx - n1.x) * gravity * alpha;
+        n1.vy += (cy - n1.y) * gravity * alpha;
       }
 
       // 3. Link Attraction (Connected nodes pull together)
@@ -466,7 +474,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
           // Hooke's spring force
-          const force = (dist - springLength) * springStrength;
+          const force = (dist - springLength) * springStrength * alpha;
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
 
@@ -630,8 +638,16 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     };
 
     const renderLoop = () => {
-      updatePhysics();
-      drawGraph();
+      let shouldDraw = false;
+      if (alphaRef.current > 0.005) {
+        updatePhysics();
+        alphaRef.current *= 0.985;
+        shouldDraw = true;
+      }
+
+      if (shouldDraw || isDraggingRef.current || hoverNodeRef.current !== null || touchActiveNodeRef.current !== null) {
+        drawGraph();
+      }
       animationFrameId = requestAnimationFrame(renderLoop);
     };
 
@@ -673,6 +689,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
       zoomRef.current = newZoom;
       panXRef.current = nextPanX;
       panYRef.current = nextPanY;
+      alphaRef.current = 1.0;
 
       setZoom(newZoom);
     };
@@ -701,6 +718,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     // Ignore mouse events when in touch mode (prevent synthetic mouse events from interfering)
     if (isTouchRef.current) return;
 
+    alphaRef.current = 1.0;
     const { x, y } = screenToWorld(e.clientX, e.clientY);
     dragStartScreenRef.current = { x: e.clientX, y: e.clientY };
 
@@ -740,6 +758,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     if (dragNodeRef.current && isDraggingRef.current) {
       dragNodeRef.current.x = x;
       dragNodeRef.current.y = y;
+      alphaRef.current = 1.0;
     }
     else if (e.buttons === 1) {
       const dx = e.clientX - mouseRef.current.x;
@@ -747,6 +766,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
       panXRef.current += dx;
       panYRef.current += dy;
       mouseRef.current = { x: e.clientX, y: e.clientY };
+      alphaRef.current = 1.0;
     }
   };
 
@@ -769,6 +789,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
 
   const handleTouchStart = React.useCallback((e: TouchEvent) => {
     isTouchRef.current = true;
+    alphaRef.current = 1.0;
     if (e.cancelable) {
       e.preventDefault();
     }
@@ -809,6 +830,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
   }, []);
 
   const handleTouchMove = React.useCallback((e: TouchEvent) => {
+    alphaRef.current = 1.0;
     if (e.touches.length === 2 && initialPinchDistance.current !== null) {
       if (e.cancelable) {
         e.preventDefault();

@@ -495,6 +495,13 @@ export default function App() {
 
   const loadFileContentOffline = useCallback(async (path: string, providedKey?: string) => {
     if (fileContents[path] !== undefined) return;
+
+    // Check size limit (25MB)
+    const matchedFile = files.find(f => f.path === path);
+    if (matchedFile && matchedFile.size && matchedFile.size > 25 * 1024 * 1024) {
+      return;
+    }
+
     setIsLoadingFile(true);
     try {
       const file = await offlineStorage.getFile(path);
@@ -524,10 +531,17 @@ export default function App() {
     } finally {
       setIsLoadingFile(false);
     }
-  }, [fileContents, storageMode, masterPassphrase]);
+  }, [fileContents, files, storageMode, masterPassphrase]);
 
   const preloadFileContentOffline = useCallback(async (path: string, providedKey?: string) => {
     if (!path || fileContents[path] !== undefined) return;
+
+    // Check size limit (25MB)
+    const matchedFile = files.find(f => f.path === path);
+    if (matchedFile && matchedFile.size && matchedFile.size > 25 * 1024 * 1024) {
+      return;
+    }
+
     try {
       const file = await offlineStorage.getFile(path);
       if (file) {
@@ -554,10 +568,17 @@ export default function App() {
     } catch (e) {
       console.error('Failed to preload offline file content:', e);
     }
-  }, [fileContents, storageMode, masterPassphrase]);
+  }, [fileContents, files, storageMode, masterPassphrase]);
 
   const loadBinaryFileOffline = useCallback(async (path: string, providedKey?: string) => {
     if (!path || vaultImages[path]) return;
+
+    // Check size limit (25MB)
+    const matchedFile = files.find(f => f.path === path);
+    if (matchedFile && matchedFile.size && matchedFile.size > 25 * 1024 * 1024) {
+      return;
+    }
+
     try {
       const file = await offlineStorage.getFile(path);
       if (file) {
@@ -590,7 +611,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to load binary offline file:', e);
     }
-  }, [vaultImages, storageMode, masterPassphrase]);
+  }, [vaultImages, files, storageMode, masterPassphrase]);
 
   const uploadAttachmentOffline = useCallback(async (file: File, folderPath?: string, shouldNavigate: boolean = true): Promise<{ path: string; name: string }> => {
     const maxOfflineSize = 10 * 1024 * 1024;
@@ -1215,6 +1236,13 @@ export default function App() {
     }
     if (fileContents[path] !== undefined) return;
 
+    // Check size limit (25MB)
+    const matchedFile = files.find(f => f.path === path);
+    if (matchedFile && matchedFile.size && matchedFile.size > 25 * 1024 * 1024) {
+      console.warn(`File loading blocked: ${path} is larger than 25MB.`);
+      return;
+    }
+
     setIsLoadingFile(true);
     try {
       const content = await fetchFileContent(githubToken, repoName, path, sha);
@@ -1227,7 +1255,7 @@ export default function App() {
     } finally {
       setIsLoadingFile(false);
     }
-  }, [fileContents, githubToken, repoName, isOffline, loadFileContentOffline]);
+  }, [fileContents, files, githubToken, repoName, isOffline, loadFileContentOffline]);
 
   const preloadFileContent = useCallback(async (path: string, sha: string) => {
     if (isOffline) {
@@ -1235,6 +1263,13 @@ export default function App() {
       return;
     }
     if (!path || fileContents[path] !== undefined) return;
+
+    // Check size limit (25MB)
+    const matchedFile = files.find(f => f.path === path);
+    if (matchedFile && matchedFile.size && matchedFile.size > 25 * 1024 * 1024) {
+      return;
+    }
+
     try {
       const content = await fetchFileContent(githubToken, repoName, path, sha);
       setFileContents(prev => ({
@@ -1244,7 +1279,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to preload file content:', e);
     }
-  }, [fileContents, githubToken, repoName, isOffline, preloadFileContentOffline]);
+  }, [fileContents, files, githubToken, repoName, isOffline, preloadFileContentOffline]);
 
   const loadBinaryFile = useCallback(async (path: string, sha: string) => {
     if (isOffline) {
@@ -1252,6 +1287,13 @@ export default function App() {
       return;
     }
     if (!path || !sha || vaultImages[path]) return;
+
+    // Check size limit (25MB)
+    const matchedFile = files.find(f => f.path === path);
+    if (matchedFile && matchedFile.size && matchedFile.size > 25 * 1024 * 1024) {
+      return;
+    }
+
     try {
       const base64 = await fetchBinaryFileContent(githubToken, repoName, sha);
       const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
@@ -1273,9 +1315,15 @@ export default function App() {
     } catch (e) {
       console.error('Failed to load binary file:', e);
     }
-  }, [vaultImages, githubToken, repoName, isOffline, loadBinaryFileOffline]);
+  }, [vaultImages, files, githubToken, repoName, isOffline, loadBinaryFileOffline]);
 
   const loadUnknownFile = useCallback(async (path: string, sha: string) => {
+    // Check size limit (25MB)
+    const matchedFile = files.find(f => f.path === path);
+    if (matchedFile && matchedFile.size && matchedFile.size > 25 * 1024 * 1024) {
+      return;
+    }
+
     setIsLoadingFile(true);
     try {
       let base64 = '';
@@ -1353,7 +1401,7 @@ export default function App() {
     } finally {
       setIsLoadingFile(false);
     }
-  }, [githubToken, repoName, isOffline, storageMode, masterPassphrase]);
+  }, [files, githubToken, repoName, isOffline, storageMode, masterPassphrase]);
 
   const uploadAttachment = useCallback(async (file: File, folderPath?: string, shouldNavigate: boolean = true): Promise<{ path: string; name: string }> => {
     if (isOffline) {
@@ -3718,6 +3766,43 @@ export default function App() {
                 prefetchStatus={prefetchStatus}
                 prefetchProgress={prefetchProgress}
               />
+            ) : activeFile && activeFile.size && activeFile.size > 25 * 1024 * 1024 ? (
+              <div className="flex-1 w-full h-full flex flex-col bg-background select-text overflow-y-auto items-center p-8">
+                <div className="max-w-3xl w-full bg-card/40 border border-border rounded-2xl p-6 shadow-xl flex flex-col gap-6 items-center">
+                  <div className="w-full flex items-center justify-between border-b border-border/80 pb-4">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-foreground">
+                        {activeFilePath ? activeFilePath.split('/').pop() : ''}
+                      </span>
+                      <span className="text-[0.7rem] text-muted-foreground mt-0.5">
+                        Path: {activeFilePath}
+                      </span>
+                    </div>
+                    <span className="text-[0.7rem] font-semibold bg-red-500/10 text-red-500 px-2 py-1 rounded-md border border-red-500/20">
+                      {(activeFile.size / (1024 * 1024)).toFixed(1)} MB (Too Large)
+                    </span>
+                  </div>
+                  
+                  <div className="w-full flex flex-col gap-3 items-center justify-center min-h-[300px] border border-dashed border-border/80 rounded-xl bg-background/50 p-6 text-center select-none animate-fade-in">
+                    <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center border border-red-500/20">
+                      <AlertTriangle className="w-6 h-6 text-red-500 animate-pulse-soft" />
+                    </div>
+                    <span className="text-xs font-bold text-foreground">
+                      File Too Large for Preview
+                    </span>
+                    <span className="text-[0.7rem] text-muted-foreground max-w-[320px] leading-relaxed">
+                      This file is larger than 25MB and cannot be previewed in the browser due to performance limitations. You can download it to view it locally.
+                    </span>
+                    <button
+                      onClick={() => handleDownloadFile(activeFilePath!, activeFile.name, activeFile.sha)}
+                      className="mt-2 bg-primary hover:bg-primary/90 text-white text-xs font-semibold py-1.5 px-4 rounded-xl transition-all cursor-pointer shadow-lg shadow-primary/10 flex items-center gap-1.5"
+                    >
+                      <Download size={12} />
+                      Download Attachment
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : isLoadingFile ? (
               <div className="flex flex-col gap-3.5 items-center justify-center h-full w-full text-muted-foreground text-sm">
                 <RefreshCw className="w-6 h-6 animate-spin text-primary" />
