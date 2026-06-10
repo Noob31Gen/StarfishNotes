@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, CheckCircle2, RefreshCw, ShieldAlert, ChevronDown, ShieldCheck, Shield } from 'lucide-react';
+import { Lock, CheckCircle2, RefreshCw, ShieldAlert, ChevronDown, ShieldCheck, Shield, Trash2 } from 'lucide-react';
 import type { StorageMode } from '../utils/crypto';
 import { cn } from '../utils/cn';
 
@@ -33,6 +33,7 @@ interface AuthScreenProps {
   isPersistentStorage: boolean;
   requestPersistentStorage: () => Promise<boolean>;
   handleConnectOffline: (e: React.FormEvent) => Promise<void>;
+  onPurgeStorage: () => Promise<void>;
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
@@ -55,6 +56,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   isPersistentStorage,
   requestPersistentStorage,
   handleConnectOffline,
+  onPurgeStorage,
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isRequestingPersist, setIsRequestingPersist] = useState(false);
@@ -394,6 +396,22 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </div>
           </div>
         )}
+
+        <div className="flex flex-col gap-2 mt-1 pt-3 border-t border-border/20">
+          <button
+            type="button"
+            onClick={async () => {
+              if (window.confirm("Are you sure you want to permanently purge all local storage? This will delete all locally cached files, credentials, and settings. This cannot be undone.")) {
+                await onPurgeStorage();
+                alert("All local storage has been purged successfully.");
+              }
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-destructive/20 hover:border-destructive/40 bg-destructive/5 hover:bg-destructive/10 text-destructive text-xs font-semibold cursor-pointer transition-all duration-200 select-none"
+          >
+            <Trash2 size={13} className="text-destructive/75" />
+            <span>Purge Local Storage & Cache</span>
+          </button>
+        </div>
 
         <div className="text-center mt-1 pt-1 border-t border-border/20">
           <a

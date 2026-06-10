@@ -708,7 +708,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     const clickedNode = nodesRef.current.find(node => {
       const dx = node.x - x;
       const dy = node.y - y;
-      return Math.sqrt(dx * dx + dy * dy) <= node.radius + 8;
+      return Math.sqrt(dx * dx + dy * dy) <= node.radius + 16;
     });
 
     if (clickedNode) {
@@ -733,7 +733,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     const hoverNode = nodesRef.current.find(node => {
       const dx = node.x - x;
       const dy = node.y - y;
-      return Math.sqrt(dx * dx + dy * dy) <= node.radius + 8;
+      return Math.sqrt(dx * dx + dy * dy) <= node.radius + 16;
     });
     hoverNodeRef.current = hoverNode || null;
 
@@ -790,7 +790,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     const clickedNode = nodesRef.current.find(node => {
       const dx = node.x - x;
       const dy = node.y - y;
-      return Math.sqrt(dx * dx + dy * dy) <= node.radius + 8;
+      return Math.sqrt(dx * dx + dy * dy) <= node.radius + 24;
     });
 
     if (clickedNode) {

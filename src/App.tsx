@@ -139,6 +139,12 @@ export default function App() {
   // Global settings modal state
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
+  // GitHub API rate limit state
+  const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
+  const [rateLimitLimit, setRateLimitLimit] = useState<number | null>(null);
+  const [rateLimitResetTime, setRateLimitResetTime] = useState<Date | null>(null);
+  const [isCheckingRateLimit, setIsCheckingRateLimit] = useState(false);
+
   // Synchronize masterPassphrase with storage encryption passphrase
   useEffect(() => {
     if (masterPassphrase) {
@@ -1866,6 +1872,9 @@ export default function App() {
       try {
         console.log('[API Check] Checking GitHub API rate limit status...');
         const status = await checkApiRateLimit(githubToken);
+        setRateLimitRemaining(status.remaining);
+        setRateLimitLimit(status.limit);
+        setRateLimitResetTime(status.reset);
         console.log(`[API Status] Remaining: ${status.remaining}/${status.limit} requests`);
         console.log(`[API Reset] Reset time: ${status.reset.toLocaleString()}`);
 
@@ -2077,6 +2086,26 @@ export default function App() {
     setFileContents({});
     setActiveFilePath(null);
     setIsVaultChecked(false);
+  };
+
+  const handlePurgeStorage = async () => {
+    // 1. Nuke all starfishnotes* keys from localStorage + sessionStorage
+    purgeCredentials();
+    // 2. Wipe IndexedDB offline vault
+    await offlineStorage.purgeVault().catch(e => console.error('Failed to purge offline vault:', e));
+    offlineStorage.clearPassphrase();
+    // 3. Wipe idb-keyval file cache
+    await clearAllLocalFiles().catch(e => console.error('Failed to clear local file cache:', e));
+    // 4. Reset module-level crypto state
+    clearStorageCrypto();
+    clearStoragePassphrase();
+    // 5. Reset input fields & error states
+    setGithubToken('');
+    setRepoName('');
+    setBranchName('main');
+    setMasterPassphrase('');
+    setAuthError('');
+    setUnlockError('');
   };
 
   // checkAndLoadVault function migrated to stable top position
@@ -2298,6 +2327,9 @@ export default function App() {
     try {
       console.log('[Manual Retry] Manually checking API rate limit status...');
       const status = await checkApiRateLimit(githubToken);
+      setRateLimitRemaining(status.remaining);
+      setRateLimitLimit(status.limit);
+      setRateLimitResetTime(status.reset);
       console.log(`[API Status] Remaining: ${status.remaining}/${status.limit} requests`);
       console.log(`[API Reset] Reset time: ${status.reset.toLocaleString()}`);
 
@@ -2316,6 +2348,32 @@ export default function App() {
       console.error('[API Error] Failed to check API rate limit during retry:', error);
     }
   }, [githubToken, refreshFiles, repoName, branchName]);
+
+  const handleRefreshRateLimit = async () => {
+    if (isOffline || !githubToken) return;
+    setIsCheckingRateLimit(true);
+    try {
+      console.log('[Manual Refresh] Manually checking API rate limit status...');
+      const status = await checkApiRateLimit(githubToken);
+      setRateLimitRemaining(status.remaining);
+      setRateLimitLimit(status.limit);
+      setRateLimitResetTime(status.reset);
+
+      if (status.isLimited) {
+        setApiLimitReached(true);
+        setApiLimitResetTime(status.reset);
+        setIsSyncPaused(true);
+      } else {
+        setApiLimitReached(false);
+        setApiLimitResetTime(null);
+        setIsSyncPaused(false);
+      }
+    } catch (error) {
+      console.error('[API Error] Failed to check API rate limit during manual refresh:', error);
+    } finally {
+      setIsCheckingRateLimit(false);
+    }
+  };
 
   const createNewFile = useCallback(async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
     if (isOffline) {
@@ -3394,6 +3452,7 @@ export default function App() {
         isPersistentStorage={isPersistentStorage}
         requestPersistentStorage={requestPersistentStorage}
         handleConnectOffline={handleConnectOffline}
+        onPurgeStorage={handlePurgeStorage}
       />
     );
   }
@@ -4781,6 +4840,47 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+              {/* Category 3.5: GitHub API Rate Limit Status */}
+              {!isOffline && (
+                <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl animate-fade-in">
+                  <h4 className="text-[0.72rem] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5 select-none">
+                    <RefreshCw size={11.5} className="text-primary" />
+                    GitHub API Rate Limit
+                  </h4>
+                  <div className="flex flex-col gap-2.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-muted-foreground">Remaining Requests</span>
+                      <span className="font-bold text-foreground">
+                        {rateLimitRemaining !== null && rateLimitLimit !== null ? (
+                          `${rateLimitRemaining} / ${rateLimitLimit}`
+                        ) : (
+                          "Checking..."
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-muted-foreground">Resets At</span>
+                      <span className="font-medium text-foreground">
+                        {rateLimitResetTime ? (
+                          rateLimitResetTime.toLocaleString()
+                        ) : (
+                          "Never"
+                        )}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRefreshRateLimit}
+                      disabled={isCheckingRateLimit}
+                      className="w-full mt-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-border/60 hover:border-primary/45 hover:bg-primary/5 text-muted-foreground hover:text-foreground text-xs font-semibold cursor-pointer transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none select-none"
+                    >
+                      <RefreshCw size={12} className={cn("shrink-0", isCheckingRateLimit && "animate-spin")} />
+                      <span>{isCheckingRateLimit ? "Checking Limit..." : "Check Rate Limit Now"}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Category 4: Backup & Export */}
               <div className="flex flex-col gap-3.5 bg-white/[0.015] border border-border/40 p-4 rounded-xl">

@@ -1211,7 +1211,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({
                                           }}
                                           className={cn(
                                             "note-actions-trigger w-5 h-5 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition-all cursor-pointer",
-                                            activeMenuPath === file.path ? "bg-white/[0.06] text-foreground" : "opacity-0 group-hover:opacity-100"
+                                            activeMenuPath === file.path ? "bg-white/[0.06] text-foreground opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100"
                                           )}
                                           title="File Actions"
                                         >
