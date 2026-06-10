@@ -134,7 +134,7 @@ export default function App() {
     setAuthErrorRaw(prev => {
       const next = typeof val === 'function' ? val(prev) : val;
       if (!githubToken) return next;
-      const escapedToken = githubToken.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const escapedToken = githubToken.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&');
       return next.replace(new RegExp(escapedToken, 'g'), '[REDACTED_TOKEN]');
     });
   }, [githubToken]);
@@ -171,7 +171,7 @@ export default function App() {
     setGlobalErrorRaw(prev => {
       const next = typeof val === 'function' ? val(prev) : val;
       if (!githubToken) return next;
-      const escapedToken = githubToken.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const escapedToken = githubToken.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&');
       return next.replace(new RegExp(escapedToken, 'g'), '[REDACTED_TOKEN]');
     });
   }, [githubToken]);
@@ -713,7 +713,7 @@ export default function App() {
       setGlobalError(msg);
       throw e;
     }
-  }, [settings, files, storageMode, masterPassphrase, setFileContents, setVaultImages, setFiles, setActiveFilePath]);
+  }, [settings, files, storageMode, masterPassphrase, setFileContents, setVaultImages, setFiles, setActiveFilePath, setGlobalError]);
 
   const handleSaveFileOffline = useCallback(async (path: string, content: string) => {
     let savedContent = content;
@@ -1227,7 +1227,7 @@ export default function App() {
     } finally {
       setIsConnecting(false);
     }
-  }, [checkAndLoadVault, loadFilesFromLocalCache]);
+  }, [checkAndLoadVault, loadFilesFromLocalCache, setAuthError]);
 
   const loadFileContent = useCallback(async (path: string, sha: string) => {
     if (isOffline) {
@@ -1496,7 +1496,7 @@ export default function App() {
       setGlobalError(msg);
       throw e;
     }
-  }, [isOffline, uploadAttachmentOffline, settings, files, githubToken, repoName, branchName, refreshFiles]);
+  }, [isOffline, uploadAttachmentOffline, settings, files, githubToken, repoName, branchName, refreshFiles, setGlobalError]);
 
   const getFileContentAndType = useCallback(async (path: string, sha: string): Promise<{ data: Blob; isBinary: boolean }> => {
     const isBinary = !isTextFile(path) && !path.toLowerCase().endsWith('.canvas');
@@ -1561,7 +1561,7 @@ export default function App() {
       const msg = e instanceof Error ? e.message : 'Failed to download file.';
       setGlobalError(msg);
     }
-  }, [files, getFileContentAndType]);
+  }, [files, getFileContentAndType, setGlobalError]);
 
   const [bulkDownloadStatus, setBulkDownloadStatus] = useState<string | null>(null);
 
@@ -1604,7 +1604,7 @@ export default function App() {
       setGlobalError(msg);
       setBulkDownloadStatus(null);
     }
-  }, [files, getFileContentAndType, repoName]);
+  }, [files, getFileContentAndType, repoName, setGlobalError]);
 
   const handlePublishOfflineVaultToGitHub = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2515,7 +2515,7 @@ export default function App() {
     } finally {
       setIsLoadingFile(false);
     }
-  }, [isOffline, createNewFileOffline, isLoadingFile, files, githubToken, repoName, branchName, refreshFiles]);
+  }, [isOffline, createNewFileOffline, isLoadingFile, files, githubToken, repoName, branchName, refreshFiles, setAuthError]);
 
   const ensureGitkeepForEmptyParent = async (deletedFilePath: string, currentFiles: VaultFile[]): Promise<VaultFile | null> => {
     if (!deletedFilePath.includes('/')) return null;
