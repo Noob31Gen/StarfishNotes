@@ -684,8 +684,8 @@ const SidebarComponent: React.FC<SidebarProps> = ({
           maxWidth: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
         }}
         className={cn(
-          "h-full bg-card/80 backdrop-blur-xl border-r border-border flex flex-col z-[1000] fixed top-0 left-0 md:relative md:top-auto md:left-auto md:translate-x-0 will-change-transform",
-          isMobileSidebarOpen ? "translate-x-0 w-full min-w-full md:w-[280px] md:min-w-[280px]" : "-translate-x-full md:translate-x-0",
+          "h-full bg-card border-r border-border flex flex-col z-[1000] fixed top-0 left-0 md:relative md:top-auto md:left-auto md:translate-x-0 will-change-transform md:bg-card/80 md:backdrop-blur-xl",
+          isMobileSidebarOpen ? "translate-x-0 max-md:w-full! max-md:min-w-full! max-md:max-w-full!" : "-translate-x-full max-md:w-full! max-md:min-w-full! max-md:max-w-full! md:w-auto md:min-w-auto md:max-w-none md:translate-x-0",
           isSidebarCollapsed && "overflow-hidden border-r-0 md:w-0!",
           !isResizingSidebar && "transition-transform md:transition-all duration-200 ease-out"
         )}
@@ -1303,7 +1303,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({
         </div>
 
         {/* Info footer */}
-        <div className="p-4 border-t border-border flex flex-col gap-2 bg-card/40 backdrop-blur-xl relative">
+        <div className="p-4 border-t border-border flex flex-col gap-2 bg-card relative md:bg-card/40 md:backdrop-blur-xl">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs text-muted-foreground/80 font-medium min-w-0 flex-1">
               <GitBranch className="w-3.5 h-3.5 text-primary shrink-0" />
