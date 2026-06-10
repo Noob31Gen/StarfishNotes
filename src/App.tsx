@@ -30,6 +30,7 @@ import { cn } from './utils/cn';
 import { resolveVaultFilePath } from './utils/pathResolver';
 import { buildFolderTree, type TreeFolder, type TreeFile } from './utils/folderTree';
 import { getLocalFile, saveLocalFile, deleteLocalFile, getAllLocalFilePaths, initStorageCrypto, setStoragePassphrase, clearStoragePassphrase, clearAllLocalFiles, clearStorageCrypto } from './services/storage';
+import packageJson from '../package.json';
 
 // Initialize offline storage crypto callbacks to avoid circular dependencies
 offlineStorage.initCrypto(encryptToken, decryptToken);
@@ -5142,17 +5143,22 @@ export default function App() {
 
             {/* Modal Footer */}
             <div className="flex justify-between items-center border-t border-border/60 pt-3 select-none">
-              <a
-                href="https://github.com/Noob31Gen/StarfishNotes"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-[0.7rem] text-muted-foreground/60 hover:text-primary transition-all duration-200 font-semibold hover:underline"
-              >
-                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
-                </svg>
-                Source Code
-              </a>
+              <div className="flex flex-col items-start gap-0.5">
+                <a
+                  href="https://github.com/Noob31Gen/StarfishNotes"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[0.7rem] text-muted-foreground/60 hover:text-primary transition-all duration-200 font-semibold hover:underline"
+                >
+                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+                  </svg>
+                  Source Code
+                </a>
+                <span className="text-[0.62rem] text-muted-foreground/45 font-medium pl-5">
+                  v{packageJson.version}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowSettingsModal(false)}
