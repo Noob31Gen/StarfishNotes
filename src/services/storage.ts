@@ -1,5 +1,5 @@
 import { get, set, setMany, keys, del, delMany, clear } from 'idb-keyval';
-import { offlineStorage } from './offlineStorage';
+import { getOrCreateSystemKey } from '../utils/crypto';
 
 export interface LocalFile {
     content: string;
@@ -21,25 +21,8 @@ let passphrase: string | null = null;
 
 // --- System-key helpers (fast AES-GCM, no PBKDF2) ---
 
-let cachedSystemKey: CryptoKey | null = null;
-
 async function getSystemKey(): Promise<CryptoKey> {
-    if (cachedSystemKey) return cachedSystemKey;
-
-    const existing = await offlineStorage.getMeta<CryptoKey>('system_cryptokey');
-    if (existing) {
-        cachedSystemKey = existing;
-        return existing;
-    }
-
-    const newKey = await window.crypto.subtle.generateKey(
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt']
-    );
-    await offlineStorage.saveMeta('system_cryptokey', newKey);
-    cachedSystemKey = newKey;
-    return newKey;
+    return getOrCreateSystemKey();
 }
 
 function bufToHex(buffer: ArrayBuffer): string {
@@ -234,13 +217,18 @@ export async function getLocalFile(path: string): Promise<LocalFile | undefined>
         const key = `file_hash_${hashedPath}`;
         const record = await get<LocalFile>(key);
         if (record && record.isEncrypted && record.encryptedPath) {
-            const decryptedContent = await systemKeyDecrypt(record.content);
-            return {
-                content: decryptedContent,
-                sha: record.sha,
-                encryptedPath: record.encryptedPath,
-                isEncrypted: true
-            };
+            try {
+                const decryptedContent = await systemKeyDecrypt(record.content);
+                return {
+                    content: decryptedContent,
+                    sha: record.sha,
+                    encryptedPath: record.encryptedPath,
+                    isEncrypted: true
+                };
+            } catch (decryptErr) {
+                console.warn(`System-key decryption failed for ${path}, clearing corrupted cache:`, decryptErr);
+                await del(key);
+            }
         }
     } catch (e) {
         console.error('Failed to get system-key encrypted file:', e);
@@ -271,7 +259,7 @@ export async function getAllLocalFilePaths(): Promise<string[]> {
 
     // Decrypt all paths concurrently
     const decryptedPaths = await Promise.all(
-        records.map(async (record) => {
+        records.map(async (record, index) => {
             if (record && record.isEncrypted && record.encryptedPath) {
                 if (passphrase && decryptFn) {
                     try {
@@ -283,7 +271,9 @@ export async function getAllLocalFilePaths(): Promise<string[]> {
                     try {
                         return await systemKeyDecrypt(record.encryptedPath);
                     } catch (e) {
-                        console.error('Failed to decrypt system-key encrypted path:', e);
+                        console.warn('Failed to decrypt system-key encrypted path, clearing corrupted cache:', e);
+                        const key = hashKeys[index];
+                        await del(key);
                     }
                 }
             }
@@ -306,12 +296,11 @@ export async function clearAllLocalFiles(): Promise<void> {
 }
 
 /**
- * Resets module-level crypto state (encrypt/decrypt fns + passphrase + cached system key).
+ * Resets module-level crypto state (encrypt/decrypt fns + passphrase).
  * Call on logout to prevent stale crypto handles from lingering.
  */
 export function clearStorageCrypto(): void {
     encryptFn = null;
     decryptFn = null;
     passphrase = null;
-    cachedSystemKey = null;
 }

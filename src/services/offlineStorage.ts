@@ -313,7 +313,16 @@ class OfflineStorageService {
       const metaStore = transaction.objectStore('meta');
       
       filesStore.clear();
-      metaStore.clear();
+
+      // Clear all metadata except the browser instance system key
+      const request = metaStore.get('system_cryptokey');
+      request.onsuccess = () => {
+        const systemKey = request.result;
+        metaStore.clear();
+        if (systemKey) {
+          metaStore.put(systemKey);
+        }
+      };
 
       transaction.oncomplete = () => {
         resolve();

@@ -1998,18 +1998,8 @@ export default function App() {
       const mode = (localStorage.getItem(STORAGE_KEYS.STORAGE_MODE) || 'memory') as StorageMode;
 
       if (mode === 'memory') {
-        // Memory mode promises "wiped on F5" — purge everything on page hide
+        // Memory mode promises "wiped on F5" — purge credentials on page hide
         purgeCredentials();
-        // Note: async operations in pagehide are best-effort (browser may not wait)
-        // but idb-keyval clear() and purgeVault() use microtask-based promises
-        // that typically complete before the page is discarded.
-        clearAllLocalFiles().catch(() => { });
-        offlineStorage.purgeVault().catch(() => { });
-      } else if (mode === 'session') {
-        // Session mode: browser clears sessionStorage on tab close,
-        // but idb-keyval file cache persists — clean it up.
-        clearAllLocalFiles().catch(() => { });
-        offlineStorage.purgeVault().catch(() => { });
       }
     };
 

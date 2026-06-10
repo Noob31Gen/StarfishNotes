@@ -42,27 +42,41 @@ function assertCryptoSupported(): void {
   }
 }
 
+let cachedSystemKey: CryptoKey | null = null;
+let systemKeyPromise: Promise<CryptoKey> | null = null;
+
 /**
  * Retrieve or generate a non-extractable 256-bit AES-GCM key stored in IndexedDB meta store
  */
-async function getOrCreateSystemKey(): Promise<CryptoKey> {
+export async function getOrCreateSystemKey(): Promise<CryptoKey> {
   assertCryptoSupported();
-  const existingKey = await offlineStorage.getMeta<CryptoKey>('system_cryptokey');
-  if (existingKey) {
-    return existingKey;
-  }
+  if (cachedSystemKey) return cachedSystemKey;
+  if (systemKeyPromise) return systemKeyPromise;
 
-  const newKey = await window.crypto.subtle.generateKey(
-    {
-      name: 'AES-GCM',
-      length: 256,
-    },
-    false, // extractable: false (so key cannot be exported via exportKey)
-    ['encrypt', 'decrypt']
-  );
+  systemKeyPromise = (async () => {
+    const existingKey = await offlineStorage.getMeta<CryptoKey>('system_cryptokey');
+    if (existingKey) {
+      cachedSystemKey = existingKey;
+      systemKeyPromise = null;
+      return existingKey;
+    }
 
-  await offlineStorage.saveMeta('system_cryptokey', newKey);
-  return newKey;
+    const newKey = await window.crypto.subtle.generateKey(
+      {
+        name: 'AES-GCM',
+        length: 256,
+      },
+      false, // extractable: false
+      ['encrypt', 'decrypt']
+    );
+
+    await offlineStorage.saveMeta('system_cryptokey', newKey);
+    cachedSystemKey = newKey;
+    systemKeyPromise = null;
+    return newKey;
+  })();
+
+  return systemKeyPromise;
 }
 
 /**
