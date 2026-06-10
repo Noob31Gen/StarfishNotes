@@ -318,6 +318,7 @@ export default function App() {
   const [renameInputValue, setRenameInputValue] = useState('');
   const [renameError, setRenameError] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showPurgeConfirmModal, setShowPurgeConfirmModal] = useState(false);
 
   // Stable handlers declared before checkSession mount hook to prevent Temporal Dead Zone (TDZ)
 
@@ -4831,8 +4832,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      setShowSettingsModal(false);
-                      handleLogout();
+                      setShowPurgeConfirmModal(true);
                     }}
                     className="bg-destructive/15 text-destructive border border-destructive/20 hover:bg-destructive hover:text-white transition-all text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer shrink-0"
                   >
@@ -5028,6 +5028,58 @@ export default function App() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Purge Confirmation Modal */}
+      {showPurgeConfirmModal && (
+        <div 
+          className="fixed inset-0 z-[1300] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+          onClick={() => setShowPurgeConfirmModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200 text-foreground"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-destructive/15 flex items-center justify-center text-destructive shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-heading font-bold text-base text-foreground">
+                  Purge Local Data
+                </h3>
+                <span className="text-[0.7rem] text-muted-foreground font-medium">
+                  This action is permanent and cannot be undone.
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground/80 leading-relaxed font-semibold">
+              This will sign you out and permanently delete all locally cached files, credentials, and settings. Are you sure you want to proceed?
+            </p>
+
+            <div className="flex gap-2.5 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowPurgeConfirmModal(false)}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer select-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowPurgeConfirmModal(false);
+                  setShowSettingsModal(false);
+                  handleLogout();
+                }}
+                className="flex-1 h-10 rounded-xl bg-destructive hover:bg-destructive/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-destructive/20 select-none"
+              >
+                Purge Storage
+              </button>
+            </div>
           </div>
         </div>
       )}

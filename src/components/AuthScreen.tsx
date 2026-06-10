@@ -61,6 +61,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isRequestingPersist, setIsRequestingPersist] = useState(false);
   const [storageFeedback, setStorageFeedback] = useState<string | null>(null);
+  const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
+  const [purgeFeedback, setPurgeFeedback] = useState<string | null>(null);
 
   const sharedDomain = isSharedHostingDomain();
 
@@ -367,6 +369,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </div>
           )}
 
+          {purgeFeedback && (
+            <div className="flex gap-3 p-3.5 bg-emerald-500/10 border-l-3 border-emerald-500 rounded-xl animate-fade-in">
+              <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+              <span className="text-xs text-foreground/90 leading-relaxed font-semibold">{purgeFeedback}</span>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isConnecting}
@@ -400,12 +409,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         <div className="flex flex-col gap-2 mt-1 pt-3 border-t border-border/20">
           <button
             type="button"
-            onClick={async () => {
-              if (window.confirm("Are you sure you want to permanently purge all local storage? This will delete all locally cached files, credentials, and settings. This cannot be undone.")) {
-                await onPurgeStorage();
-                alert("All local storage has been purged successfully.");
-              }
-            }}
+            onClick={() => setShowPurgeConfirm(true)}
             className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-destructive/20 hover:border-destructive/40 bg-destructive/5 hover:bg-destructive/10 text-destructive text-xs font-semibold cursor-pointer transition-all duration-200 select-none"
           >
             <Trash2 size={13} className="text-destructive/75" />
@@ -427,6 +431,59 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </a>
         </div>
       </div>
+
+      {/* Purge Confirmation Modal */}
+      {showPurgeConfirm && (
+        <div 
+          className="fixed inset-0 z-[1300] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+          onClick={() => setShowPurgeConfirm(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-card/95 backdrop-blur-xl border border-border rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200 text-foreground"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-destructive/15 flex items-center justify-center text-destructive shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-heading font-bold text-base text-foreground">
+                  Purge Local Storage
+                </h3>
+                <span className="text-[0.7rem] text-muted-foreground font-medium">
+                  This action is permanent and cannot be undone.
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground/80 leading-relaxed font-semibold">
+              This will permanently delete all locally cached files, saved credentials, and settings in this browser. Are you sure you want to wipe this vault?
+            </p>
+
+            <div className="flex gap-2.5 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowPurgeConfirm(false)}
+                className="flex-1 h-10 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer select-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowPurgeConfirm(false);
+                  await onPurgeStorage();
+                  setPurgeFeedback("Local storage has been successfully purged.");
+                  setTimeout(() => setPurgeFeedback(null), 5000);
+                }}
+                className="flex-1 h-10 rounded-xl bg-destructive hover:bg-destructive/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-destructive/20 select-none"
+              >
+                Purge Storage
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
