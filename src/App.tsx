@@ -1923,6 +1923,7 @@ export default function App() {
         // Session mode: browser clears sessionStorage on tab close,
         // but idb-keyval file cache persists — clean it up.
         clearAllLocalFiles().catch(() => { });
+        offlineStorage.purgeVault().catch(() => { });
       }
     };
 
@@ -3756,117 +3757,117 @@ export default function App() {
                 onClearTargetLine={handleClearTargetLine}
               />
             ) : activeFilePath ? (
-            <div className="flex-1 w-full h-full flex flex-col bg-background select-text overflow-y-auto items-center p-8">
-              <div className="max-w-3xl w-full bg-card/40 border border-border rounded-2xl p-6 shadow-xl flex flex-col gap-6 items-center">
-                <div className="w-full flex items-center justify-between border-b border-border/80 pb-4">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-foreground">
-                      {activeFilePath.split('/').pop()}
-                    </span>
-                    <span className="text-[0.7rem] text-muted-foreground mt-0.5">
-                      Path: {activeFilePath}
-                    </span>
+              <div className="flex-1 w-full h-full flex flex-col bg-background select-text overflow-y-auto items-center p-8">
+                <div className="max-w-3xl w-full bg-card/40 border border-border rounded-2xl p-6 shadow-xl flex flex-col gap-6 items-center">
+                  <div className="w-full flex items-center justify-between border-b border-border/80 pb-4">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-foreground">
+                        {activeFilePath.split('/').pop()}
+                      </span>
+                      <span className="text-[0.7rem] text-muted-foreground mt-0.5">
+                        Path: {activeFilePath}
+                      </span>
+                    </div>
+                    {activeFile && activeFile.size && (
+                      <span className="text-[0.7rem] font-semibold bg-muted text-muted-foreground px-2 py-1 rounded-md">
+                        {(activeFile.size / 1024).toFixed(1)} KB
+                      </span>
+                    )}
                   </div>
-                  {activeFile && activeFile.size && (
-                    <span className="text-[0.7rem] font-semibold bg-muted text-muted-foreground px-2 py-1 rounded-md">
-                      {(activeFile.size / 1024).toFixed(1)} KB
-                    </span>
-                  )}
-                </div>
 
-                <div className="w-full flex items-center justify-center min-h-[300px] border border-dashed border-border/80 rounded-xl bg-background/50 overflow-hidden relative p-4">
-                  {[
-                    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
-                  ].some(ext => activeFilePath.toLowerCase().endsWith(ext)) ? (
-                    vaultImages[activeFilePath] ? (
-                      activeFilePath.toLowerCase().endsWith('.pdf') ? (
-                        <div className="flex flex-col items-center justify-center max-w-md w-full mx-auto text-center animate-fade-in">
-                          <div className="w-16 h-16 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mb-4 border border-red-500/20">
-                            <Paperclip className="w-8 h-8" />
+                  <div className="w-full flex items-center justify-center min-h-[300px] border border-dashed border-border/80 rounded-xl bg-background/50 overflow-hidden relative p-4">
+                    {[
+                      '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'
+                    ].some(ext => activeFilePath.toLowerCase().endsWith(ext)) ? (
+                      vaultImages[activeFilePath] ? (
+                        activeFilePath.toLowerCase().endsWith('.pdf') ? (
+                          <div className="flex flex-col items-center justify-center max-w-md w-full mx-auto text-center animate-fade-in">
+                            <div className="w-16 h-16 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mb-4 border border-red-500/20">
+                              <Paperclip className="w-8 h-8" />
+                            </div>
+                            <h3 className="text-base font-bold text-foreground mb-1">{activeFilePath.split('/').pop()}</h3>
+                            <p className="text-xs text-muted-foreground mb-6 max-w-xs leading-relaxed">
+                              PDF embedding is restricted by modern browser security. Open it in a new tab to view, or download it.
+                            </p>
+                            <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
+                              <a
+                                href={vaultImages[activeFilePath]}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold rounded-lg transition-all cursor-pointer shadow-md shadow-primary/20"
+                              >
+                                Open PDF in New Tab
+                              </a>
+                              <button
+                                onClick={() => {
+                                  const link = document.createElement('a');
+                                  link.href = vaultImages[activeFilePath];
+                                  link.download = activeFilePath.split('/').pop() || 'document.pdf';
+                                  document.body.appendChild(link);
+                                  link.click();
+                                  document.body.removeChild(link);
+                                }}
+                                className="flex items-center justify-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 text-foreground text-xs font-semibold rounded-lg transition-all cursor-pointer border border-border"
+                              >
+                                Download PDF
+                              </button>
+                            </div>
                           </div>
-                          <h3 className="text-base font-bold text-foreground mb-1">{activeFilePath.split('/').pop()}</h3>
-                          <p className="text-xs text-muted-foreground mb-6 max-w-xs leading-relaxed">
-                            PDF embedding is restricted by modern browser security. Open it in a new tab to view, or download it.
-                          </p>
-                          <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
-                            <a
-                              href={vaultImages[activeFilePath]}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold rounded-lg transition-all cursor-pointer shadow-md shadow-primary/20"
-                            >
-                              Open PDF in New Tab
-                            </a>
-                            <button
-                              onClick={() => {
-                                const link = document.createElement('a');
-                                link.href = vaultImages[activeFilePath];
-                                link.download = activeFilePath.split('/').pop() || 'document.pdf';
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                              }}
-                              className="flex items-center justify-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 text-foreground text-xs font-semibold rounded-lg transition-all cursor-pointer border border-border"
-                            >
-                              Download PDF
-                            </button>
-                          </div>
-                        </div>
+                        ) : (
+                          <img
+                            src={vaultImages[activeFilePath]}
+                            alt={activeFilePath.split('/').pop()}
+                            className="max-h-[500px] max-w-full object-contain rounded-lg shadow-lg select-none animate-fade-in"
+                          />
+                        )
                       ) : (
-                        <img
-                          src={vaultImages[activeFilePath]}
-                          alt={activeFilePath.split('/').pop()}
-                          className="max-h-[500px] max-w-full object-contain rounded-lg shadow-lg select-none animate-fade-in"
-                        />
+                        <div className="flex flex-col gap-2 items-center justify-center text-muted-foreground text-xs">
+                          <RefreshCw className="w-5 h-5 animate-spin text-primary" />
+                          <span>Loading attachment...</span>
+                          {activeFile && (
+                            <button
+                              onClick={() => loadBinaryFile(activeFilePath, activeFile.sha)}
+                              className="mt-2 text-primary font-semibold hover:underline"
+                            >
+                              Click to retry loading
+                            </button>
+                          )}
+                        </div>
                       )
                     ) : (
-                      <div className="flex flex-col gap-2 items-center justify-center text-muted-foreground text-xs">
-                        <RefreshCw className="w-5 h-5 animate-spin text-primary" />
-                        <span>Loading attachment...</span>
+                      <div className="flex flex-col gap-3 items-center justify-center text-muted-foreground p-6 text-center select-none animate-fade-in">
+                        <div className="w-12 h-12 rounded-2xl bg-muted border border-border flex items-center justify-center text-muted-foreground">
+                          <Paperclip className="w-6 h-6 text-primary animate-pulse-soft" />
+                        </div>
+                        <span className="text-xs font-bold text-foreground">
+                          No Preview Available
+                        </span>
+                        <span className="text-[0.7rem] text-muted-foreground max-w-[280px] leading-relaxed">
+                          This attachment type ({activeFilePath.substring(activeFilePath.lastIndexOf('.'))}) cannot be previewed directly in the browser.
+                        </span>
                         {activeFile && (
                           <button
-                            onClick={() => loadBinaryFile(activeFilePath, activeFile.sha)}
-                            className="mt-2 text-primary font-semibold hover:underline"
+                            onClick={() => handleDownloadFile(activeFilePath, activeFile.name, activeFile.sha)}
+                            className="mt-2 bg-primary hover:bg-primary/90 text-white text-xs font-semibold py-1.5 px-4 rounded-xl transition-all cursor-pointer shadow-lg shadow-primary/10 flex items-center gap-1.5"
                           >
-                            Click to retry loading
+                            <Download size={12} />
+                            Download Attachment
                           </button>
                         )}
                       </div>
-                    )
-                  ) : (
-                    <div className="flex flex-col gap-3 items-center justify-center text-muted-foreground p-6 text-center select-none animate-fade-in">
-                      <div className="w-12 h-12 rounded-2xl bg-muted border border-border flex items-center justify-center text-muted-foreground">
-                        <Paperclip className="w-6 h-6 text-primary animate-pulse-soft" />
-                      </div>
-                      <span className="text-xs font-bold text-foreground">
-                        No Preview Available
-                      </span>
-                      <span className="text-[0.7rem] text-muted-foreground max-w-[280px] leading-relaxed">
-                        This attachment type ({activeFilePath.substring(activeFilePath.lastIndexOf('.'))}) cannot be previewed directly in the browser.
-                      </span>
-                      {activeFile && (
-                        <button
-                          onClick={() => handleDownloadFile(activeFilePath, activeFile.name, activeFile.sha)}
-                          className="mt-2 bg-primary hover:bg-primary/90 text-white text-xs font-semibold py-1.5 px-4 rounded-xl transition-all cursor-pointer shadow-lg shadow-primary/10 flex items-center gap-1.5"
-                        >
-                          <Download size={12} />
-                          Download Attachment
-                        </button>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full w-full p-10 text-center text-muted-foreground bg-background">
-              <Folder className="w-10 h-10 text-muted-foreground/30 mb-3 animate-float" />
-              <span className="font-semibold text-sm text-foreground/80">No Note Selected</span>
-              <span className="text-xs text-muted-foreground/75 mt-1 max-w-[280px] leading-relaxed">
-                Select an existing file in the sidebar or click "New Note" to begin journaling.
-              </span>
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full w-full p-10 text-center text-muted-foreground bg-background">
+                <Folder className="w-10 h-10 text-muted-foreground/30 mb-3 animate-float" />
+                <span className="font-semibold text-sm text-foreground/80">No Note Selected</span>
+                <span className="text-xs text-muted-foreground/75 mt-1 max-w-[280px] leading-relaxed">
+                  Select an existing file in the sidebar or click "New Note" to begin journaling.
+                </span>
+              </div>
+            )}
           </React.Suspense>
         </div>
       </main>
@@ -5034,7 +5035,7 @@ export default function App() {
 
       {/* Purge Confirmation Modal */}
       {showPurgeConfirmModal && (
-        <div 
+        <div
           className="fixed inset-0 z-[1300] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
           onClick={() => setShowPurgeConfirmModal(false)}
         >

@@ -94,7 +94,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     {
       value: 'plain',
       label: 'Browser-bound System-key Encrypted Storage',
-      desc: 'Encrypted via system-generated key, no password required'
+      desc: 'Encrypted via browser-generated key, no password needed'
     },
     { value: 'memory', label: 'Strict In-Memory React state', desc: 'Keeps token strictly in volatile memory, wiped on F5' },
   ];

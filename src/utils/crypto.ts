@@ -197,48 +197,39 @@ export async function saveTokenSecurely(
   localStorage.setItem(STORAGE_KEYS.STORAGE_MODE, mode);
 
   if (mode === 'session') {
-    try {
-      const key = await getOrCreateSystemKey();
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      const ciphertextBuffer = await window.crypto.subtle.encrypt(
-        {
-          name: 'AES-GCM',
-          iv: iv as BufferSource
-        },
-        key,
-        strToBuf(token) as BufferSource
-      );
-      const ivHex = bufToHex(iv.buffer);
-      const cipherHex = bufToHex(ciphertextBuffer);
-      sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, `${ivHex}:${cipherHex}`);
-    } catch (e) {
-      console.error('Failed to securely encrypt session token:', e);
-      sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
-    }
+    assertCryptoSupported();
+    const key = await getOrCreateSystemKey();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const ciphertextBuffer = await window.crypto.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv as BufferSource
+      },
+      key,
+      strToBuf(token) as BufferSource
+    );
+    const ivHex = bufToHex(iv.buffer);
+    const cipherHex = bufToHex(ciphertextBuffer);
+    sessionStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, `${ivHex}:${cipherHex}`);
   } else if (mode === 'encrypted') {
     if (!passphrase) throw new Error('Passphrase required for encrypted storage mode.');
     const encrypted = await encryptToken(token, passphrase);
     localStorage.setItem(STORAGE_KEYS.ENCRYPTED_PAT, encrypted);
   } else if (mode === 'plain') {
-    try {
-      const key = await getOrCreateSystemKey();
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      const ciphertextBuffer = await window.crypto.subtle.encrypt(
-        {
-          name: 'AES-GCM',
-          iv: iv as BufferSource
-        },
-        key,
-        strToBuf(token) as BufferSource
-      );
-
-      const ivHex = bufToHex(iv.buffer);
-      const cipherHex = bufToHex(ciphertextBuffer);
-      localStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, `${ivHex}:${cipherHex}`);
-    } catch (e) {
-      console.error('Failed to securely encrypt plain token, falling back to cleartext:', e);
-      localStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, token);
-    }
+    assertCryptoSupported();
+    const key = await getOrCreateSystemKey();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const ciphertextBuffer = await window.crypto.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv as BufferSource
+      },
+      key,
+      strToBuf(token) as BufferSource
+    );
+    const ivHex = bufToHex(iv.buffer);
+    const cipherHex = bufToHex(ciphertextBuffer);
+    localStorage.setItem(STORAGE_KEYS.PLAINTEXT_PAT, `${ivHex}:${cipherHex}`);
   } else if (mode === 'keychain') {
     // Check W3C Credentials Management API support
     if ('PasswordCredential' in window) {

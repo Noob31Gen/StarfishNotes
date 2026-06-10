@@ -1,4 +1,5 @@
 import { get, set, setMany, keys, del, delMany, clear } from 'idb-keyval';
+import { offlineStorage } from './offlineStorage';
 
 export interface LocalFile {
     content: string;
@@ -17,6 +18,69 @@ async function hashPath(path: string): Promise<string> {
 let encryptFn: ((plainText: string, key: string) => Promise<string>) | null = null;
 let decryptFn: ((cipherText: string, key: string) => Promise<string>) | null = null;
 let passphrase: string | null = null;
+
+// --- System-key helpers (fast AES-GCM, no PBKDF2) ---
+
+let cachedSystemKey: CryptoKey | null = null;
+
+async function getSystemKey(): Promise<CryptoKey> {
+    if (cachedSystemKey) return cachedSystemKey;
+
+    const existing = await offlineStorage.getMeta<CryptoKey>('system_cryptokey');
+    if (existing) {
+        cachedSystemKey = existing;
+        return existing;
+    }
+
+    const newKey = await window.crypto.subtle.generateKey(
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+    await offlineStorage.saveMeta('system_cryptokey', newKey);
+    cachedSystemKey = newKey;
+    return newKey;
+}
+
+function bufToHex(buffer: ArrayBuffer): string {
+    return Array.from(new Uint8Array(buffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+}
+
+function hexToBuf(hexString: string): ArrayBuffer {
+    const matches = hexString.match(/[\da-f]{2}/gi) || [];
+    return new Uint8Array(matches.map(h => parseInt(h, 16))).buffer;
+}
+
+async function systemKeyEncrypt(plainText: string): Promise<string> {
+    const key = await getSystemKey();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const encoded = new TextEncoder().encode(plainText);
+    const cipherBuffer = await window.crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: iv as BufferSource },
+        key,
+        encoded as BufferSource
+    );
+    return `${bufToHex(iv.buffer)}:${bufToHex(cipherBuffer)}`;
+}
+
+async function systemKeyDecrypt(cipherText: string): Promise<string> {
+    const parts = cipherText.split(':');
+    if (parts.length !== 2) throw new Error('Invalid system-encrypted format.');
+    const [ivHex, cipherHex] = parts;
+    const iv = new Uint8Array(hexToBuf(ivHex));
+    const cipherBuffer = hexToBuf(cipherHex);
+    const key = await getSystemKey();
+    const decryptedBuffer = await window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as BufferSource },
+        key,
+        cipherBuffer
+    );
+    return new TextDecoder().decode(decryptedBuffer);
+}
+
+// --- Public API ---
 
 export function initStorageCrypto(
     encrypt: (plainText: string, key: string) => Promise<string>,
@@ -56,6 +120,25 @@ export async function saveLocalFile(path: string, data: LocalFile) {
         }
     }
     
+    // System-key encryption fallback (replaces plaintext storage)
+    try {
+        const hashedPath = await hashPath(path);
+        const key = `file_hash_${hashedPath}`;
+        const encryptedContent = await systemKeyEncrypt(data.content);
+        const encryptedPath = await systemKeyEncrypt(path);
+        
+        await set(key, {
+            content: encryptedContent,
+            sha: data.sha,
+            encryptedPath,
+            isEncrypted: true
+        });
+        await del(`file_${path}`);
+        return;
+    } catch (e) {
+        console.error('System-key encryption unavailable, saving in plaintext:', e);
+    }
+
     await set(`file_${path}`, data);
 }
 
@@ -90,7 +173,34 @@ export async function saveLocalFilesBatch(batch: { path: string; data: LocalFile
         }
     }
     
-    // Plaintext fallback
+    // System-key encryption fallback (replaces plaintext batch storage)
+    try {
+        const entries: [string, LocalFile][] = [];
+        const legacyKeysToDelete: string[] = [];
+        
+        await Promise.all(batch.map(async ({ path, data }) => {
+            const hashedPath = await hashPath(path);
+            const key = `file_hash_${hashedPath}`;
+            const encryptedContent = await systemKeyEncrypt(data.content);
+            const encryptedPath = await systemKeyEncrypt(path);
+            
+            entries.push([key, {
+                content: encryptedContent,
+                sha: data.sha,
+                encryptedPath,
+                isEncrypted: true
+            }]);
+            legacyKeysToDelete.push(`file_${path}`);
+        }));
+        
+        await setMany(entries);
+        await delMany(legacyKeysToDelete);
+        return;
+    } catch (e) {
+        console.error('System-key batch encryption unavailable, saving in plaintext:', e);
+    }
+
+    // Final plaintext fallback (only if crypto.subtle is completely unavailable)
     const entries: [string, LocalFile][] = batch.map(({ path, data }) => [`file_${path}`, data]);
     await setMany(entries);
 }
@@ -118,6 +228,24 @@ export async function getLocalFile(path: string): Promise<LocalFile | undefined>
         }
     }
     
+    // Try system-key encrypted record
+    try {
+        const hashedPath = await hashPath(path);
+        const key = `file_hash_${hashedPath}`;
+        const record = await get<LocalFile>(key);
+        if (record && record.isEncrypted && record.encryptedPath) {
+            const decryptedContent = await systemKeyDecrypt(record.content);
+            return {
+                content: decryptedContent,
+                sha: record.sha,
+                encryptedPath: record.encryptedPath,
+                isEncrypted: true
+            };
+        }
+    } catch (e) {
+        console.error('Failed to get system-key encrypted file:', e);
+    }
+
     // Fallback for legacy plaintext lookup
     const plaintextRecord = await get<LocalFile>(`file_${path}`);
     if (plaintextRecord) {
@@ -150,6 +278,17 @@ export async function getAllLocalFilePaths(): Promise<string[]> {
                 } catch (e) {
                     console.error('Failed to decrypt local file path:', e);
                 }
+            } else {
+                // Try system-key decryption
+                try {
+                    const record = await get<LocalFile>(key);
+                    if (record && record.isEncrypted && record.encryptedPath) {
+                        const decryptedPath = await systemKeyDecrypt(record.encryptedPath);
+                        paths.push(decryptedPath);
+                    }
+                } catch (e) {
+                    console.error('Failed to decrypt system-key encrypted path:', e);
+                }
             }
         } else if (key.startsWith('file_')) {
             paths.push(key.substring(5)); // Legacy plaintext path
@@ -168,11 +307,12 @@ export async function clearAllLocalFiles(): Promise<void> {
 }
 
 /**
- * Resets module-level crypto state (encrypt/decrypt fns + passphrase).
+ * Resets module-level crypto state (encrypt/decrypt fns + passphrase + cached system key).
  * Call on logout to prevent stale crypto handles from lingering.
  */
 export function clearStorageCrypto(): void {
     encryptFn = null;
     decryptFn = null;
     passphrase = null;
+    cachedSystemKey = null;
 }
