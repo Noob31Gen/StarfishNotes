@@ -3,7 +3,7 @@
  * Performs 100% client-side REST API synchronization with the user's notes repository.
  * Implements robust tree traversal, UTF-8 base64 encoding/decoding, and conflict resolution (SHA checking).
  */
-import { getLocalFile, saveLocalFile } from './storage';
+import { getLocalFile, saveLocalFile, saveLocalFilesBatch } from './storage';
 import { textExtensions } from '../utils/textExtensions';
 
 export interface VaultFile {
@@ -605,14 +605,25 @@ export async function syncVault(
   try {
     console.log("Fetching changed files in bulk via GraphQL...");
     const graphqlContents = await fetchFilesGraphQL(token, repo, branch, changedFiles);
+    
+    // Batch save files cache in a single IndexedDB transaction
+    const batchData: { path: string; data: any }[] = [];
     for (const [filePath, content] of graphqlContents.entries()) {
       const targetFile = changedFiles.find(f => f.path === filePath);
       if (targetFile) {
-        console.log(`Updating/Saving local file from GraphQL: ${targetFile.path}`);
-        await saveLocalFile(targetFile.path, { content, sha: targetFile.sha });
-        updatedPaths.add(targetFile.path);
+        batchData.push({
+          path: filePath,
+          data: { content, sha: targetFile.sha }
+        });
+        updatedPaths.add(filePath);
       }
     }
+    
+    if (batchData.length > 0) {
+      console.log(`Saving ${batchData.length} files to cache in batch...`);
+      await saveLocalFilesBatch(batchData);
+    }
+    
     console.log(`GraphQL bulk sync complete. Updated ${updatedPaths.size} out of ${changedFiles.length} files.`);
   } catch (error) {
     console.error("GraphQL bulk sync failed, falling back to individual file fetches...", error);
@@ -624,8 +635,8 @@ export async function syncVault(
   // - Specific files that failed to fetch or return null via GraphQL
   const remainingFiles = changedFiles.filter(f => !updatedPaths.has(f.path));
   if (remainingFiles.length > 0) {
-    console.log(`Fetching ${remainingFiles.length} remaining/failed files in parallel (concurrency: 5)...`);
-    const concurrencyLimit = 5;
+    console.log(`Fetching ${remainingFiles.length} remaining/failed files in parallel (concurrency: 10)...`);
+    const concurrencyLimit = 10;
     const queue = [...remainingFiles];
 
     const runWorker = async () => {

@@ -504,7 +504,7 @@ interface SidebarProps {
   onOpenSearch: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
+const SidebarComponent: React.FC<SidebarProps> = ({
   isMobileSidebarOpen,
   setIsMobileSidebarOpen,
   createNewFile,
@@ -1359,3 +1359,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+export const Sidebar = React.memo(SidebarComponent);

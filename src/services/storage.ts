@@ -1,4 +1,4 @@
-import { get, set, keys, del, clear } from 'idb-keyval';
+import { get, set, setMany, keys, del, delMany, clear } from 'idb-keyval';
 
 export interface LocalFile {
     content: string;
@@ -58,6 +58,43 @@ export async function saveLocalFile(path: string, data: LocalFile) {
     
     await set(`file_${path}`, data);
 }
+
+export async function saveLocalFilesBatch(batch: { path: string; data: LocalFile }[]): Promise<void> {
+    if (batch.length === 0) return;
+    
+    if (passphrase && encryptFn) {
+        try {
+            const entries: [string, any][] = [];
+            const legacyKeysToDelete: string[] = [];
+            
+            await Promise.all(batch.map(async ({ path, data }) => {
+                const hashedPath = await hashPath(path);
+                const key = `file_hash_${hashedPath}`;
+                const encryptedContent = await encryptFn!(data.content, passphrase!);
+                const encryptedPath = await encryptFn!(path, passphrase!);
+                
+                entries.push([key, {
+                    content: encryptedContent,
+                    sha: data.sha,
+                    encryptedPath,
+                    isEncrypted: true
+                }]);
+                legacyKeysToDelete.push(`file_${path}`);
+            }));
+            
+            await setMany(entries);
+            await delMany(legacyKeysToDelete);
+            return;
+        } catch (e) {
+            console.error('Failed to save local files batch with encryption:', e);
+        }
+    }
+    
+    // Plaintext fallback
+    const entries: [string, any][] = batch.map(({ path, data }) => [`file_${path}`, data]);
+    await setMany(entries);
+}
+
 
 export async function getLocalFile(path: string): Promise<LocalFile | undefined> {
     if (passphrase && decryptFn) {

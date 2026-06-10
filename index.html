@@ -9,7 +9,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://api.github.com https://codeload.github.com https://raw.githubusercontent.com ws://localhost:* http://localhost:* https://notes.noob31.com https://static.cloudflareinsights.com; img-src 'self' data: blob: https: http:; media-src 'self'; frame-src 'self' blob:; object-src 'none'; manifest-src 'self' https://notes.noob31.com;" />
+    content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com https://codeload.github.com https://raw.githubusercontent.com ws://localhost:* http://localhost:* https://notes.noob31.com https://static.cloudflareinsights.com; img-src 'self' data: blob: https: http:; media-src 'self'; frame-src 'self' blob:; object-src 'none'; manifest-src 'self' https://notes.noob31.com;" />
 
   <title>Starfish Notes - Secure Serverless Local & GitHub Notetaking</title>
   <meta name="description"
@@ -35,12 +35,8 @@
     content="A secure, serverless markdown and canvas note-taking client. Synced directly to GitHub with end-to-end browser-bound system-key encryption." />
   <meta property="twitter:image" content="https://notes.noob31.com/social.png" />
 
-  <!-- Google Fonts: Premium Typography Outfit & Inter -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
-    rel="stylesheet">
+  <!-- Self-Hosted Fonts: Premium Typography Outfit & Inter -->
+  <link rel="stylesheet" href="/fonts/fonts.css">
 </head>
 
 <body>

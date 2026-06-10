@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Compass, RefreshCw, Menu, Edit3, Network, Folder, Trash2, FolderPlus, Copy, ArrowRight, ChevronDown, PanelLeft, Settings, Download, Paperclip, AlertTriangle } from 'lucide-react';
-import JSZip from 'jszip';
 import {
   validateRepository, checkVaultCompatibility, initializeVault,
   fetchRepositoryTree, fetchFileContent, commitFileContent, deleteFile, syncVault,
@@ -12,14 +11,15 @@ import {
   encryptToken, decryptToken, getOrCreateSystemVaultPassphrase
 } from './utils/crypto';
 import type { StorageMode } from './utils/crypto';
-import { Editor } from './components/Editor';
 import { textExtensions } from './utils/textExtensions';
-import { GraphView } from './components/GraphView';
-import { CanvasView } from './components/CanvasView';
-import { BaseEditor } from './components/BaseEditor';
 import { offlineStorage } from './services/offlineStorage';
 import { ConflictResolutionModal } from './components/ConflictResolutionModal';
 import { SearchModal } from './components/SearchModal';
+
+const Editor = React.lazy(() => import('./components/Editor').then(m => ({ default: m.Editor })));
+const CanvasView = React.lazy(() => import('./components/CanvasView').then(m => ({ default: m.CanvasView })));
+const GraphView = React.lazy(() => import('./components/GraphView').then(m => ({ default: m.GraphView })));
+const BaseEditor = React.lazy(() => import('./components/BaseEditor').then(m => ({ default: m.BaseEditor })));
 
 // Split modular components
 import { AuthScreen } from './components/AuthScreen';
@@ -1332,7 +1332,7 @@ export default function App() {
     }
   }, [githubToken, repoName, isOffline, storageMode, masterPassphrase]);
 
-  const uploadAttachment = async (file: File, folderPath?: string, shouldNavigate: boolean = true): Promise<{ path: string; name: string }> => {
+  const uploadAttachment = useCallback(async (file: File, folderPath?: string, shouldNavigate: boolean = true): Promise<{ path: string; name: string }> => {
     if (isOffline) {
       return uploadAttachmentOffline(file, folderPath, shouldNavigate);
     }
@@ -1425,9 +1425,9 @@ export default function App() {
       setGlobalError(msg);
       throw e;
     }
-  };
+  }, [isOffline, settings, files, githubToken, repoName, branchName, refreshFiles]);
 
-  const getFileContentAndType = async (path: string, sha: string): Promise<{ data: Blob; isBinary: boolean }> => {
+  const getFileContentAndType = useCallback(async (path: string, sha: string): Promise<{ data: Blob; isBinary: boolean }> => {
     const isBinary = !isTextFile(path) && !path.toLowerCase().endsWith('.canvas');
 
     let mime = 'application/octet-stream';
@@ -1471,9 +1471,9 @@ export default function App() {
         return { data: new Blob([content], { type: mime }), isBinary: false };
       }
     }
-  };
+  }, [isOffline, storageMode, masterPassphrase, vaultImages, githubToken, repoName, fileContents]);
 
-  const handleDownloadFile = async (path: string, name: string, sha: string) => {
+  const handleDownloadFile = useCallback(async (path: string, name: string, sha: string) => {
     try {
       setGlobalError('');
       const finalSha = sha || files.find(f => f.path === path)?.sha || '';
@@ -1490,13 +1490,14 @@ export default function App() {
       const msg = e instanceof Error ? e.message : 'Failed to download file.';
       setGlobalError(msg);
     }
-  };
+  }, [files, getFileContentAndType]);
 
   const [bulkDownloadStatus, setBulkDownloadStatus] = useState<string | null>(null);
 
-  const handleBulkDownload = async () => {
+  const handleBulkDownload = useCallback(async () => {
     setBulkDownloadStatus('Preparing files...');
     try {
+      const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
       const filesToZip = files.filter(f => f.name !== '.gitkeep' && f.name !== '.vault-compat.json');
 
@@ -1532,7 +1533,7 @@ export default function App() {
       setGlobalError(msg);
       setBulkDownloadStatus(null);
     }
-  };
+  }, [files, getFileContentAndType, repoName]);
 
   const handlePublishOfflineVaultToGitHub = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2316,7 +2317,7 @@ export default function App() {
     }
   }, [githubToken, refreshFiles, repoName, branchName]);
 
-  const createNewFile = async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
+  const createNewFile = useCallback(async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
     if (isOffline) {
       await createNewFileOffline(extension, folderPath);
       return;
@@ -2390,7 +2391,7 @@ export default function App() {
     } finally {
       setIsLoadingFile(false);
     }
-  };
+  }, [isOffline, createNewFileOffline, isLoadingFile, files, githubToken, repoName, branchName, refreshFiles]);
 
   const ensureGitkeepForEmptyParent = async (deletedFilePath: string, currentFiles: VaultFile[]): Promise<VaultFile | null> => {
     if (!deletedFilePath.includes('/')) return null;
@@ -3222,6 +3223,137 @@ export default function App() {
   const activeFile = files.find(f => f.path === activeFilePath);
 
   // ----------------------------------------------------
+  // MEMOIZED CALLLBACKS FOR CHILD VIEWS
+  // ----------------------------------------------------
+  const handleOpenSettings = useCallback(() => {
+    setShowSettingsModal(true);
+  }, []);
+
+  const handleOpenConflictResolution = useCallback(() => {
+    setShowConflictModal(true);
+  }, []);
+
+  const handleOpenSearch = useCallback(() => {
+    setShowSearchModal(true);
+  }, []);
+
+  const handleOnDeleteClick = useCallback((path: string, sha: string) => {
+    setPendingDeleteFile({ path, sha });
+  }, []);
+
+  const handleOnRenameClick = useCallback((path: string, name: string, sha: string) => {
+    setPendingRenameFile({ path, name, sha });
+    const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+    setRenameInputValue(cleanName);
+    setRenameError('');
+  }, []);
+
+  const handleCreateFolderClick = useCallback((parentPath: string) => {
+    setParentFolderPathForNewFolder(parentPath);
+    setShowCreateFolderModal(true);
+  }, []);
+
+  const handleOnDeleteFolderClick = useCallback((folderPath: string) => {
+    setPendingDeleteFolder(folderPath);
+  }, []);
+
+  const handleOnCopyClick = useCallback(async (path: string, name: string) => {
+    const matched = files.find(f => f.path === path);
+    if (matched) {
+      const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+      const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
+      updateMoveCopyState({
+        pendingFile: matched,
+        action: 'copy',
+        nameInput: `${cleanName} - Copy`,
+        folderSelect: parentDir
+      });
+    }
+    setIsLoadingTree(true);
+    try {
+      await refreshFiles();
+    } finally {
+      setIsLoadingTree(false);
+    }
+  }, [files, refreshFiles, updateMoveCopyState]);
+
+  const handleOnMoveClick = useCallback(async (path: string, name: string, _sha: string) => {
+    const matched = files.find(f => f.path === path);
+    if (matched) {
+      const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
+      const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
+      updateMoveCopyState({
+        pendingFile: matched,
+        action: 'move',
+        nameInput: cleanName,
+        folderSelect: parentDir
+      });
+    }
+    setIsLoadingTree(true);
+    try {
+      await refreshFiles();
+    } finally {
+      setIsLoadingTree(false);
+    }
+  }, [files, refreshFiles, updateMoveCopyState]);
+
+  const handleOnRenameFolderClick = useCallback((folderPath: string) => {
+    updateFolderOpState({
+      pendingRenameFolder: folderPath,
+      renameInputValue: folderPath.split('/').pop() || '',
+      renameError: ''
+    });
+  }, [updateFolderOpState]);
+
+  const handleOnMoveFolderClick = useCallback((folderPath: string) => {
+    const folderName = folderPath.split('/').pop() || '';
+    const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
+    updateFolderOpState({
+      pendingMoveCopyFolder: folderPath,
+      moveCopyAction: 'move',
+      moveCopyNameInput: folderName,
+      moveCopyDestFolder: parentDir,
+      moveCopyError: ''
+    });
+  }, [updateFolderOpState]);
+
+  const handleOnCopyFolderClick = useCallback((folderPath: string) => {
+    const folderName = folderPath.split('/').pop() || '';
+    const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
+    updateFolderOpState({
+      pendingMoveCopyFolder: folderPath,
+      moveCopyAction: 'copy',
+      moveCopyNameInput: `${folderName} - Copy`,
+      moveCopyDestFolder: parentDir,
+      moveCopyError: ''
+    });
+  }, [updateFolderOpState]);
+
+  const handleSaveActiveFile = useCallback((content: string, sha: string | null) => {
+    if (activeFilePath) {
+      return handleSaveFile(activeFilePath, content, sha);
+    }
+    return Promise.reject(new Error('No active note context'));
+  }, [activeFilePath, handleSaveFile]);
+
+  const handleOpenNoteInWorkspace = useCallback((path: string | null) => {
+    handleOpenNote(path);
+    setViewTab('workspace');
+  }, [handleOpenNote]);
+
+  const handleUploadAttachmentForEditor = useCallback((file: File, folderPath?: string) => {
+    return uploadAttachment(file, folderPath, false);
+  }, [uploadAttachment]);
+
+  const handleUploadAttachmentForCanvas = useCallback((file: File) => {
+    return uploadAttachment(file, undefined, false);
+  }, [uploadAttachment]);
+
+  const handleClearTargetLine = useCallback(() => {
+    setActiveFileTargetLine(undefined);
+  }, []);
+
+  // ----------------------------------------------------
   // UNLOCK SCREEN RENDER (MODULARIZED)
   // ----------------------------------------------------
   if (showLockScreen) {
@@ -3282,6 +3414,8 @@ export default function App() {
     );
   }
 
+
+
   // ----------------------------------------------------
   // MAIN WORKSPACE INTERFACE RENDER
   // ----------------------------------------------------
@@ -3311,20 +3445,15 @@ export default function App() {
         files={files}
         filteredFiles={filteredFiles}
         isLoadingTree={isLoadingTree}
-        onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenSettings={handleOpenSettings}
         hasConflicts={conflictingFiles.length > 0}
-        onOpenConflictResolution={() => setShowConflictModal(true)}
+        onOpenConflictResolution={handleOpenConflictResolution}
         activeFilePath={activeFilePath}
         setActiveFilePath={handleOpenNote}
         setViewTab={setViewTab}
-        onOpenSearch={() => setShowSearchModal(true)}
-        onDeleteClick={(path, sha) => setPendingDeleteFile({ path, sha })}
-        onRenameClick={(path, name, sha) => {
-          setPendingRenameFile({ path, name, sha });
-          const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
-          setRenameInputValue(cleanName);
-          setRenameError('');
-        }}
+        onOpenSearch={handleOpenSearch}
+        onDeleteClick={handleOnDeleteClick}
+        onRenameClick={handleOnRenameClick}
         repoName={repoName}
         branchName={branchName}
         onDownloadClick={handleDownloadFile}
@@ -3338,80 +3467,13 @@ export default function App() {
         setIsResizingSidebar={setIsResizingSidebar}
 
         // Folder/Relocation props
-        onCreateFolderClick={(parentPath) => {
-          setParentFolderPathForNewFolder(parentPath);
-          setShowCreateFolderModal(true);
-        }}
-        onDeleteFolderClick={(folderPath) => {
-          setPendingDeleteFolder(folderPath);
-        }}
-        onCopyClick={async (path, name) => {
-          const matched = files.find(f => f.path === path);
-          if (matched) {
-            const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
-            const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
-            updateMoveCopyState({
-              pendingFile: matched,
-              action: 'copy',
-              nameInput: `${cleanName} - Copy`,
-              folderSelect: parentDir
-            });
-          }
-          setIsLoadingTree(true);
-          try {
-            await refreshFiles();
-          } finally {
-            setIsLoadingTree(false);
-          }
-        }}
-        onMoveClick={async (path, name) => {
-          const matched = files.find(f => f.path === path);
-          if (matched) {
-            const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
-            const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
-            updateMoveCopyState({
-              pendingFile: matched,
-              action: 'move',
-              nameInput: cleanName,
-              folderSelect: parentDir
-            });
-          }
-          setIsLoadingTree(true);
-          try {
-            await refreshFiles();
-          } finally {
-            setIsLoadingTree(false);
-          }
-        }}
-        onRenameFolderClick={(folderPath) => {
-          updateFolderOpState({
-            pendingRenameFolder: folderPath,
-            renameInputValue: folderPath.split('/').pop() || '',
-            renameError: ''
-          });
-        }}
-        onMoveFolderClick={(folderPath) => {
-          const folderName = folderPath.split('/').pop() || '';
-          const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
-          updateFolderOpState({
-            pendingMoveCopyFolder: folderPath,
-            moveCopyAction: 'move',
-            moveCopyNameInput: folderName,
-            moveCopyDestFolder: parentDir,
-            moveCopyError: ''
-          });
-        }}
-        onCopyFolderClick={(folderPath) => {
-          const folderName = folderPath.split('/').pop() || '';
-          const parentDir = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) : '/';
-          updateFolderOpState({
-            pendingMoveCopyFolder: folderPath,
-            moveCopyAction: 'copy',
-            moveCopyNameInput: `${folderName} - Copy`,
-            moveCopyDestFolder: parentDir,
-            moveCopyError: ''
-          });
-        }}
+        onCreateFolderClick={handleCreateFolderClick}
+        onDeleteFolderClick={handleOnDeleteFolderClick}
+        onCopyClick={handleOnCopyClick}
+        onMoveClick={handleOnMoveClick}
+        onRenameFolderClick={handleOnRenameFolderClick}
+        onMoveFolderClick={handleOnMoveFolderClick}
+        onCopyFolderClick={handleOnCopyFolderClick}
       />
 
       {/* 2. Main Workspace & Views */}
@@ -3557,86 +3619,83 @@ export default function App() {
 
         {/* Primary Content Paneling */}
         <div className="flex-1 w-full relative overflow-hidden bg-background">
-          {viewTab === 'graph' ? (
-            <GraphView
-              files={files}
-              fileContents={fileContents}
-              onOpenNote={(path) => {
-                handleOpenNote(path);
-                setViewTab('workspace'); // Open inside editor tab
-              }}
-              activeFilePath={activeFilePath || undefined}
-              nodeGravity={settings.graphNodeGravity}
-              repulsionStrength={settings.graphRepulsionStrength}
-              springLength={settings.graphSpringLength}
-              onPrefetchAll={preloadAllVaultFiles}
-              prefetchStatus={prefetchStatus}
-              prefetchProgress={prefetchProgress}
-            />
-          ) : isLoadingFile ? (
-            <div className="flex flex-col gap-3.5 items-center justify-center h-full w-full text-muted-foreground text-sm">
+          <React.Suspense fallback={
+            <div className="flex flex-col gap-3.5 items-center justify-center h-full w-full text-muted-foreground text-sm bg-background">
               <RefreshCw className="w-6 h-6 animate-spin text-primary" />
-              <span>Fetching file content from GitHub...</span>
+              <span>Loading view...</span>
             </div>
-          ) : activeFilePath && activeFilePath.endsWith('.canvas') && fileContents[activeFilePath] !== undefined ? (
-            <CanvasView
-              key={activeFilePath}
-              filePath={activeFilePath}
-              initialContent={fileContents[activeFilePath]}
-              initialSha={activeFile?.sha || null}
-              files={files}
-              fileContents={fileContents}
-              onSave={(content, sha) => handleSaveFile(activeFilePath, content, sha)}
-              onOpenNote={(path) => {
-                handleOpenNote(path);
-                setViewTab('workspace');
-              }}
-              vaultId={repoName}
-              onLoadFileContent={preloadFileContent}
-              vaultImages={vaultImages}
-              onFetchBinaryFile={loadBinaryFile}
-              onUploadAttachment={(file) => uploadAttachment(file, undefined, false)}
-            />
-          ) : activeFilePath && activeFilePath.endsWith('.base') && fileContents[activeFilePath] !== undefined ? (
-            <BaseEditor
-              key={activeFilePath}
-              filePath={activeFilePath}
-              initialContent={fileContents[activeFilePath]}
-              initialSha={activeFile?.sha || null}
-              files={files}
-              fileContents={fileContents}
-              onSave={(content, sha) => handleSaveFile(activeFilePath, content, sha)}
-              onSaveFile={handleSaveFile}
-              onOpenNote={(path) => {
-                handleOpenNote(path);
-                setViewTab('workspace');
-              }}
-              onLoadFileContent={preloadFileContent}
-              onCreateFile={(ext, folderPath) => createNewFile(ext, folderPath)}
-              onPrefetchAll={preloadAllVaultFiles}
-              prefetchStatus={prefetchStatus}
-              prefetchProgress={prefetchProgress}
-            />
-          ) : activeFilePath && isTextFile(activeFilePath) && fileContents[activeFilePath] !== undefined ? (
-            <Editor
-              key={activeFilePath}
-              filePath={activeFilePath}
-              initialContent={fileContents[activeFilePath]}
-              initialSha={activeFile?.sha || null}
-              files={files}
-              onSave={(content, sha) => handleSaveFile(activeFilePath, content, sha)}
-              onOpenNote={(path) => {
-                handleOpenNote(path);
-                setViewTab('workspace');
-              }}
-              vaultId={repoName}
-              vaultImages={vaultImages}
-              onFetchBinaryFile={loadBinaryFile}
-              onUploadAttachment={(file, folderPath) => uploadAttachment(file, folderPath, false)}
-              initialSearchLineIndex={activeFileTargetLine}
-              onClearTargetLine={() => setActiveFileTargetLine(undefined)}
-            />
-          ) : activeFilePath ? (
+          }>
+            {viewTab === 'graph' ? (
+              <GraphView
+                files={files}
+                fileContents={fileContents}
+                onOpenNote={(path) => {
+                  handleOpenNote(path);
+                  setViewTab('workspace'); // Open inside editor tab
+                }}
+                activeFilePath={activeFilePath || undefined}
+                nodeGravity={settings.graphNodeGravity}
+                repulsionStrength={settings.graphRepulsionStrength}
+                springLength={settings.graphSpringLength}
+                onPrefetchAll={preloadAllVaultFiles}
+                prefetchStatus={prefetchStatus}
+                prefetchProgress={prefetchProgress}
+              />
+            ) : isLoadingFile ? (
+              <div className="flex flex-col gap-3.5 items-center justify-center h-full w-full text-muted-foreground text-sm">
+                <RefreshCw className="w-6 h-6 animate-spin text-primary" />
+                <span>Fetching file content from GitHub...</span>
+              </div>
+            ) : activeFilePath && activeFilePath.endsWith('.canvas') && fileContents[activeFilePath] !== undefined ? (
+              <CanvasView
+                key={activeFilePath}
+                filePath={activeFilePath}
+                initialContent={fileContents[activeFilePath]}
+                initialSha={activeFile?.sha || null}
+                files={files}
+                fileContents={fileContents}
+                onSave={handleSaveActiveFile}
+                onOpenNote={handleOpenNoteInWorkspace}
+                vaultId={repoName}
+                onLoadFileContent={preloadFileContent}
+                vaultImages={vaultImages}
+                onFetchBinaryFile={loadBinaryFile}
+                onUploadAttachment={handleUploadAttachmentForCanvas}
+              />
+            ) : activeFilePath && activeFilePath.endsWith('.base') && fileContents[activeFilePath] !== undefined ? (
+              <BaseEditor
+                key={activeFilePath}
+                filePath={activeFilePath}
+                initialContent={fileContents[activeFilePath]}
+                initialSha={activeFile?.sha || null}
+                files={files}
+                fileContents={fileContents}
+                onSave={handleSaveActiveFile}
+                onSaveFile={handleSaveFile}
+                onOpenNote={handleOpenNoteInWorkspace}
+                onLoadFileContent={preloadFileContent}
+                onCreateFile={createNewFile}
+                onPrefetchAll={preloadAllVaultFiles}
+                prefetchStatus={prefetchStatus}
+                prefetchProgress={prefetchProgress}
+              />
+            ) : activeFilePath && isTextFile(activeFilePath) && fileContents[activeFilePath] !== undefined ? (
+              <Editor
+                key={activeFilePath}
+                filePath={activeFilePath}
+                initialContent={fileContents[activeFilePath]}
+                initialSha={activeFile?.sha || null}
+                files={files}
+                onSave={handleSaveActiveFile}
+                onOpenNote={handleOpenNoteInWorkspace}
+                vaultId={repoName}
+                vaultImages={vaultImages}
+                onFetchBinaryFile={loadBinaryFile}
+                onUploadAttachment={handleUploadAttachmentForEditor}
+                initialSearchLineIndex={activeFileTargetLine}
+                onClearTargetLine={handleClearTargetLine}
+              />
+            ) : activeFilePath ? (
             <div className="flex-1 w-full h-full flex flex-col bg-background select-text overflow-y-auto items-center p-8">
               <div className="max-w-3xl w-full bg-card/40 border border-border rounded-2xl p-6 shadow-xl flex flex-col gap-6 items-center">
                 <div className="w-full flex items-center justify-between border-b border-border/80 pb-4">
@@ -3748,6 +3807,7 @@ export default function App() {
               </span>
             </div>
           )}
+          </React.Suspense>
         </div>
       </main>
 

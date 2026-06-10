@@ -33,7 +33,7 @@ interface GraphViewProps {
   prefetchProgress?: { loaded: number; total: number };
 }
 
-export const GraphView: React.FC<GraphViewProps> = ({
+const GraphViewComponent: React.FC<GraphViewProps> = ({
   files,
   fileContents,
   onOpenNote,
@@ -1164,3 +1164,4 @@ export const GraphView: React.FC<GraphViewProps> = ({
     </div>
   );
 };
+export const GraphView = React.memo(GraphViewComponent);

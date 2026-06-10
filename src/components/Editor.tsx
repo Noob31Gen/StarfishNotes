@@ -143,7 +143,7 @@ function mergeVirtualLines(virtualLines: string[]): string {
   return result;
 }
 
-export const Editor: React.FC<EditorProps> = ({
+const EditorComponent: React.FC<EditorProps> = ({
   filePath,
   initialContent,
   initialSha,
@@ -257,15 +257,34 @@ export const Editor: React.FC<EditorProps> = ({
     const style = window.getComputedStyle(textarea);
     mirror.style.width = style.width;
 
+    mirror.textContent = ''; // Clear prior content
+
     const vLines = virtualLinesRef.current;
-    const heights: number[] = [];
+    const lineElements: HTMLDivElement[] = [];
+    const fragment = document.createDocumentFragment();
 
     for (let i = windowStartLine; i < windowEndLine; i++) {
       const lineText = vLines[i] || '';
       const cleanLine = lineText.endsWith('\r') ? lineText.slice(0, -1) : lineText;
-      mirror.textContent = cleanLine || ' ';
-      heights.push(mirror.clientHeight || 24);
+      const el = document.createElement('div');
+      el.textContent = cleanLine || ' ';
+      el.style.whiteSpace = 'pre-wrap';
+      el.style.wordBreak = 'break-all';
+      el.style.boxSizing = 'border-box';
+      el.style.fontFamily = 'monospace';
+      el.style.fontSize = '14.8px';
+      el.style.lineHeight = '24px';
+      el.style.width = '100%';
+      fragment.appendChild(el);
+      lineElements.push(el);
     }
+    mirror.appendChild(fragment);
+
+    // Batch read client heights to avoid forced sync layouts
+    const heights = lineElements.map(el => el.clientHeight || 24);
+
+    // Clean up
+    mirror.textContent = '';
 
     return heights;
   }, [windowStartLine, windowEndLine]);
@@ -1902,3 +1921,4 @@ export const Editor: React.FC<EditorProps> = ({
     </div>
   );
 };
+export const Editor = React.memo(EditorComponent);

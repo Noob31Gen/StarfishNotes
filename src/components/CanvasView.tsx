@@ -50,7 +50,7 @@ function generateEdgeId(): string {
   return `edge_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 }
 
-export const CanvasView: React.FC<CanvasViewProps> = ({
+const CanvasViewComponent: React.FC<CanvasViewProps> = ({
   filePath: _filePath,
   initialContent,
   initialSha,
@@ -2572,3 +2572,4 @@ export const CanvasView: React.FC<CanvasViewProps> = ({
     </div>
   );
 };
+export const CanvasView = React.memo(CanvasViewComponent);
