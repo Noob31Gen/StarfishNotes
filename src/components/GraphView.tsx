@@ -423,7 +423,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
       const links = linksRef.current;
 
       const repulsionStrength = repulsionRef.current;
-      const springStrength = 0.055;
+      const springStrength = 0.030;
       const springLength = springLengthRef.current;
       const gravity = gravityRef.current * 0.08;
       const friction = 0.8;
@@ -443,19 +443,20 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
           const dx = n2.x - n1.x;
           const dy = n2.y - n1.y;
           const distSqr = dx * dx + dy * dy || 1;
+
+          // Fast-path exit: Skip computing square root / forces for nodes farther than 250px (250^2 = 62500)
+          if (distSqr > 62500) continue;
+
           const dist = Math.sqrt(distSqr);
+          // Stronger force at closer distance
+          const force = (repulsionStrength / distSqr) * 15 * alpha;
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
 
-          if (dist < 400) {
-            // Stronger force at closer distance
-            const force = (repulsionStrength / distSqr) * 15 * alpha;
-            const fx = (dx / dist) * force;
-            const fy = (dy / dist) * force;
-
-            n1.vx -= fx;
-            n1.vy -= fy;
-            n2.vx += fx;
-            n2.vy += fy;
-          }
+          n1.vx -= fx;
+          n1.vy -= fy;
+          n2.vx += fx;
+          n2.vy += fy;
         }
 
         // Pull to center
@@ -574,7 +575,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
         const isHovered = activeNode && activeNode.id === node.id;
         const isRelated = !activeNode || isHovered || linksRef.current.some(
           l => (l.source === node.id && l.target === activeNode!.id) ||
-               (l.source === activeNode!.id && l.target === node.id)
+            (l.source === activeNode!.id && l.target === node.id)
         );
 
         ctx.save();
@@ -587,8 +588,9 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
         const isActive = node.id === activeFilePath;
         const isSearched = searchHighlightRef.current && node.name.toLowerCase().includes(searchHighlightRef.current.toLowerCase());
 
-        // Glow effects on hover, active, or search match state
-        if (isHovered || isActive || isSearched) {
+        // Glow effects on hover, active, or search match state (disabled during active drag/pan to keep frame rate high)
+        const skipShadow = isDraggingRef.current;
+        if ((isHovered || isActive || isSearched) && !skipShadow) {
           ctx.save();
           ctx.shadowBlur = isSearched ? 25 : 18;
           ctx.shadowColor = isSearched ? '#10b981' : node.color;
@@ -609,7 +611,9 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
         }
 
         if (isHovered || isActive || isSearched) {
-          ctx.restore();
+          if (!skipShadow) {
+            ctx.restore();
+          }
           // Render ring border
           ctx.beginPath();
           ctx.arc(node.x, node.y, node.radius + (isSearched ? 5.5 : 3.5), 0, 2 * Math.PI);
@@ -883,13 +887,13 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     dragNodeRef.current = null;
     isDraggingRef.current = false;
     touchActiveNodeRef.current = null;
-    
+
     // If there's a remaining touch after pinch ends, update mouse position to prevent jump
     if (e.touches.length === 1) {
       const remainingTouch = e.touches[0];
       mouseRef.current = { x: remainingTouch.clientX, y: remainingTouch.clientY };
     }
-    
+
     setTimeout(() => {
       isTouchRef.current = false;
     }, 50);
@@ -1055,7 +1059,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
             {/* Map Legend */}
             <div className="flex flex-col gap-2.5 border-t border-border/80 pt-3">
               <span className="text-[0.65rem] font-bold text-muted-foreground/80 uppercase tracking-widest px-0.5">Node Legend</span>
-              
+
               <div className="flex items-center gap-2.5">
                 <div className="w-2.5 h-2.5 bg-[#8b5cf6] rounded-full shrink-0 shadow-[0_0_6px_#8b5cf6]" />
                 <span className="text-xs text-muted-foreground">Markdown Note</span>

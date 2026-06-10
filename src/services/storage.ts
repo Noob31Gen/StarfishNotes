@@ -190,48 +190,45 @@ export async function saveLocalFilesBatch(batch: { path: string; data: LocalFile
 
 
 export async function getLocalFile(path: string): Promise<LocalFile | undefined> {
-    if (passphrase && decryptFn) {
-        try {
-            const hashedPath = await hashPath(path);
-            const key = `file_hash_${hashedPath}`;
-            const record = await get<LocalFile>(key);
-            if (record) {
-                if (record.isEncrypted && record.encryptedPath) {
-                    const decryptedContent = await decryptFn(record.content, passphrase);
+    try {
+        const hashedPath = await hashPath(path);
+        const key = `file_hash_${hashedPath}`;
+        const record = await get<LocalFile>(key);
+        if (record && record.isEncrypted && record.encryptedPath) {
+            const parts = record.content.split(':');
+            if (parts.length === 3) {
+                // Passphrase encrypted
+                if (passphrase && decryptFn) {
+                    try {
+                        const decryptedContent = await decryptFn(record.content, passphrase);
+                        return {
+                            content: decryptedContent,
+                            sha: record.sha,
+                            encryptedPath: record.encryptedPath,
+                            isEncrypted: true
+                        };
+                    } catch (e) {
+                        console.error('Failed to decrypt local file with passphrase:', e);
+                    }
+                }
+            } else if (parts.length === 2) {
+                // System-key encrypted
+                try {
+                    const decryptedContent = await systemKeyDecrypt(record.content);
                     return {
                         content: decryptedContent,
                         sha: record.sha,
                         encryptedPath: record.encryptedPath,
                         isEncrypted: true
                     };
+                } catch (decryptErr) {
+                    console.warn(`System-key decryption failed for ${path}, clearing corrupted cache:`, decryptErr);
+                    await del(key);
                 }
-            }
-        } catch (e) {
-            console.error('Failed to get local file with encryption:', e);
-        }
-    }
-    
-    // Try system-key encrypted record
-    try {
-        const hashedPath = await hashPath(path);
-        const key = `file_hash_${hashedPath}`;
-        const record = await get<LocalFile>(key);
-        if (record && record.isEncrypted && record.encryptedPath) {
-            try {
-                const decryptedContent = await systemKeyDecrypt(record.content);
-                return {
-                    content: decryptedContent,
-                    sha: record.sha,
-                    encryptedPath: record.encryptedPath,
-                    isEncrypted: true
-                };
-            } catch (decryptErr) {
-                console.warn(`System-key decryption failed for ${path}, clearing corrupted cache:`, decryptErr);
-                await del(key);
             }
         }
     } catch (e) {
-        console.error('Failed to get system-key encrypted file:', e);
+        console.error('Failed to get local file from storage:', e);
     }
 
     // Fallback for legacy plaintext lookup
@@ -261,13 +258,16 @@ export async function getAllLocalFilePaths(): Promise<string[]> {
     const decryptedPaths = await Promise.all(
         records.map(async (record, index) => {
             if (record && record.isEncrypted && record.encryptedPath) {
-                if (passphrase && decryptFn) {
-                    try {
-                        return await decryptFn(record.encryptedPath, passphrase);
-                    } catch (e) {
-                        console.error('Failed to decrypt local file path:', e);
+                const parts = record.encryptedPath.split(':');
+                if (parts.length === 3) {
+                    if (passphrase && decryptFn) {
+                        try {
+                            return await decryptFn(record.encryptedPath, passphrase);
+                        } catch (e) {
+                            console.error('Failed to decrypt local file path with passphrase:', e);
+                        }
                     }
-                } else {
+                } else if (parts.length === 2) {
                     try {
                         return await systemKeyDecrypt(record.encryptedPath);
                     } catch (e) {

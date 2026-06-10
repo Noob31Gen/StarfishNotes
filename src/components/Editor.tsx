@@ -238,6 +238,8 @@ const EditorComponent: React.FC<EditorProps> = ({
     return [];
   });
   const lastMeasuredHeightsRef = useRef<number[] | null>(null);
+  const lineHeightsCacheRef = useRef<Map<string, number>>(new Map());
+  const lastMeasureWidthRef = useRef<string>('');
 
   const measureLineHeights = useCallback(() => {
     const textarea = textareaRef.current;
@@ -260,17 +262,35 @@ const EditorComponent: React.FC<EditorProps> = ({
     }
 
     const style = window.getComputedStyle(textarea);
-    mirror.style.width = style.width;
-
-    mirror.textContent = ''; // Clear prior content
+    const currentWidth = style.width;
+    if (currentWidth !== lastMeasureWidthRef.current) {
+      lineHeightsCacheRef.current.clear();
+      lastMeasureWidthRef.current = currentWidth;
+    }
+    mirror.style.width = currentWidth;
 
     const vLines = virtualLinesRef.current;
-    const lineElements: HTMLDivElement[] = [];
+    const lineElements: { index: number; el: HTMLDivElement; cleanText: string }[] = [];
     const fragment = document.createDocumentFragment();
+    const heights: number[] = Array(windowEndLine - windowStartLine).fill(24);
+    const cache = lineHeightsCacheRef.current;
 
     for (let i = windowStartLine; i < windowEndLine; i++) {
       const lineText = vLines[i] || '';
       const cleanLine = lineText.endsWith('\r') ? lineText.slice(0, -1) : lineText;
+
+      // Fast path: if empty/whitespace, height is always 24px
+      if (!cleanLine.trim()) {
+        heights[i - windowStartLine] = 24;
+        continue;
+      }
+
+      // Fast path: check string cache
+      if (cache.has(cleanLine)) {
+        heights[i - windowStartLine] = cache.get(cleanLine)!;
+        continue;
+      }
+
       const el = document.createElement('div');
       el.textContent = cleanLine || ' ';
       el.style.whiteSpace = 'pre-wrap';
@@ -281,15 +301,22 @@ const EditorComponent: React.FC<EditorProps> = ({
       el.style.lineHeight = '24px';
       el.style.width = '100%';
       fragment.appendChild(el);
-      lineElements.push(el);
+      lineElements.push({ index: i - windowStartLine, el, cleanText: cleanLine });
     }
-    mirror.appendChild(fragment);
 
-    // Batch read client heights to avoid forced sync layouts
-    const heights = lineElements.map(el => el.clientHeight || 24);
+    if (lineElements.length > 0) {
+      mirror.textContent = ''; // Clear prior content
+      mirror.appendChild(fragment);
 
-    // Clean up
-    mirror.textContent = '';
+      // Batch read client heights to avoid forced sync layouts
+      lineElements.forEach(item => {
+        const h = item.el.clientHeight || 24;
+        heights[item.index] = h;
+        cache.set(item.cleanText, h);
+      });
+
+      mirror.textContent = ''; // Clean up
+    }
 
     return heights;
   }, [windowStartLine, windowEndLine]);

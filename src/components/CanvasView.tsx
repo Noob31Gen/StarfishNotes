@@ -697,7 +697,18 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
   useEffect(() => {
     if (activeDragResizeState === 'idle') return;
 
-    const handleGlobalMove = (clientX: number, clientY: number) => {
+    let frameId: number | null = null;
+    let latestCoords: { clientX: number; clientY: number } | null = null;
+
+    const updatePosition = () => {
+      if (!latestCoords) {
+        frameId = null;
+        return;
+      }
+      const { clientX, clientY } = latestCoords;
+      latestCoords = null;
+      frameId = null;
+
       // 1. Handle Node Dragging
       if (dragNodeId.current || touchDragNodeId.current) {
         const activeId = dragNodeId.current || touchDragNodeId.current;
@@ -741,15 +752,32 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      handleGlobalMove(e.clientX, e.clientY);
+      latestCoords = { clientX: e.clientX, clientY: e.clientY };
+      if (frameId === null) {
+        frameId = requestAnimationFrame(updatePosition);
+      }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       if (e.touches.length !== 1) return;
-      handleGlobalMove(e.touches[0].clientX, e.touches[0].clientY);
+      latestCoords = { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+      if (frameId === null) {
+        frameId = requestAnimationFrame(updatePosition);
+      }
     };
 
     const handleGlobalUp = () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+        frameId = null;
+      }
+      if (latestCoords) {
+        const { clientX, clientY } = latestCoords;
+        latestCoords = null;
+        latestCoords = { clientX, clientY };
+        updatePosition();
+      }
+
       if (dragNodeId.current || touchDragNodeId.current) {
         pushState(nodesRef.current, edgesRef.current);
       }
@@ -770,6 +798,9 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     window.addEventListener('touchend', handleGlobalUp);
 
     return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleGlobalUp);
       window.removeEventListener('touchmove', handleTouchMove);
