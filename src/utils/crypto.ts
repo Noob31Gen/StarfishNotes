@@ -147,7 +147,7 @@ export async function decryptToken(encryptedData: string, passphrase: string): P
       cipherBuffer
     );
     return bufToStr(plainBuffer);
-  } catch (error: unknown) {
+  } catch {
     // 2. Fallback: try with the legacy 100,000 PBKDF2 iterations for backwards compatibility
     try {
       const key = await deriveKey(passphrase, salt, 100000);

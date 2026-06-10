@@ -3,7 +3,7 @@
  * Performs 100% client-side REST API synchronization with the user's notes repository.
  * Implements robust tree traversal, UTF-8 base64 encoding/decoding, and conflict resolution (SHA checking).
  */
-import { getLocalFile, saveLocalFile, saveLocalFilesBatch } from './storage';
+import { getLocalFile, saveLocalFile, saveLocalFilesBatch, type LocalFile } from './storage';
 import { textExtensions } from '../utils/textExtensions';
 
 export interface VaultFile {
@@ -607,7 +607,7 @@ export async function syncVault(
     const graphqlContents = await fetchFilesGraphQL(token, repo, branch, changedFiles);
     
     // Batch save files cache in a single IndexedDB transaction
-    const batchData: { path: string; data: any }[] = [];
+    const batchData: { path: string; data: LocalFile }[] = [];
     for (const [filePath, content] of graphqlContents.entries()) {
       const targetFile = changedFiles.find(f => f.path === filePath);
       if (targetFile) {

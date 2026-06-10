@@ -64,7 +64,7 @@ export async function saveLocalFilesBatch(batch: { path: string; data: LocalFile
     
     if (passphrase && encryptFn) {
         try {
-            const entries: [string, any][] = [];
+            const entries: [string, LocalFile][] = [];
             const legacyKeysToDelete: string[] = [];
             
             await Promise.all(batch.map(async ({ path, data }) => {
@@ -91,7 +91,7 @@ export async function saveLocalFilesBatch(batch: { path: string; data: LocalFile
     }
     
     // Plaintext fallback
-    const entries: [string, any][] = batch.map(({ path, data }) => [`file_${path}`, data]);
+    const entries: [string, LocalFile][] = batch.map(({ path, data }) => [`file_${path}`, data]);
     await setMany(entries);
 }
 

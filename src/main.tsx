@@ -24,7 +24,7 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'IFRAME') {
     const src = node.getAttribute('src') || '';
     if (src) {
-      let isAllowed = false;
+      let isAllowed: boolean;
       // Allow relative URLs (for local attachments or assets)
       if (src.startsWith('/') || src.startsWith('./') || src.startsWith('../')) {
         isAllowed = true;

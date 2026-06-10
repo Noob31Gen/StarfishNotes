@@ -575,7 +575,7 @@ export default function App() {
     }
   }, [vaultImages, storageMode, masterPassphrase]);
 
-  const uploadAttachmentOffline = async (file: File, folderPath?: string, shouldNavigate: boolean = true): Promise<{ path: string; name: string }> => {
+  const uploadAttachmentOffline = useCallback(async (file: File, folderPath?: string, shouldNavigate: boolean = true): Promise<{ path: string; name: string }> => {
     const maxOfflineSize = 10 * 1024 * 1024;
     if (file.size > maxOfflineSize) {
       const errorMsg = 'Attachment exceeds the strict 10MB size limit for offline vault uploads.';
@@ -675,7 +675,7 @@ export default function App() {
       setGlobalError(msg);
       throw e;
     }
-  };
+  }, [settings, files, storageMode, masterPassphrase, setFileContents, setVaultImages, setFiles, setActiveFilePath]);
 
   const handleSaveFileOffline = useCallback(async (path: string, content: string) => {
     let savedContent = content;
@@ -711,7 +711,7 @@ export default function App() {
     return { sha };
   }, [storageMode, masterPassphrase, setFileContents, setFiles]);
 
-  const createNewFileOffline = async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
+  const createNewFileOffline = useCallback(async (extension: '.md' | '.txt' | '.canvas' | '.base', folderPath?: string) => {
     if (isLoadingFile) return;
 
     const isText = extension === '.md' || extension === '.txt';
@@ -773,7 +773,7 @@ export default function App() {
     } finally {
       setIsLoadingFile(false);
     }
-  };
+  }, [isLoadingFile, files, storageMode, masterPassphrase, setFiles, setFileContents, setActiveFilePath, setViewTab]);
 
   const handleConfirmDeleteOffline = async () => {
     if (!pendingDeleteFile) return;
@@ -1431,7 +1431,7 @@ export default function App() {
       setGlobalError(msg);
       throw e;
     }
-  }, [isOffline, settings, files, githubToken, repoName, branchName, refreshFiles]);
+  }, [isOffline, uploadAttachmentOffline, settings, files, githubToken, repoName, branchName, refreshFiles]);
 
   const getFileContentAndType = useCallback(async (path: string, sha: string): Promise<{ data: Blob; isBinary: boolean }> => {
     const isBinary = !isTextFile(path) && !path.toLowerCase().endsWith('.canvas');
@@ -3335,7 +3335,7 @@ export default function App() {
     }
   }, [files, refreshFiles, updateMoveCopyState]);
 
-  const handleOnMoveClick = useCallback(async (path: string, name: string, _sha: string) => {
+  const handleOnMoveClick = useCallback(async (path: string, name: string) => {
     const matched = files.find(f => f.path === path);
     if (matched) {
       const cleanName = name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
