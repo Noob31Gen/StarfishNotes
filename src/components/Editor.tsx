@@ -216,6 +216,9 @@ const EditorComponent: React.FC<EditorProps> = ({
   const csvDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isEditingFromPreviewRef = useRef(false);
   const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markdownRenderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mermaidRenderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRenderedPathRef = useRef<string>('');
 
   const markdownCacheRef = useRef<Map<string, string>>(new Map());
   useEffect(() => {
@@ -1147,11 +1150,14 @@ const EditorComponent: React.FC<EditorProps> = ({
 
   useEffect(() => {
     const previewContainer = previewContainerRef.current;
-    if (previewContainer) {
-      if (isEditingFromPreviewRef.current) {
-        isEditingFromPreviewRef.current = false;
-        return;
-      }
+    if (!previewContainer) return;
+
+    if (isEditingFromPreviewRef.current) {
+      isEditingFromPreviewRef.current = false;
+      return;
+    }
+
+    const runRender = () => {
       if (isWindowingMode) {
         const topSpacer = `<div style="height: ${windowStartLine * 26}px; width: 100%;"></div>`;
         const bottomSpacer = `<div style="height: ${Math.max(0, virtualLines.length - windowEndLine) * 26}px; width: 100%;"></div>`;
@@ -1159,10 +1165,21 @@ const EditorComponent: React.FC<EditorProps> = ({
       } else {
         previewContainer.innerHTML = renderMarkdown(content, 0);
       }
+      triggerMermaidRender();
+    };
 
-      // Render any mermaid diagrams found in the preview
+    const triggerMermaidRender = () => {
       const mermaidNodes = previewContainer.querySelectorAll('.mermaid');
-      if (mermaidNodes.length > 0) {
+      if (mermaidNodes.length === 0) return;
+
+      if (mermaidRenderTimerRef.current) {
+        clearTimeout(mermaidRenderTimerRef.current);
+      }
+
+      const pathChanged = lastRenderedPathRef.current !== filePath;
+      const delay = pathChanged ? 0 : 800;
+
+      mermaidRenderTimerRef.current = setTimeout(() => {
         import('mermaid').then((mermaidLib) => {
           const m = mermaidLib.default;
           m.initialize({
@@ -1171,14 +1188,36 @@ const EditorComponent: React.FC<EditorProps> = ({
             securityLevel: 'strict',
             fontFamily: 'Inter, sans-serif',
           });
-          m.run({ nodes: mermaidNodes as NodeListOf<HTMLElement> }).catch(() => {
-            // Silently ignore mermaid rendering errors
-          });
-        }).catch(() => {
-          // Ignore import errors
-        });
+          m.run({ nodes: mermaidNodes as NodeListOf<HTMLElement> }).catch(() => {});
+        }).catch(() => {});
+      }, delay);
+    };
+
+    const pathChanged = lastRenderedPathRef.current !== filePath;
+    lastRenderedPathRef.current = filePath;
+
+    if (pathChanged) {
+      if (markdownRenderTimerRef.current) {
+        clearTimeout(markdownRenderTimerRef.current);
       }
+      runRender();
+    } else {
+      if (markdownRenderTimerRef.current) {
+        clearTimeout(markdownRenderTimerRef.current);
+      }
+      markdownRenderTimerRef.current = setTimeout(() => {
+        runRender();
+      }, 120);
     }
+
+    return () => {
+      if (markdownRenderTimerRef.current) {
+        clearTimeout(markdownRenderTimerRef.current);
+      }
+      if (mermaidRenderTimerRef.current) {
+        clearTimeout(mermaidRenderTimerRef.current);
+      }
+    };
   }, [content, filePath, viewMode, renderMarkdown, isWindowingMode, windowStartLine, windowEndLine, virtualLines.length]);
 
   // Unified save orchestration

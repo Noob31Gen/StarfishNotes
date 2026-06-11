@@ -226,15 +226,15 @@ export default function App() {
   });
   const [isResizingSidebar, setIsResizingSidebar] = useState<boolean>(false);
 
-  const handleSetSidebarWidth = (w: number) => {
+  const handleSetSidebarWidth = useCallback((w: number) => {
     setSidebarWidth(w);
     localStorage.setItem('starfishnotes-sidebar-width', w.toString());
-  };
+  }, []);
 
-  const handleSetSidebarCollapsed = (collapsed: boolean) => {
+  const handleSetSidebarCollapsed = useCallback((collapsed: boolean) => {
     setIsSidebarCollapsed(collapsed);
     localStorage.setItem('starfishnotes-sidebar-collapsed', collapsed.toString());
-  };
+  }, []);
 
   // Folder, Move, and Copy States
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
@@ -310,13 +310,18 @@ export default function App() {
     handleOpenNote(path);
     setActiveFileTargetLine(lineIndex);
   }, [handleOpenNote]);
+
+  const [viewTab, setViewTab] = useState<'workspace' | 'graph'>('workspace');
+
+  const handleOpenNoteInGraph = useCallback((path: string) => {
+    handleOpenNote(path);
+    setViewTab('workspace');
+  }, [handleOpenNote, setViewTab]);
+
   const [isLoadingTree, setIsLoadingTree] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [vaultImages, setVaultImages] = useState<Record<string, string>>({});
-
-  // View state switcher: 'workspace' | 'graph'
-  const [viewTab, setViewTab] = useState<'workspace' | 'graph'>('workspace');
 
   // Prefetching States
   const [prefetchStatus, setPrefetchStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('idle');
@@ -353,6 +358,7 @@ export default function App() {
     };
   }, []);
   const optimisticOperationsRef = useRef<Map<string, { type: 'create' | 'delete', file?: VaultFile, timestamp: number }>>(new Map());
+  const lastSyncTimeRef = useRef<number>(0);
 
   const [pendingRenameFile, setPendingRenameFile] = useState<{ path: string, name: string, sha: string } | null>(null);
   const [renameInputValue, setRenameInputValue] = useState('');
@@ -429,6 +435,8 @@ export default function App() {
     let index = 0;
     const concurrency = 5;
 
+    const fetchedContents: Record<string, string> = {};
+
     const worker = async () => {
       while (index < toFetch.length) {
         const currentIdx = index++;
@@ -449,11 +457,11 @@ export default function App() {
                   }
                 }
               }
-              setFileContents(prev => ({ ...prev, [file.path]: text }));
+              fetchedContents[file.path] = text;
             }
           } else {
             const content = await fetchFileContent(githubToken, repoName, file.path, file.sha);
-            setFileContents(prev => ({ ...prev, [file.path]: content }));
+            fetchedContents[file.path] = content;
           }
         } catch (err) {
           console.error(`Failed to background prefetch ${file.path}:`, err);
@@ -471,6 +479,9 @@ export default function App() {
         workers.push(worker());
       }
       await Promise.all(workers);
+
+      // Perform a single batched state update at the end of the load cycle
+      setFileContents(prev => ({ ...prev, ...fetchedContents }));
 
       // Check if status is still 'fetching' before updating (user might have started another fetch)
       setPrefetchStatus(prevStatus => {
@@ -504,7 +515,6 @@ export default function App() {
       }));
 
       setFiles(mappedFiles);
-      preloadAllFilesContents(mappedFiles);
 
       if (mappedFiles.length > 0 && !activeFilePath) {
         const defaultNote = mappedFiles.find(f => f.name === 'Welcome.md') || mappedFiles[0];
@@ -515,7 +525,7 @@ export default function App() {
     } finally {
       setIsLoadingTree(false);
     }
-  }, [activeFilePath, preloadAllFilesContents, setFiles]);
+  }, [activeFilePath, setFiles]);
 
   const loadFileContentOffline = useCallback(async (path: string, providedKey?: string) => {
     if (fileContents[path] !== undefined) return;
@@ -1000,7 +1010,6 @@ export default function App() {
         }
       }
       setFiles(localTree);
-      await preloadAllFilesContents(localTree);
 
       if (localTree.length > 0 && !activeFilePath) {
         const defaultNote = localTree.find(f => f.name === 'Welcome.md') || localTree[0];
@@ -1009,7 +1018,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to load local files from cache:', e);
     }
-  }, [activeFilePath, preloadAllFilesContents, setFiles]);
+  }, [activeFilePath, setFiles]);
 
   const refreshFiles = useCallback(async (
     token: string = githubToken,
@@ -1024,6 +1033,7 @@ export default function App() {
     setIsLoadingTree(true);
     try {
       let tree = await fetchRepositoryTree(token, repo, branch);
+      lastSyncTimeRef.current = Date.now();
       setIsNetworkOffline(false);
 
       // Apply optimistic operations to handle GitHub indexing API lag
@@ -1170,7 +1180,6 @@ export default function App() {
       }
 
       setFiles(tree);
-      preloadAllFilesContents(tree);
 
       if (tree.length > 0 && !activeFilePath) {
         const defaultNote = tree.find(f => f.name === 'Welcome.md') || tree[0];
@@ -1198,7 +1207,6 @@ export default function App() {
       if (!isSyncPaused) {
         syncVault(token, repo, branch, tree, skippedPaths).then(() => {
           console.log("Vault sync complete!");
-          preloadAllFilesContents(tree);
         }).catch(console.error);
       } else {
         console.log("GitHub API rate limit reached. Sync paused.");
@@ -1218,7 +1226,7 @@ export default function App() {
     } finally {
       setIsLoadingTree(false);
     }
-  }, [githubToken, repoName, branchName, isOffline, refreshFilesOffline, preloadAllFilesContents, loadFilesFromLocalCache, setFiles, activeFilePath, isSyncPaused]);
+  }, [githubToken, repoName, branchName, isOffline, refreshFilesOffline, loadFilesFromLocalCache, setFiles, activeFilePath, isSyncPaused]);
 
   const checkAndLoadVault = useCallback(async (token: string, repo: string, branch: string) => {
     try {
@@ -1961,8 +1969,13 @@ export default function App() {
           console.log('Tab focused after being idle for > 5 minutes. Verifying conflicts...');
           refreshFiles(githubToken, repoName, branchName, true); // Idle check
         } else {
-          console.log('Tab focused. Standard refresh...');
-          refreshFiles();
+          const timeSinceLastSync = Date.now() - lastSyncTimeRef.current;
+          if (timeSinceLastSync > 45 * 1000) {
+            console.log('Tab focused. Standard refresh...');
+            refreshFiles();
+          } else {
+            console.log(`Tab focused. Standard refresh skipped (last sync was ${Math.round(timeSinceLastSync / 1000)}s ago, threshold: 45s).`);
+          }
         }
       }
     };
@@ -3865,10 +3878,7 @@ export default function App() {
               <GraphView
                 files={files}
                 fileContents={fileContents}
-                onOpenNote={(path) => {
-                  handleOpenNote(path);
-                  setViewTab('workspace'); // Open inside editor tab
-                }}
+                onOpenNote={handleOpenNoteInGraph}
                 activeFilePath={activeFilePath || undefined}
                 nodeGravity={settings.graphNodeGravity}
                 repulsionStrength={settings.graphRepulsionStrength}
