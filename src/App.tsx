@@ -1975,7 +1975,7 @@ export default function App() {
 
   // Periodic API rate limit check
   useEffect(() => {
-    if (isOffline || !githubToken) return;
+    if (isOffline || !githubToken || !isAuthenticated) return;
 
     const checkRateLimit = async () => {
       try {
@@ -2012,7 +2012,7 @@ export default function App() {
     checkRateLimit();
 
     return () => clearInterval(interval);
-  }, [isOffline, githubToken, apiLimitReached]);
+  }, [isOffline, githubToken, apiLimitReached, isAuthenticated]);
 
   // Cleanup handler: purge volatile caches when tab is closed or navigated away
   useEffect(() => {
