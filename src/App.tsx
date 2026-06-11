@@ -3891,15 +3891,15 @@ export default function App() {
               <div className="flex-1 w-full h-full flex flex-col bg-background select-text overflow-y-auto items-center p-8">
                 <div className="max-w-3xl w-full bg-card/40 border border-border rounded-2xl p-6 shadow-xl flex flex-col gap-6 items-center">
                   <div className="w-full flex items-center justify-between border-b border-border/80 pb-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-foreground">
+                    <div className="flex flex-col min-w-0 flex-1 pr-4">
+                      <span className="text-sm font-bold text-foreground break-words whitespace-normal">
                         {activeFilePath ? activeFilePath.split('/').pop() : ''}
                       </span>
-                      <span className="text-[0.7rem] text-muted-foreground mt-0.5">
+                      <span className="text-[0.7rem] text-muted-foreground mt-0.5 break-all whitespace-normal">
                         Path: {activeFilePath}
                       </span>
                     </div>
-                    <span className="text-[0.7rem] font-semibold bg-red-500/10 text-red-500 px-2 py-1 rounded-md border border-red-500/20">
+                    <span className="text-[0.7rem] font-semibold bg-red-500/10 text-red-500 px-2 py-1 rounded-md border border-red-500/20 shrink-0">
                       {(activeFile.size / (1024 * 1024)).toFixed(1)} MB (Too Large)
                     </span>
                   </div>
@@ -3982,11 +3982,11 @@ export default function App() {
               <div className="flex-1 w-full h-full flex flex-col bg-background select-text overflow-y-auto items-center p-8">
                 <div className="max-w-3xl w-full bg-card/40 border border-border rounded-2xl p-6 shadow-xl flex flex-col gap-6 items-center">
                   <div className="w-full flex items-center justify-between border-b border-border/80 pb-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-foreground">
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-sm font-bold text-foreground break-words">
                         {activeFilePath.split('/').pop()}
                       </span>
-                      <span className="text-[0.7rem] text-muted-foreground mt-0.5">
+                      <span className="text-[0.7rem] text-muted-foreground mt-0.5 break-all">
                         Path: {activeFilePath}
                       </span>
                     </div>
