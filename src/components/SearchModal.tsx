@@ -103,6 +103,15 @@ function HighlightMatch({
   );
 }
 
+interface SearchCanvasNode {
+  type?: string;
+  text?: string;
+  file?: string;
+}
+
+const splitLinesCache = new Map<string, { content: string; lines: string[] }>();
+const canvasNodesCache = new Map<string, { content: string; nodes: SearchCanvasNode[] }>();
+
 let hasAutoPrefetchedSession = false;
 
 export const SearchModal: React.FC<SearchModalProps> = ({
@@ -116,8 +125,18 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   prefetchProgress,
 }) => {
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 250);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [query]);
   const [filters, setFilters] = useState<SearchFilter[]>([]);
   const [isAddingFilter, setIsAddingFilter] = useState(false);
   const [filterProp, setFilterProp] = useState('file.name');
@@ -278,7 +297,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
 
   // Execute Search Matcher
   const searchResults = useMemo(() => {
-    const searchQuery = query.trim();
+    const searchQuery = debouncedQuery.trim();
     if (!searchQuery) return [];
 
     const results: {
@@ -287,6 +306,32 @@ export const SearchModal: React.FC<SearchModalProps> = ({
       contentMatches: { lineIndex: number; lineContent: string }[];
     }[] = [];
 
+    const getLinesForFile = (path: string, content: string): string[] => {
+      const cached = splitLinesCache.get(path);
+      if (cached && cached.content === content) {
+        return cached.lines;
+      }
+      const lines = content.split('\n');
+      splitLinesCache.set(path, { content, lines });
+      return lines;
+    };
+
+    const getCanvasNodesForFile = (path: string, content: string): SearchCanvasNode[] => {
+      const cached = canvasNodesCache.get(path);
+      if (cached && cached.content === content) {
+        return cached.nodes;
+      }
+      try {
+        const parsed = JSON.parse(content);
+        const nodes = parsed.nodes && Array.isArray(parsed.nodes) ? parsed.nodes : [];
+        canvasNodesCache.set(path, { content, nodes });
+        return nodes;
+      } catch {
+        canvasNodesCache.set(path, { content, nodes: [] });
+        return [];
+      }
+    };
+
     filteredFiles.forEach(file => {
       const nameMatch = checkMatch(file.name, searchQuery);
       const contentMatches: { lineIndex: number; lineContent: string }[] = [];
@@ -294,34 +339,23 @@ export const SearchModal: React.FC<SearchModalProps> = ({
 
       if (content !== undefined && (isTextFile(file.path) || file.path.endsWith('.canvas'))) {
         if (file.path.endsWith('.canvas')) {
-          try {
-            const parsed = JSON.parse(content) as { nodes?: { type?: string; text?: string; file?: string }[] };
-            if (parsed.nodes && Array.isArray(parsed.nodes)) {
-              parsed.nodes.forEach((node, idx: number) => {
-                if (node.text && typeof node.text === 'string' && checkMatch(node.text, searchQuery)) {
-                  contentMatches.push({
-                    lineIndex: idx,
-                    lineContent: `Card Text: ${node.text.trim()}`
-                  });
-                } else if (node.file && typeof node.file === 'string' && checkMatch(node.file, searchQuery)) {
-                  contentMatches.push({
-                    lineIndex: idx,
-                    lineContent: `Reference: ${node.file}`
-                  });
-                }
-              });
-            }
-          } catch {
-            if (checkMatch(content, searchQuery)) {
+          const nodes = getCanvasNodesForFile(file.path, content);
+          nodes.forEach((node, idx: number) => {
+            if (node.text && typeof node.text === 'string' && checkMatch(node.text, searchQuery)) {
               contentMatches.push({
-                lineIndex: 0,
-                lineContent: "Match found in canvas file"
+                lineIndex: idx,
+                lineContent: `Card Text: ${node.text.trim()}`
+              });
+            } else if (node.file && typeof node.file === 'string' && checkMatch(node.file, searchQuery)) {
+              contentMatches.push({
+                lineIndex: idx,
+                lineContent: `Reference: ${node.file}`
               });
             }
-          }
+          });
         } else {
           // regular text files
-          const lines = content.split('\n');
+          const lines = getLinesForFile(file.path, content);
           lines.forEach((line, idx) => {
             if (checkMatch(line, searchQuery)) {
               contentMatches.push({
@@ -343,7 +377,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
     });
 
     return results;
-  }, [filteredFiles, fileContents, query, checkMatch]);
+  }, [filteredFiles, fileContents, debouncedQuery, checkMatch]);
 
   if (!isOpen) return null;
 
@@ -609,6 +643,16 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               <div className="flex flex-col gap-1">
                 <span className="font-semibold text-foreground text-sm">Find Anything</span>
                 <span>Type to search filenames and note content instantly. Use filters to narrow down the vault scope.</span>
+              </div>
+            </div>
+          ) : debouncedQuery !== query ? (
+            <div className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground text-xs gap-3.5 my-auto">
+              <div className="w-12 h-12 bg-white/[0.02] border border-border/80 rounded-2xl flex items-center justify-center">
+                <RefreshCw className="w-5 h-5 text-primary animate-spin" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold text-foreground text-sm">Searching...</span>
+                <span>Resolving query matches in notes vault.</span>
               </div>
             </div>
           ) : searchResults.length === 0 ? (

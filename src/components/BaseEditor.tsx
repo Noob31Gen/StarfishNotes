@@ -341,6 +341,56 @@ const extractRawLinks = (content: string, path: string): Set<string> => {
   return targets;
 };
 
+const CellEditor: React.FC<{
+  initialValue: string;
+  uniqueValues: string[];
+  onSave: (val: string) => void;
+  onCancel: () => void;
+}> = ({ initialValue, uniqueValues, onSave, onCancel }) => {
+  const [val, setVal] = useState(initialValue);
+  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  if (uniqueValues.length > 0) {
+    return (
+      <select
+        ref={inputRef as React.RefObject<HTMLSelectElement>}
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={() => onSave(val)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSave(val);
+          if (e.key === 'Escape') onCancel();
+        }}
+        className="w-full bg-[#12131a] border border-primary/50 text-foreground px-2 py-0.5 rounded-md text-xs focus:outline-none"
+      >
+        <option value="">-- select or type below --</option>
+        {uniqueValues.map(v => (
+          <option key={v} value={v}>{v}</option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef as React.RefObject<HTMLInputElement>}
+      type="text"
+      value={val}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={() => onSave(val)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onSave(val);
+        if (e.key === 'Escape') onCancel();
+      }}
+      className="w-full bg-[#12131a] border border-primary/50 text-foreground px-2 py-0.5 rounded-md text-xs focus:outline-none"
+    />
+  );
+};
+
 export const BaseEditor: React.FC<BaseEditorProps> = ({
   filePath,
   initialContent,
@@ -699,14 +749,6 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 
   // Cells inline-edit state
   const [editingCell, setEditingCell] = useState<{ rowPath: string; colKey: string } | null>(null);
-  const [editingValue, setEditingValue] = useState('');
-  const editInputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
-
-  useEffect(() => {
-    if (editingCell && editInputRef.current) {
-      editInputRef.current.focus();
-    }
-  }, [editingCell]);
 
   // Gather existing unique values for a column to populate select dropdowns
   const getUniqueColumnValues = (colKey: string) => {
@@ -1398,6 +1440,22 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                             );
                           }
 
+                          if (isEditing) {
+                            return (
+                              <td 
+                                key={colKey}
+                                className="px-4 py-2 text-xs text-foreground/80 truncate max-w-xs cursor-pointer"
+                              >
+                                <CellEditor
+                                  initialValue={cellVal === undefined || cellVal === null ? '' : formatCellVal(cellVal)}
+                                  uniqueValues={getUniqueColumnValues(colKey)}
+                                  onSave={(newVal) => handleCellSave(row.path, colKey, newVal)}
+                                  onCancel={() => setEditingCell(null)}
+                                />
+                              </td>
+                            );
+                          }
+
                           return (
                             <td 
                               key={colKey}
@@ -1408,64 +1466,19 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
                                   'file full name', 'file links', 'file path', 'file size', 'file tags',
                                   'formula'
                                 ].includes(colKey);
-                                if (!isEditing && !isReadOnly && colKey !== 'file.name') {
+                                if (!isReadOnly && colKey !== 'file.name') {
                                   setEditingCell({ rowPath: row.path, colKey });
-                                  setEditingValue(cellVal === undefined || cellVal === null ? '' : formatCellVal(cellVal));
                                 }
                               }}
                               className="px-4 py-2 text-xs text-foreground/80 truncate max-w-xs cursor-pointer hover:bg-white/[0.015]"
                               title={cellVal !== undefined && cellVal !== null && cellVal !== '' ? formatCellVal(cellVal) : ''}
                             >
-                              {isEditing ? (
-                                <div className="flex items-center gap-1.5">
-                                  {/* Smart select dropdown if unique values already exist, otherwise text input */}
-                                  {getUniqueColumnValues(colKey).length > 0 ? (
-                                    <select
-                                      ref={(el) => {
-                                        editInputRef.current = el;
-                                      }}
-                                      value={editingValue}
-                                      onChange={(e) => setEditingValue(e.target.value)}
-                                      onBlur={() => handleCellSave(row.path, colKey, editingValue)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleCellSave(row.path, colKey, editingValue);
-                                        if (e.key === 'Escape') setEditingCell(null);
-                                      }}
-                                      className="w-full bg-[#12131a] border border-primary/50 text-foreground px-2 py-0.5 rounded-md text-xs focus:outline-none"
-                                    >
-                                      <option value="">-- select or type below --</option>
-                                      {getUniqueColumnValues(colKey).map(val => (
-                                        <option key={val} value={val}>{val}</option>
-                                      ))}
-                                    </select>
-                                  ) : null}
-                                  
-                                  {/* Text input for direct entry */}
-                                  {getUniqueColumnValues(colKey).length === 0 || editingValue === '' ? (
-                                    <input
-                                      ref={(el) => {
-                                        editInputRef.current = el;
-                                      }}
-                                      type="text"
-                                      value={editingValue}
-                                      onChange={(e) => setEditingValue(e.target.value)}
-                                      onBlur={() => handleCellSave(row.path, colKey, editingValue)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleCellSave(row.path, colKey, editingValue);
-                                        if (e.key === 'Escape') setEditingCell(null);
-                                      }}
-                                      className="w-full bg-[#12131a] border border-primary/50 text-foreground px-2 py-0.5 rounded-md text-xs focus:outline-none"
-                                    />
-                                  ) : null}
-                                </div>
-                              ) : (
-                                <span className={cn(
-                                  "truncate select-all",
-                                  (!cellVal || cellVal === '') && "text-muted-foreground/35 italic"
-                                )}>
-                                  {cellVal !== undefined && cellVal !== null && cellVal !== '' ? formatCellVal(cellVal) : 'empty'}
-                                </span>
-                              )}
+                              <span className={cn(
+                                "truncate select-all",
+                                (!cellVal || cellVal === '') && "text-muted-foreground/35 italic"
+                              )}>
+                                {cellVal !== undefined && cellVal !== null && cellVal !== '' ? formatCellVal(cellVal) : 'empty'}
+                              </span>
                             </td>
                           );
                         })}

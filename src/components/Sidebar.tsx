@@ -40,17 +40,6 @@ interface FolderTreeItemProps {
   isFolderInActiveFilePath: (folderPath: string) => boolean;
 }
 
-// Helper function to count all files (including nested subfolders)
-const countAllFiles = (children: (TreeFolder | TreeFile)[]): number => {
-  return children.reduce((total, child) => {
-    if (child.type === 'file') {
-      return total + 1;
-    } else {
-      return total + countAllFiles(child.children);
-    }
-  }, 0);
-};
-
 const FolderTreeItemComponent: React.FC<FolderTreeItemProps> = ({
   node,
   activeFilePath,
@@ -80,11 +69,7 @@ const FolderTreeItemComponent: React.FC<FolderTreeItemProps> = ({
   highlightColor,
   isFolderInActiveFilePath,
 }) => {
-  // fileCount is 0 for files, computed for folders (hook must be called unconditionally)
-  const fileCount = useMemo(() => {
-    if (node.type === 'file') return 0;
-    return countAllFiles((node as TreeFolder).children);
-  }, [node]);
+  const fileCount = node.type === 'folder' ? (node as TreeFolder).fileCount : 0;
 
   if (node.type === 'file') {
     const isActive = node.path === activeFilePath;

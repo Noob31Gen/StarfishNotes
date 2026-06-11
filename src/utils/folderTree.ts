@@ -5,6 +5,7 @@ export interface TreeFolder {
   name: string;
   path: string;
   children: (TreeFolder | TreeFile)[];
+  fileCount: number;
 }
 
 export interface TreeFile {
@@ -35,7 +36,8 @@ export function buildFolderTree(files: VaultFile[]): (TreeFolder | TreeFile)[] {
           type: 'folder',
           name: part,
           path: currentPath,
-          children: []
+          children: [],
+          fileCount: 0
         };
         currentChildren.push(folder);
       }
@@ -69,6 +71,20 @@ export function buildFolderTree(files: VaultFile[]): (TreeFolder | TreeFile)[] {
     }
   };
 
+  const computeFileCounts = (nodes: (TreeFolder | TreeFile)[]): number => {
+    let count = 0;
+    for (const node of nodes) {
+      if (node.type === 'file') {
+        count += 1;
+      } else {
+        node.fileCount = computeFileCounts(node.children);
+        count += node.fileCount;
+      }
+    }
+    return count;
+  };
+
+  computeFileCounts(root);
   recursiveSort(root);
   return root;
 }

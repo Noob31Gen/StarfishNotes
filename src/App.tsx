@@ -3436,7 +3436,10 @@ export default function App() {
   ), [files, searchTerm]);
 
   // Memoized folder tree to prevent rebuilding on every render
-  const folderTree = useMemo(() => buildFolderTree(files), [files]);
+  const folderTree = useMemo(() => {
+    if (!folderOpState.pendingMoveCopyFolder) return [];
+    return buildFolderTree(files);
+  }, [files, folderOpState.pendingMoveCopyFolder]);
 
   // Memoized unique folders array for relocation modals
   const uniqueFolders = useMemo(() => {

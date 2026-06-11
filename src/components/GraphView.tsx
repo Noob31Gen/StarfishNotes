@@ -135,6 +135,27 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     // Filter out internal system files (.gitkeep and .vault-compat.json)
     const graphFiles = files.filter(f => f.name !== '.gitkeep' && f.name !== '.vault-compat.json');
 
+    const pathToSchemaFile = new Map<string, typeof graphFiles[0]>();
+    const nameToSchemaFile = new Map<string, typeof graphFiles[0]>();
+    const suffixToSchemaFile = new Map<string, typeof graphFiles[0]>();
+
+    graphFiles.forEach(f => {
+      const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
+      const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
+      
+      pathToSchemaFile.set(cleanPath, f);
+      if (!nameToSchemaFile.has(cleanName)) {
+        nameToSchemaFile.set(cleanName, f);
+      }
+      const segments = cleanPath.split('/');
+      for (let i = 1; i < segments.length; i++) {
+        const suffix = '/' + segments.slice(i).join('/');
+        if (!suffixToSchemaFile.has(suffix)) {
+          suffixToSchemaFile.set(suffix, f);
+        }
+      }
+    });
+
     // 1. Scan for Links & compile Ghost Notes
     const currentLinks: Link[] = [];
     const ghostNotesMap = new Map<string, { id: string; name: string }>();
@@ -156,18 +177,11 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
 
           const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
 
-          // Match against name OR full path
-          const targetFile = graphFiles.find(f => {
-            const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
-            const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
-
-            // Standard Obsidian matching rules:
-            // 1. Matches exact filename (e.g. "1 - IMPORTED FROM KEEP")
-            // 2. Matches exact full path (e.g. "+base-planes/1 - imported from keep")
-            // 3. Matches relative/nested subfolder matches (e.g. ends with "/1 - imported from keep")
-            // 4. Matches filename only fallback if folder was specified
-            return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget) || cleanName === targetFilename;
-          });
+          // Match against pre-computed maps in O(1)
+          let targetFile = pathToSchemaFile.get(cleanTarget) || nameToSchemaFile.get(cleanTarget);
+          if (!targetFile) {
+            targetFile = suffixToSchemaFile.get('/' + cleanTarget) || nameToSchemaFile.get(targetFilename);
+          }
 
           if (targetFile) {
             if (targetFile.path !== file.path) {
@@ -269,14 +283,12 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
               if (node.type === 'file' && node.file) {
                 let cleanTarget = node.file.replace(/\\/g, '/').replace(/^\.?\//, '').trim().toLowerCase();
                 cleanTarget = cleanTarget.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '');
-
                 const targetFilename = cleanTarget.includes('/') ? cleanTarget.split('/').pop()! : cleanTarget;
 
-                const targetFile = graphFiles.find(f => {
-                  const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
-                  const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
-                  return cleanName === cleanTarget || cleanPath === cleanTarget || cleanPath.endsWith('/' + cleanTarget) || cleanName === targetFilename;
-                });
+                let targetFile = pathToSchemaFile.get(cleanTarget) || nameToSchemaFile.get(cleanTarget);
+                if (!targetFile) {
+                  targetFile = suffixToSchemaFile.get('/' + cleanTarget) || nameToSchemaFile.get(targetFilename);
+                }
 
                 if (targetFile) {
                   currentLinks.push({
@@ -423,10 +435,10 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
       const links = linksRef.current;
 
       const repulsionStrength = repulsionRef.current;
-      const springStrength = 0.030;
+      const springStrength = 0.022;
       const springLength = springLengthRef.current;
       const gravity = gravityRef.current * 0.08;
-      const friction = 0.8;
+      const friction = 0.7;
       const alpha = alphaRef.current;
 
       // 1. Center of Gravity
@@ -443,7 +455,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
         const gx = Math.floor(node.x / gridCellSize);
         const gy = Math.floor(node.y / gridCellSize);
         const key = `${gx},${gy}`;
-        
+
         let bucket = grid.get(key);
         if (!bucket) {
           bucket = [];
@@ -469,7 +481,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
 
             for (let j = 0; j < bucket.length; j++) {
               const n2 = bucket[j];
-              
+
               // Only compute each pair once (avoid double calculation)
               if (n1.id >= n2.id) continue;
               if (n2 === dragNodeRef.current) continue;
