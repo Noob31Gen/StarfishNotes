@@ -2332,7 +2332,8 @@ export default function App() {
     try {
       const result = await commitFileContent(githubToken, repoName, branchName, path, content, fileSha);
 
-      // Update in-memory file structure
+      // Successful API call proves network is back — dismiss offline banner
+      setIsNetworkOffline(false);
       setFileContents(prev => ({
         ...prev,
         [path]: content,
@@ -2512,6 +2513,8 @@ export default function App() {
       try {
         const result = await commitFileContent(githubToken, repoName, branchName, finalPath, initialText, null, `create ${finalPath} note`);
         resultSha = result.sha;
+        // Successful API call proves network is back — dismiss offline banner
+        setIsNetworkOffline(false);
         // Also save to local cache for offline access
         await saveLocalFile(finalPath, { content: initialText, sha: resultSha });
         triggerGitHubIndexingNotice();
