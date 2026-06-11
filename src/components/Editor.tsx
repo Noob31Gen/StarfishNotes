@@ -761,23 +761,28 @@ const EditorComponent: React.FC<EditorProps> = ({
     setSha(initialSha);
     // Only update active content if the change is external (does not match what we last saved/have in memory)
     if (initialContent !== savedContent) {
-      const newIsWindowing = initialContent.length > 50000;
-      if (newIsWindowing) {
-        const vLines = splitLongLines(initialContent);
-        setVirtualLines(vLines);
-        const start = 0;
-        const end = Math.min(300, vLines.length);
-        setWindowStartLine(start);
-        setWindowEndLine(end);
-        const chunkText = vLines.slice(start, end).join('\n');
-        setContent(chunkText);
-        setFullContent(initialContent);
+      const isDirty = isWindowingMode ? (fullContent !== savedContent) : (content !== savedContent);
+      if (isDirty) {
+        setSavedContent(initialContent);
       } else {
-        setVirtualLines([]);
-        setContent(initialContent);
-        setFullContent(initialContent);
+        const newIsWindowing = initialContent.length > 50000;
+        if (newIsWindowing) {
+          const vLines = splitLongLines(initialContent);
+          setVirtualLines(vLines);
+          const start = 0;
+          const end = Math.min(300, vLines.length);
+          setWindowStartLine(start);
+          setWindowEndLine(end);
+          const chunkText = vLines.slice(start, end).join('\n');
+          setContent(chunkText);
+          setFullContent(initialContent);
+        } else {
+          setVirtualLines([]);
+          setContent(initialContent);
+          setFullContent(initialContent);
+        }
+        setSavedContent(initialContent);
       }
-      setSavedContent(initialContent);
     }
   }
 

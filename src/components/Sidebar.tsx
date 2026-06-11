@@ -732,7 +732,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({
           <div className="mx-5 mt-4 p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-200/90 text-[0.7rem] flex items-start gap-2 select-none animate-fade-in shrink-0">
             <RefreshCw className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5 animate-spin" />
             <span className="font-semibold leading-relaxed">
-              GitHub is indexing changes. Sidebar files may temporarily revert or flicker until the remote index updates.
+              GitHub is indexing changes. Sidebar files may temporarily revert or flicker until the remote index updates. If the change doesn't reflect, hit the refresh button.
             </span>
           </div>
         )}

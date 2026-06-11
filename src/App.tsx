@@ -352,6 +352,7 @@ export default function App() {
       }
     };
   }, []);
+  const optimisticOperationsRef = useRef<Map<string, { type: 'create' | 'delete', file?: VaultFile, timestamp: number }>>(new Map());
 
   const [pendingRenameFile, setPendingRenameFile] = useState<{ path: string, name: string, sha: string } | null>(null);
   const [renameInputValue, setRenameInputValue] = useState('');
@@ -1024,6 +1025,26 @@ export default function App() {
     try {
       let tree = await fetchRepositoryTree(token, repo, branch);
       setIsNetworkOffline(false);
+
+      // Apply optimistic operations to handle GitHub indexing API lag
+      const now = Date.now();
+      for (const [path, op] of optimisticOperationsRef.current.entries()) {
+        if (now - op.timestamp > 10000) {
+          optimisticOperationsRef.current.delete(path);
+        }
+      }
+
+      const treeMap = new Map(tree.map(f => [f.path, f]));
+      for (const [path, op] of optimisticOperationsRef.current.entries()) {
+        if (op.type === 'delete') {
+          treeMap.delete(path);
+        } else if (op.type === 'create' && op.file) {
+          if (!treeMap.has(path)) {
+            treeMap.set(path, op.file);
+          }
+        }
+      }
+      tree = Array.from(treeMap.values());
 
       // Check and push unsynced files first, while detecting parallel edits conflicts
       const unsynced = getUnsyncedFiles();
@@ -2602,6 +2623,8 @@ export default function App() {
     try {
       await deleteFile(githubToken, repoName, branchName, path, sha);
       triggerGitHubIndexingNotice();
+      await deleteLocalFile(path);
+      optimisticOperationsRef.current.set(path, { type: 'delete', timestamp: Date.now() });
 
       const gitkeepFile = await ensureGitkeepForEmptyParent(path, files);
       setFiles(prev => {
@@ -2710,6 +2733,8 @@ export default function App() {
         sha = result.sha;
         await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
         triggerGitHubIndexingNotice();
+        await saveLocalFile(newPath, { content, sha });
+        await deleteLocalFile(oldPath);
       }
 
       // 4. Update states
@@ -2719,6 +2744,9 @@ export default function App() {
         type: 'blob',
         sha,
       };
+
+      optimisticOperationsRef.current.set(newPath, { type: 'create', file: newFile, timestamp: Date.now() });
+      optimisticOperationsRef.current.set(oldPath, { type: 'delete', timestamp: Date.now() });
 
       setFiles(prev => [newFile, ...prev.filter(f => f.path !== oldPath)]);
       setFileContents(prev => {
@@ -2828,6 +2856,7 @@ export default function App() {
         const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
         sha = result.sha;
         triggerGitHubIndexingNotice();
+        await saveLocalFile(newPath, { content, sha });
       }
 
       const newFile: VaultFile = {
@@ -2836,6 +2865,8 @@ export default function App() {
         type: 'blob',
         sha
       };
+
+      optimisticOperationsRef.current.set(newPath, { type: 'create', file: newFile, timestamp: Date.now() });
 
       setFiles(prev => [newFile, ...prev]);
       setFileContents(prev => ({
@@ -2907,6 +2938,8 @@ export default function App() {
         sha = result.sha;
         await deleteFile(githubToken, repoName, branchName, oldPath, oldSha);
         triggerGitHubIndexingNotice();
+        await saveLocalFile(newPath, { content, sha });
+        await deleteLocalFile(oldPath);
       }
 
       let gitkeepFile: VaultFile | null = null;
@@ -2922,6 +2955,9 @@ export default function App() {
         type: 'blob',
         sha
       };
+
+      optimisticOperationsRef.current.set(newPath, { type: 'create', file: newFile, timestamp: Date.now() });
+      optimisticOperationsRef.current.set(oldPath, { type: 'delete', timestamp: Date.now() });
 
       setFiles(prev => {
         const filtered = prev.filter(f => f.path !== oldPath);
@@ -2997,8 +3033,19 @@ export default function App() {
           await offlineStorage.deleteFile(file.path);
         } else {
           const commitMessage = `rename folder "${oldFolderPath}" to "${newFolderPath}" via Starfish Notes`;
-          await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+          const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
           await deleteFile(githubToken, repoName, branchName, file.path, file.sha);
+          await saveLocalFile(newPath, { content, sha: result.sha });
+          await deleteLocalFile(file.path);
+
+          const optFile: VaultFile = {
+            path: newPath,
+            name: newPath.split('/').pop() || '',
+            type: 'blob',
+            sha: result.sha
+          };
+          optimisticOperationsRef.current.set(newPath, { type: 'create', file: optFile, timestamp: Date.now() });
+          optimisticOperationsRef.current.set(file.path, { type: 'delete', timestamp: Date.now() });
         }
       }
 
@@ -3090,8 +3137,19 @@ export default function App() {
           await offlineStorage.deleteFile(file.path);
         } else {
           const commitMessage = `move folder "${oldFolderPath}" to "${finalNewPath}" via Starfish Notes`;
-          await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+          const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
           await deleteFile(githubToken, repoName, branchName, file.path, file.sha);
+          await saveLocalFile(newPath, { content, sha: result.sha });
+          await deleteLocalFile(file.path);
+
+          const optFile: VaultFile = {
+            path: newPath,
+            name: newPath.split('/').pop() || '',
+            type: 'blob',
+            sha: result.sha
+          };
+          optimisticOperationsRef.current.set(newPath, { type: 'create', file: optFile, timestamp: Date.now() });
+          optimisticOperationsRef.current.set(file.path, { type: 'delete', timestamp: Date.now() });
         }
       }
 
@@ -3175,7 +3233,16 @@ export default function App() {
           });
         } else {
           const commitMessage = `copy folder "${sourceFolderPath}" to "${finalDestPath}" via Starfish Notes`;
-          await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+          const result = await commitFileContent(githubToken, repoName, branchName, newPath, content, null, commitMessage);
+          await saveLocalFile(newPath, { content, sha: result.sha });
+
+          const optFile: VaultFile = {
+            path: newPath,
+            name: newPath.split('/').pop() || '',
+            type: 'blob',
+            sha: result.sha
+          };
+          optimisticOperationsRef.current.set(newPath, { type: 'create', file: optFile, timestamp: Date.now() });
         }
 
         // Add to file contents cache
@@ -3209,6 +3276,8 @@ export default function App() {
           await offlineStorage.deleteFile(file.path);
         } else {
           await deleteFile(githubToken, repoName, branchName, file.path, file.sha);
+          await deleteLocalFile(file.path);
+          optimisticOperationsRef.current.set(file.path, { type: 'delete', timestamp: Date.now() });
         }
       }
 
@@ -3340,6 +3409,9 @@ export default function App() {
                     type: 'blob',
                     sha: result.sha,
                   };
+                  saveLocalFile(activeFilePath, { content: initialText, sha: result.sha }).catch(console.error);
+                  optimisticOperationsRef.current.set(activeFilePath, { type: 'create', file: newFile, timestamp: Date.now() });
+
                   setFiles(prev => [newFile, ...prev]);
                   setFileContents(prev => ({ ...prev, [activeFilePath]: initialText }));
                   setIsLoadingFile(false);

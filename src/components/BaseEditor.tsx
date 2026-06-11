@@ -358,6 +358,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<'table' | 'yaml'>('table');
   const [yamlContent, setYamlContent] = useState(initialContent);
+  const [savedContent, setSavedContent] = useState(initialContent);
   const [sha, setSha] = useState<string | null>(initialSha);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -373,6 +374,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     setPrevFilePath(filePath);
     setPrevInitialContent(initialContent);
     setYamlContent(initialContent);
+    setSavedContent(initialContent);
     setSha(initialSha);
     setConfig(parseBaseConfig(initialContent));
     setSaveStatus('idle');
@@ -380,10 +382,15 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
   } else if (initialContent !== prevInitialContent) {
     setPrevInitialContent(initialContent);
     setSha(initialSha);
-    // Only update active content if the change is external (does not match what we last saved/have in memory)
-    if (initialContent !== yamlContent) {
-      setYamlContent(initialContent);
-      setConfig(parseBaseConfig(initialContent));
+    if (initialContent !== savedContent) {
+      const isDirty = yamlContent !== savedContent;
+      if (isDirty) {
+        setSavedContent(initialContent);
+      } else {
+        setYamlContent(initialContent);
+        setConfig(parseBaseConfig(initialContent));
+        setSavedContent(initialContent);
+      }
     }
   }
 
@@ -486,6 +493,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
     try {
       const result = await onSave(newYaml, sha);
       setSha(result.sha);
+      setSavedContent(newYaml);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (e) {
@@ -507,6 +515,7 @@ export const BaseEditor: React.FC<BaseEditorProps> = ({
       setConfig(parsed);
       const result = await onSave(yamlContent, sha);
       setSha(result.sha);
+      setSavedContent(yamlContent);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (e) {

@@ -543,29 +543,35 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     setSha(initialSha);
     if (initialContent !== savedContent) {
       setSavedContent(initialContent);
-      try {
-        if (initialContent.trim()) {
-          const parsed = safeParseJson<CanvasData>(initialContent, { nodes: [], edges: [] });
-          const incomingNodes = parsed.nodes || [];
-          const incomingEdges = parsed.edges || [];
-          const nodesChanged = JSON.stringify(incomingNodes) !== JSON.stringify(nodes);
-          const edgesChanged = JSON.stringify(incomingEdges) !== JSON.stringify(edges);
+      
+      const currentSerialized = JSON.stringify({ nodes, edges });
+      const isDirty = currentSerialized !== savedContent;
+      
+      if (!isDirty) {
+        try {
+          if (initialContent.trim()) {
+            const parsed = safeParseJson<CanvasData>(initialContent, { nodes: [], edges: [] });
+            const incomingNodes = parsed.nodes || [];
+            const incomingEdges = parsed.edges || [];
+            const nodesChanged = JSON.stringify(incomingNodes) !== JSON.stringify(nodes);
+            const edgesChanged = JSON.stringify(incomingEdges) !== JSON.stringify(edges);
 
-          if (nodesChanged) setNodes(incomingNodes);
-          if (edgesChanged) setEdges(incomingEdges);
+            if (nodesChanged) setNodes(incomingNodes);
+            if (edgesChanged) setEdges(incomingEdges);
 
-          setSaveStatus('idle');
-          setSelectedNodeId(null);
-        } else {
+            setSaveStatus('idle');
+            setSelectedNodeId(null);
+          } else {
+            if (nodes.length > 0 || edges.length > 0) {
+              setNodes([]);
+              setEdges([]);
+            }
+          }
+        } catch {
           if (nodes.length > 0 || edges.length > 0) {
             setNodes([]);
             setEdges([]);
           }
-        }
-      } catch {
-        if (nodes.length > 0 || edges.length > 0) {
-          setNodes([]);
-          setEdges([]);
         }
       }
     }
