@@ -433,30 +433,64 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
 
-      // 2. Node Repulsion (All nodes push each other away)
+      // 2. Node Repulsion (Optimized with Spatial Grid Partitioning)
+      const gridCellSize = 250;
+      const grid = new Map<string, Node[]>();
+
+      // Populate spatial grid
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const gx = Math.floor(node.x / gridCellSize);
+        const gy = Math.floor(node.y / gridCellSize);
+        const key = `${gx},${gy}`;
+        
+        let bucket = grid.get(key);
+        if (!bucket) {
+          bucket = [];
+          grid.set(key, bucket);
+        }
+        bucket.push(node);
+      }
+
+      // Compute repulsion forces by checking 3x3 neighboring cells
       for (let i = 0; i < nodes.length; i++) {
         const n1 = nodes[i];
-        if (n1 === dragNodeRef.current) continue; // Don't apply physics to dragged node
+        if (n1 === dragNodeRef.current) continue;
 
-        for (let j = i + 1; j < nodes.length; j++) {
-          const n2 = nodes[j];
-          const dx = n2.x - n1.x;
-          const dy = n2.y - n1.y;
-          const distSqr = dx * dx + dy * dy || 1;
+        const gx = Math.floor(n1.x / gridCellSize);
+        const gy = Math.floor(n1.y / gridCellSize);
 
-          // Fast-path exit: Skip computing square root / forces for nodes farther than 250px (250^2 = 62500)
-          if (distSqr > 62500) continue;
+        // Check 3x3 surrounding cells
+        for (let dxCell = -1; dxCell <= 1; dxCell++) {
+          for (let dyCell = -1; dyCell <= 1; dyCell++) {
+            const neighborKey = `${gx + dxCell},${gy + dyCell}`;
+            const bucket = grid.get(neighborKey);
+            if (!bucket) continue;
 
-          const dist = Math.sqrt(distSqr);
-          // Stronger force at closer distance
-          const force = (repulsionStrength / distSqr) * 15 * alpha;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
+            for (let j = 0; j < bucket.length; j++) {
+              const n2 = bucket[j];
+              
+              // Only compute each pair once (avoid double calculation)
+              if (n1.id >= n2.id) continue;
+              if (n2 === dragNodeRef.current) continue;
 
-          n1.vx -= fx;
-          n1.vy -= fy;
-          n2.vx += fx;
-          n2.vy += fy;
+              const dx = n2.x - n1.x;
+              const dy = n2.y - n1.y;
+              const distSqr = dx * dx + dy * dy || 1;
+
+              if (distSqr > 62500) continue; // 250^2 = 62500
+
+              const dist = Math.sqrt(distSqr);
+              const force = (repulsionStrength / distSqr) * 15 * alpha;
+              const fx = (dx / dist) * force;
+              const fy = (dy / dist) * force;
+
+              n1.vx -= fx;
+              n1.vy -= fy;
+              n2.vx += fx;
+              n2.vy += fy;
+            }
+          }
         }
 
         // Pull to center

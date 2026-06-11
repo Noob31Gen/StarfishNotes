@@ -212,6 +212,68 @@ const EditorComponent: React.FC<EditorProps> = ({
   const pendingCursorRef = useRef<{ start: number; end: number } | null>(null);
   const isSavingRef = useRef(false);
 
+  const activeCsvEditRef = useRef<{ row: number; col: number; val: string } | null>(null);
+  const csvDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isEditingFromPreviewRef = useRef(false);
+
+  const markdownCacheRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    markdownCacheRef.current.clear();
+  }, [vaultImages]);
+
+  const commitCsvChanges = useCallback(() => {
+    if (csvDebounceTimerRef.current) {
+      clearTimeout(csvDebounceTimerRef.current);
+      csvDebounceTimerRef.current = null;
+    }
+    if (!activeCsvEditRef.current) return;
+    const { row, col, val } = activeCsvEditRef.current;
+    activeCsvEditRef.current = null;
+
+    const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+    const delimiter = ext === '.csv' ? ',' : '\t';
+    const rows = parseCSV(fullContentRef.current, delimiter);
+
+    while (rows.length <= row) {
+      rows.push([]);
+    }
+    const maxCols = Math.max(...rows.map(r => r.length), 1);
+    rows.forEach(r => {
+      while (r.length < maxCols) {
+        r.push('');
+      }
+    });
+
+    if (rows[row][col] === val) return;
+
+    rows[row][col] = val;
+    const newContent = stringifyCSV(rows, delimiter);
+    isEditingFromPreviewRef.current = true;
+    if (isWindowingMode) {
+      const vLines = splitLongLines(newContent);
+      virtualLinesRef.current = vLines;
+      const start = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
+      const end = Math.min(start + 300, vLines.length);
+      setWindowStartLine(start);
+      setWindowEndLine(end);
+      setContent(vLines.slice(start, end).join('\n'));
+      setFullContent(newContent);
+      fullContentRef.current = newContent;
+    } else {
+      setContent(newContent);
+      setFullContent(newContent);
+      fullContentRef.current = newContent;
+    }
+  }, [filePath, isWindowingMode, windowStartLine]);
+
+  useEffect(() => {
+    return () => {
+      if (csvDebounceTimerRef.current) {
+        clearTimeout(csvDebounceTimerRef.current);
+      }
+    };
+  }, []);
+
   const getGlobalIndex = useCallback((localIndex: number, startLine: number) => {
     let globalIndex = 0;
     const vLines = virtualLinesRef.current;
@@ -512,6 +574,11 @@ const EditorComponent: React.FC<EditorProps> = ({
 
   // Custom renderer or post-processor for graphviewlinks [[Note Name]] and vault images
   const renderMarkdown = useCallback((text: string, startLineOffset: number = 0): string => {
+    const cacheKey = `${text}::${startLineOffset}`;
+    const cachedResult = markdownCacheRef.current.get(cacheKey);
+    if (cachedResult !== undefined) {
+      return cachedResult;
+    }
     try {
       const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
       let html = '';
@@ -617,7 +684,7 @@ const EditorComponent: React.FC<EditorProps> = ({
           } else if (srcExt === '.pdf') {
             const cached = vaultImages[cleanSrc] || Object.entries(vaultImages).find(([k]) => k.endsWith(cleanSrc))?.[1];
             const filename = cleanSrc.split('/').pop() || cleanSrc;
-            const pdfUrl = cached || srcClean;
+            const pdfUrl = cached || cleanSrc;
             return `
               <div class="pdf-embed-card border border-border bg-card/30 rounded-xl p-4 my-4 flex flex-col sm:flex-row items-center gap-4 max-w-xl mx-auto shadow-sm animate-fade-in" data-attachment="${cleanSrc}">
                 <div class="w-12 h-12 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center shrink-0 border border-red-500/20">
@@ -669,12 +736,15 @@ const EditorComponent: React.FC<EditorProps> = ({
       }
 
       // 5. Bulletproof sanitize through DOMPurify to eliminate any script injection vectors
-      return DOMPurify.sanitize(html, {
+      const sanitizedResult = DOMPurify.sanitize(html, {
         USE_PROFILES: { html: true, mathMl: true, svg: true },
         ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'contenteditable', 'data-row', 'data-col', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border', 'sandbox'],
         ADD_TAGS: ['iframe', 'svg', 'line'],
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|blob):|[^&:/?#]*(?:[/?#]|$))/i
       });
+
+      markdownCacheRef.current.set(cacheKey, sanitizedResult);
+      return sanitizedResult;
     } catch {
       return `<p class="text-destructive font-medium">Error parsing content.</p>`;
     }
@@ -713,7 +783,6 @@ const EditorComponent: React.FC<EditorProps> = ({
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
-  const isEditingFromPreviewRef = useRef(false);
   const hasRestoredRef = useRef(false);
 
   // Track original content to see if there are unsaved changes
@@ -1494,39 +1563,21 @@ const EditorComponent: React.FC<EditorProps> = ({
       const colIdx = parseInt(target.getAttribute('data-col') || '0', 10);
       const newVal = target.innerText;
 
-      const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
-      const delimiter = ext === '.csv' ? ',' : '\t';
-      const rows = parseCSV(fullContent, delimiter);
+      activeCsvEditRef.current = { row: rowIdx, col: colIdx, val: newVal };
 
-      // Make sure row/col exists in our array
-      while (rows.length <= rowIdx) {
-        rows.push([]);
+      if (csvDebounceTimerRef.current) {
+        clearTimeout(csvDebounceTimerRef.current);
       }
-      const maxCols = Math.max(...rows.map(r => r.length), 1);
-      rows.forEach(r => {
-        while (r.length < maxCols) {
-          r.push('');
-        }
-      });
-      rows[rowIdx][colIdx] = newVal;
+      csvDebounceTimerRef.current = setTimeout(() => {
+        commitCsvChanges();
+      }, 1000); // 1 second debounce
+    }
+  };
 
-      const newContent = stringifyCSV(rows, delimiter);
-      isEditingFromPreviewRef.current = true;
-      if (isWindowingMode) {
-        const vLines = splitLongLines(newContent);
-        virtualLinesRef.current = vLines;
-        const start = Math.min(windowStartLine, Math.max(0, vLines.length - 300));
-        const end = Math.min(start + 300, vLines.length);
-        setWindowStartLine(start);
-        setWindowEndLine(end);
-        setContent(vLines.slice(start, end).join('\n'));
-        setFullContent(newContent);
-        fullContentRef.current = newContent;
-      } else {
-        setContent(newContent);
-        setFullContent(newContent);
-        fullContentRef.current = newContent;
-      }
+  const handlePreviewBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'TD' && target.hasAttribute('data-row') && target.hasAttribute('data-col')) {
+      commitCsvChanges();
     }
   };
 
@@ -1809,7 +1860,8 @@ const EditorComponent: React.FC<EditorProps> = ({
             ref={previewScrollContainerRef}
             className="flex-1 p-6 pb-32 sm:p-8 sm:pb-32 overflow-y-auto bg-background"
             onClick={handlePreviewClick}
-            onBlur={handlePreviewInput}
+            onInput={handlePreviewInput}
+            onBlur={handlePreviewBlur}
           >
             <div
               ref={previewContainerRef}

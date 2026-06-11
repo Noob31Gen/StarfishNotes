@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Plus, Minus, Trash2, FileText, Type, Save, RefreshCw, Link2, ChevronDown, Compass, Eye, Edit2, Undo2, Redo2, Image, Paperclip, Search } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { safeParseJson } from '../utils/json';
@@ -50,6 +50,8 @@ function generateEdgeId(): string {
   return `edge_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 }
 
+const canvasMarkdownCache = new Map<string, string>();
+
 const CanvasViewComponent: React.FC<CanvasViewProps> = ({
   filePath: _filePath,
   initialContent,
@@ -65,6 +67,10 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
   onUploadAttachment,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    canvasMarkdownCache.clear();
+  }, [vaultImages]);
 
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
@@ -332,6 +338,10 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
   }, [nodes, fileContents, files, vaultImages, onFetchBinaryFile]);
 
   const renderCanvasMarkdown = useCallback((text: string): string => {
+    const cachedResult = canvasMarkdownCache.get(text);
+    if (cachedResult !== undefined) {
+      return cachedResult;
+    }
     try {
       // 1. Parse Wiki-links and wiki-embeds (render binary/pdf/images as image tags for subsequent resolving)
       const wikiRegex = /(!)?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
@@ -473,12 +483,15 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
         return `<a class="graphview-link" data-note="${targetClean}" title="Open note: ${targetClean}">${displayLabel}</a>`;
       });
 
-      return DOMPurify.sanitize(html, {
+      const sanitizedResult = DOMPurify.sanitize(html, {
         USE_PROFILES: { html: true, mathMl: true, svg: true },
         ADD_ATTR: ['data-note', 'data-attachment', 'data-path', 'title', 'src', 'type', 'class', 'target', 'rel', 'width', 'height', 'border', 'sandbox'],
         ADD_TAGS: ['iframe', 'svg', 'line'],
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|blob):|[^&:/?#]*(?:[/?#]|$))/i
       });
+
+      canvasMarkdownCache.set(text, sanitizedResult);
+      return sanitizedResult;
     } catch {
       return `<span class="text-destructive font-medium">Error parsing Markdown.</span>`;
     }
@@ -1679,13 +1692,13 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     return `M ${start.x} ${start.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${end.x} ${end.y}`;
   };
 
-  const hasUnsavedChanges = (() => {
+  const hasUnsavedChanges = useMemo(() => {
     const currentSerialized = JSON.stringify({ nodes, edges }, null, 2);
     if (!savedContent && nodes.length === 0 && edges.length === 0) {
       return false;
     }
     return currentSerialized !== savedContent;
-  })();
+  }, [nodes, edges, savedContent]);
 
   const activePathString = () => {
     if (!activeConnection) return '';
