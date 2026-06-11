@@ -700,6 +700,14 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
   const panXRef = useRef(panX);
   const panYRef = useRef(panY);
 
+  const panFrameIdRef = useRef<number | null>(null);
+  const latestPanCoordsRef = useRef<{ x: number; y: number } | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const activeNodeDraggedCoordsRef = useRef<{ x: number; y: number } | null>(null);
+  const activeNodeDraggedDimsRef = useRef<{ width: number; height: number } | null>(null);
+  const wheelCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialPinchMidpointWorld = useRef<{ x: number; y: number } | null>(null);
+
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
@@ -719,6 +727,84 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     let frameId: number | null = null;
     let latestCoords: { clientX: number; clientY: number } | null = null;
 
+    // Pre-build O(1) map of starting nodes once for this gesture session
+    const gestureNodesMap = new Map<string, CanvasNode>();
+    nodesRef.current.forEach(node => {
+      gestureNodesMap.set(node.id, node);
+    });
+
+    const updateConnectedEdgesDOM = (
+      nodeId: string,
+      nodeCoords: { x: number; y: number },
+      nodeDims: { width: number; height: number } | null
+    ) => {
+      const edgeEls = containerRef.current?.querySelectorAll(
+        `path[data-from-node="${nodeId}"], path[data-to-node="${nodeId}"]`
+      ) as NodeListOf<SVGPathElement> | undefined;
+
+      if (!edgeEls) return;
+
+      edgeEls.forEach(pathEl => {
+        const fromNodeId = pathEl.getAttribute('data-from-node');
+        const toNodeId = pathEl.getAttribute('data-to-node');
+        const fromSide = pathEl.getAttribute('data-from-side') as 'top' | 'right' | 'bottom' | 'left' | null;
+        const toSide = pathEl.getAttribute('data-to-side') as 'top' | 'right' | 'bottom' | 'left' | null;
+
+        if (!fromNodeId || !toNodeId || !fromSide || !toSide) return;
+
+        let fromNode = gestureNodesMap.get(fromNodeId);
+        let toNode = gestureNodesMap.get(toNodeId);
+        if (!fromNode || !toNode) return;
+
+        if (fromNode.id === nodeId) {
+          fromNode = {
+            ...fromNode,
+            x: nodeCoords.x,
+            y: nodeCoords.y,
+            width: nodeDims ? nodeDims.width : fromNode.width,
+            height: nodeDims ? nodeDims.height : fromNode.height
+          };
+        }
+        if (toNode.id === nodeId) {
+          toNode = {
+            ...toNode,
+            x: nodeCoords.x,
+            y: nodeCoords.y,
+            width: nodeDims ? nodeDims.width : toNode.width,
+            height: nodeDims ? nodeDims.height : toNode.height
+          };
+        }
+
+        const getSideCoords = (
+          n: CanvasNode,
+          side: 'top' | 'right' | 'bottom' | 'left'
+        ) => {
+          let x = n.x;
+          let y = n.y;
+          if (side === 'top') { x += n.width / 2; }
+          else if (side === 'right') { x += n.width; y += n.height / 2; }
+          else if (side === 'bottom') { x += n.width / 2; y += n.height; }
+          else if (side === 'left') { y += n.height / 2; }
+          return { x, y };
+        };
+
+        const start = getSideCoords(fromNode, fromSide);
+        const end = getSideCoords(toNode, toSide);
+
+        const controlOffset = 80;
+        let cp1x = start.x;
+        let cp1y = start.y;
+
+        if (fromSide === 'top') cp1y -= controlOffset;
+        else if (fromSide === 'right') cp1x += controlOffset;
+        else if (fromSide === 'bottom') cp1y += controlOffset;
+        else if (fromSide === 'left') cp1x -= controlOffset;
+
+        const pathString = `M ${start.x} ${start.y} C ${cp1x} ${cp1y}, ${end.x} ${end.y}, ${end.x} ${end.y}`;
+        pathEl.setAttribute('d', pathString);
+      });
+    };
+
     const updatePosition = () => {
       if (!latestCoords) {
         frameId = null;
@@ -730,7 +816,7 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
 
       // 1. Handle Node Dragging
       if (dragNodeId.current || touchDragNodeId.current) {
-        const activeId = dragNodeId.current || touchDragNodeId.current;
+        const activeId = (dragNodeId.current || touchDragNodeId.current)!;
         const rect = containerRef.current?.getBoundingClientRect();
         if (!rect) return;
         const x = (clientX - rect.left - panXRef.current) / zoomRef.current;
@@ -739,34 +825,44 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
         const dx = x - dragStart.current.x;
         const dy = y - dragStart.current.y;
 
-        setNodes(prev => prev.map(node => {
-          if (node.id === activeId) {
-            return {
-              ...node,
-              x: Math.round(node.x + dx),
-              y: Math.round(node.y + dy),
-            };
+        if (activeNodeDraggedCoordsRef.current) {
+          const newX = Math.round(activeNodeDraggedCoordsRef.current.x + dx);
+          const newY = Math.round(activeNodeDraggedCoordsRef.current.y + dy);
+          activeNodeDraggedCoordsRef.current = { x: newX, y: newY };
+
+          const cardEl = containerRef.current?.querySelector(`[data-node-id="${activeId}"]`) as HTMLElement | null;
+          if (cardEl) {
+            cardEl.style.left = `${newX}px`;
+            cardEl.style.top = `${newY}px`;
           }
-          return node;
-        }));
+
+          updateConnectedEdgesDOM(activeId, { x: newX, y: newY }, null);
+        }
         dragStart.current = { x, y };
       }
 
       // 2. Handle Node Resizing
       if (dragResizeNodeId.current) {
+        const activeId = dragResizeNodeId.current;
         const dx = (clientX - resizeStartCoords.current.x) / zoomRef.current;
         const dy = (clientY - resizeStartCoords.current.y) / zoomRef.current;
 
-        setNodes(prev => prev.map(node => {
-          if (node.id === dragResizeNodeId.current) {
-            return {
-              ...node,
-              width: Math.max(160, Math.round(resizeStartDims.current.width + dx)),
-              height: Math.max(100, Math.round(resizeStartDims.current.height + dy)),
-            };
+        if (activeNodeDraggedDimsRef.current) {
+          const newWidth = Math.max(160, Math.round(resizeStartDims.current.width + dx));
+          const newHeight = Math.max(100, Math.round(resizeStartDims.current.height + dy));
+          activeNodeDraggedDimsRef.current = { width: newWidth, height: newHeight };
+
+          const cardEl = containerRef.current?.querySelector(`[data-node-id="${activeId}"]`) as HTMLElement | null;
+          if (cardEl) {
+            cardEl.style.width = `${newWidth}px`;
+            cardEl.style.height = `${newHeight}px`;
           }
-          return node;
-        }));
+
+          const node = nodesRef.current.find(n => n.id === activeId);
+          if (node) {
+            updateConnectedEdgesDOM(activeId, { x: node.x, y: node.y }, { width: newWidth, height: newHeight });
+          }
+        }
       }
     };
 
@@ -797,17 +893,35 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
         updatePosition();
       }
 
+      let nextNodes = nodesRef.current;
+
       if (dragNodeId.current || touchDragNodeId.current) {
-        pushState(nodesRef.current, edgesRef.current);
+        const activeId = (dragNodeId.current || touchDragNodeId.current)!;
+        if (activeNodeDraggedCoordsRef.current) {
+          const finalCoords = activeNodeDraggedCoordsRef.current;
+          nextNodes = nextNodes.map(n => n.id === activeId ? { ...n, x: finalCoords.x, y: finalCoords.y } : n);
+          nodesRef.current = nextNodes;
+          setNodes(nextNodes);
+          pushState(nextNodes, edgesRef.current);
+        }
       }
       if (dragResizeNodeId.current) {
-        pushState(nodesRef.current, edgesRef.current);
-        performAutoSave();
+        const activeId = dragResizeNodeId.current;
+        if (activeNodeDraggedDimsRef.current) {
+          const finalDims = activeNodeDraggedDimsRef.current;
+          nextNodes = nextNodes.map(n => n.id === activeId ? { ...n, width: finalDims.width, height: finalDims.height } : n);
+          nodesRef.current = nextNodes;
+          setNodes(nextNodes);
+          pushState(nextNodes, edgesRef.current);
+          performAutoSave();
+        }
       }
 
       dragNodeId.current = null;
       touchDragNodeId.current = null;
       dragResizeNodeId.current = null;
+      activeNodeDraggedCoordsRef.current = null;
+      activeNodeDraggedDimsRef.current = null;
       setActiveDragResizeState('idle');
     };
 
@@ -831,6 +945,9 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     isMounted.current = true;
     return () => {
       isMounted.current = false;
+      if (panFrameIdRef.current !== null) {
+        cancelAnimationFrame(panFrameIdRef.current);
+      }
     };
   }, []);
 
@@ -896,14 +1013,29 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
       panXRef.current = nextPanX;
       panYRef.current = nextPanY;
 
-      setZoom(newZoom);
-      setPanX(nextPanX);
-      setPanY(nextPanY);
+      // Update DOM transform directly for fluid performance
+      if (viewportRef.current) {
+        viewportRef.current.style.transform = `translate(${nextPanX}px, ${nextPanY}px) scale(${newZoom})`;
+      }
+
+      // Debounce commit to React state to prevent reconciliation storm
+      if (wheelCommitTimerRef.current !== null) {
+        clearTimeout(wheelCommitTimerRef.current);
+      }
+      wheelCommitTimerRef.current = setTimeout(() => {
+        setZoom(zoomRef.current);
+        setPanX(panXRef.current);
+        setPanY(panYRef.current);
+        wheelCommitTimerRef.current = null;
+      }, 150);
     };
 
     container.addEventListener('wheel', handleWheelEvent, { passive: false });
     return () => {
       container.removeEventListener('wheel', handleWheelEvent);
+      if (wheelCommitTimerRef.current !== null) {
+        clearTimeout(wheelCommitTimerRef.current);
+      }
     };
   }, []);
 
@@ -1163,7 +1295,7 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
         setActiveConnection(null);
       }
       setIsPanning(true);
-      panStart.current = { x: e.clientX - panX, y: e.clientY - panY };
+      panStart.current = { x: e.clientX - panXRef.current, y: e.clientY - panYRef.current };
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
       e.preventDefault();
@@ -1175,8 +1307,21 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     if (isTouchRef.current) return;
 
     if (isPanning) {
-      setPanX(e.clientX - panStart.current.x);
-      setPanY(e.clientY - panStart.current.y);
+      latestPanCoordsRef.current = { x: e.clientX, y: e.clientY };
+      if (panFrameIdRef.current === null) {
+        panFrameIdRef.current = requestAnimationFrame(() => {
+          if (latestPanCoordsRef.current) {
+            const nextPanX = latestPanCoordsRef.current.x - panStart.current.x;
+            const nextPanY = latestPanCoordsRef.current.y - panStart.current.y;
+            panXRef.current = nextPanX;
+            panYRef.current = nextPanY;
+            if (viewportRef.current) {
+              viewportRef.current.style.transform = `translate(${nextPanX}px, ${nextPanY}px) scale(${zoomRef.current})`;
+            }
+          }
+          panFrameIdRef.current = null;
+        });
+      }
       return;
     }
 
@@ -1185,11 +1330,26 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
       const rect = containerRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      setActiveConnection(prev => prev ? {
-        ...prev,
-        currentX: x,
-        currentY: y,
-      } : null);
+      
+      const pathEl = containerRef.current.querySelector('.canvas-connection-line.active') as SVGPathElement | null;
+      if (pathEl) {
+        const start = {
+          x: panXRef.current + activeConnection.startX * zoomRef.current,
+          y: panYRef.current + activeConnection.startY * zoomRef.current
+        };
+        const end = { x, y };
+        const controlOffset = 80 * zoomRef.current;
+        let cp1x = start.x;
+        let cp1y = start.y;
+
+        if (activeConnection.fromSide === 'top') cp1y -= controlOffset;
+        else if (activeConnection.fromSide === 'right') cp1x += controlOffset;
+        else if (activeConnection.fromSide === 'bottom') cp1y += controlOffset;
+        else if (activeConnection.fromSide === 'left') cp1x -= controlOffset;
+
+        const pathString = `M ${start.x} ${start.y} C ${cp1x} ${cp1y}, ${end.x} ${end.y}, ${end.x} ${end.y}`;
+        pathEl.setAttribute('d', pathString);
+      }
     }
   };
 
@@ -1198,6 +1358,12 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     if (isTouchRef.current) return;
 
     setIsPanning(false);
+    if (panFrameIdRef.current !== null) {
+      cancelAnimationFrame(panFrameIdRef.current);
+      panFrameIdRef.current = null;
+    }
+    setPanX(panXRef.current);
+    setPanY(panYRef.current);
 
     if (activeConnection) {
       let hasDragged = false;
@@ -1250,7 +1416,17 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
       initialPinchDistance.current = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
-      initialPinchZoom.current = zoom;
+      initialPinchZoom.current = zoomRef.current;
+      
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const clientMidX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
+        const clientMidY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
+        initialPinchMidpointWorld.current = {
+          x: (clientMidX - panXRef.current) / zoomRef.current,
+          y: (clientMidY - panYRef.current) / zoomRef.current
+        };
+      }
       return;
     }
 
@@ -1267,20 +1443,54 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
         setActiveConnection(null);
       }
       isTouchPanning.current = true;
-      touchStart.current = { x: touch.clientX - panX, y: touch.clientY - panY };
+      touchStart.current = { x: touch.clientX - panXRef.current, y: touch.clientY - panYRef.current };
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && initialPinchDistance.current !== null) {
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-      const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
-      const scale = dist / initialPinchDistance.current;
-      const newZoom = initialPinchZoom.current * scale;
-      setZoom(Math.max(0.2, Math.min(newZoom, 1.8)));
+    if (e.touches.length === 2) {
+      if (initialPinchDistance.current === null) {
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        initialPinchDistance.current = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+        initialPinchZoom.current = zoomRef.current;
+        
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect) {
+          const clientMidX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
+          const clientMidY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
+          initialPinchMidpointWorld.current = {
+            x: (clientMidX - panXRef.current) / zoomRef.current,
+            y: (clientMidY - panYRef.current) / zoomRef.current
+          };
+        }
+      } else {
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+        const scale = dist / initialPinchDistance.current;
+        let newZoom = initialPinchZoom.current * scale;
+        newZoom = Math.max(0.2, Math.min(newZoom, 1.8));
+
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect && initialPinchMidpointWorld.current) {
+          const clientMidX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
+          const clientMidY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
+          
+          const nextPanX = clientMidX - initialPinchMidpointWorld.current.x * newZoom;
+          const nextPanY = clientMidY - initialPinchMidpointWorld.current.y * newZoom;
+
+          zoomRef.current = newZoom;
+          panXRef.current = nextPanX;
+          panYRef.current = nextPanY;
+
+          if (viewportRef.current) {
+            viewportRef.current.style.transform = `translate(${nextPanX}px, ${nextPanY}px) scale(${newZoom})`;
+          }
+        }
+      }
       return;
     }
 
@@ -1292,24 +1502,60 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
       const rect = containerRef.current.getBoundingClientRect();
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
-      setActiveConnection(prev => prev ? {
-        ...prev,
-        currentX: x,
-        currentY: y,
-      } : null);
+      
+      const pathEl = containerRef.current.querySelector('.canvas-connection-line.active') as SVGPathElement | null;
+      if (pathEl) {
+        const start = {
+          x: panXRef.current + activeConnection.startX * zoomRef.current,
+          y: panYRef.current + activeConnection.startY * zoomRef.current
+        };
+        const end = { x, y };
+        const controlOffset = 80 * zoomRef.current;
+        let cp1x = start.x;
+        let cp1y = start.y;
+
+        if (activeConnection.fromSide === 'top') cp1y -= controlOffset;
+        else if (activeConnection.fromSide === 'right') cp1x += controlOffset;
+        else if (activeConnection.fromSide === 'bottom') cp1y += controlOffset;
+        else if (activeConnection.fromSide === 'left') cp1x -= controlOffset;
+
+        const pathString = `M ${start.x} ${start.y} C ${cp1x} ${cp1y}, ${end.x} ${end.y}, ${end.x} ${end.y}`;
+        pathEl.setAttribute('d', pathString);
+      }
       return;
     }
 
     if (isTouchPanning.current) {
-      setPanX(touch.clientX - touchStart.current.x);
-      setPanY(touch.clientY - touchStart.current.y);
+      latestPanCoordsRef.current = { x: touch.clientX, y: touch.clientY };
+      if (panFrameIdRef.current === null) {
+        panFrameIdRef.current = requestAnimationFrame(() => {
+          if (latestPanCoordsRef.current) {
+            const nextPanX = latestPanCoordsRef.current.x - touchStart.current.x;
+            const nextPanY = latestPanCoordsRef.current.y - touchStart.current.y;
+            panXRef.current = nextPanX;
+            panYRef.current = nextPanY;
+            if (viewportRef.current) {
+              viewportRef.current.style.transform = `translate(${nextPanX}px, ${nextPanY}px) scale(${zoomRef.current})`;
+            }
+          }
+          panFrameIdRef.current = null;
+        });
+      }
       return;
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     initialPinchDistance.current = null;
+    initialPinchMidpointWorld.current = null;
     isTouchPanning.current = false;
+    if (panFrameIdRef.current !== null) {
+      cancelAnimationFrame(panFrameIdRef.current);
+      panFrameIdRef.current = null;
+    }
+    setPanX(panXRef.current);
+    setPanY(panYRef.current);
+    setZoom(zoomRef.current);
 
     // Reset touch flag after a short delay to allow synthetic mouse events to be ignored
     setTimeout(() => {
@@ -1450,6 +1696,10 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     setSelectedNodeId(nodeId);
     setSelectedEdgeId(null);
     dragNodeId.current = nodeId;
+    const node = nodesRef.current.find(n => n.id === nodeId);
+    if (node) {
+      activeNodeDraggedCoordsRef.current = { x: node.x, y: node.y };
+    }
     const { x, y } = getCanvasCoords(e.clientX, e.clientY);
     dragStart.current = { x, y };
     setActiveDragResizeState('dragging');
@@ -1464,6 +1714,10 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     setSelectedNodeId(nodeId);
     setSelectedEdgeId(null);
     touchDragNodeId.current = nodeId;
+    const node = nodesRef.current.find(n => n.id === nodeId);
+    if (node) {
+      activeNodeDraggedCoordsRef.current = { x: node.x, y: node.y };
+    }
     const touch = e.touches[0];
     const { x, y } = getCanvasCoords(touch.clientX, touch.clientY);
     dragStart.current = { x, y };
@@ -1477,6 +1731,7 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     if (!node) return;
 
     dragResizeNodeId.current = nodeId;
+    activeNodeDraggedDimsRef.current = { width: node.width, height: node.height };
     resizeStartCoords.current = { x: e.clientX, y: e.clientY };
     resizeStartDims.current = { width: node.width, height: node.height };
     setActiveDragResizeState('resizing');
@@ -1489,6 +1744,7 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     if (!node) return;
 
     dragResizeNodeId.current = nodeId;
+    activeNodeDraggedDimsRef.current = { width: node.width, height: node.height };
     const touch = e.touches[0];
     resizeStartCoords.current = { x: touch.clientX, y: touch.clientY };
     resizeStartDims.current = { width: node.width, height: node.height };
@@ -1554,8 +1810,8 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
       fromSide: side,
       startX,
       startY,
-      currentX: panX + startX * zoom,
-      currentY: panY + startY * zoom,
+      currentX: panXRef.current + startX * zoomRef.current,
+      currentY: panYRef.current + startY * zoomRef.current,
     });
     connectionStartClient.current = { x: e.clientX, y: e.clientY };
   };
@@ -1608,8 +1864,8 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
       fromSide: side,
       startX,
       startY,
-      currentX: panX + startX * zoom,
-      currentY: panY + startY * zoom,
+      currentX: panXRef.current + startX * zoomRef.current,
+      currentY: panYRef.current + startY * zoomRef.current,
     });
 
     isTouchConnecting.current = true;
@@ -1652,9 +1908,17 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
     performAutoSave();
   };
 
+  const nodesMap = useMemo(() => {
+    const map = new Map<string, CanvasNode>();
+    nodes.forEach(node => {
+      map.set(node.id, node);
+    });
+    return map;
+  }, [nodes]);
+
   const calculatePath = (edge: CanvasEdge) => {
-    const fromNode = nodes.find(n => n.id === edge.fromNode);
-    const toNode = nodes.find(n => n.id === edge.toNode);
+    const fromNode = nodesMap.get(edge.fromNode);
+    const toNode = nodesMap.get(edge.toNode);
     if (!fromNode || !toNode) return '';
 
     const getSideCoords = (
@@ -1749,6 +2013,7 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
         }
       `}</style>
       <div
+        ref={viewportRef}
         className="canvas-viewport w-full h-full absolute top-0 left-0 cursor-grab active:cursor-grabbing origin-top-left"
         style={{
           transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
@@ -1811,6 +2076,11 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
             return (
               <path
                 key={edge.id}
+                data-edge-id={edge.id}
+                data-from-node={edge.fromNode}
+                data-to-node={edge.toNode}
+                data-from-side={edge.fromSide}
+                data-to-side={edge.toSide}
                 d={calculatePath(edge)}
                 className={cn(
                   "canvas-connection-line",
@@ -1835,6 +2105,7 @@ const CanvasViewComponent: React.FC<CanvasViewProps> = ({
           return (
             <div
               key={node.id}
+              data-node-id={node.id}
               className={cn(
                 "absolute bg-card border-[2px] rounded-xl flex flex-col z-10 transition-colors duration-250 cursor-default shadow-2xl",
                 isSelected
