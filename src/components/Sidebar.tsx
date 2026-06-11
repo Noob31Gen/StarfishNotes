@@ -594,35 +594,75 @@ const SidebarComponent: React.FC<SidebarProps> = ({
     return () => document.removeEventListener('click', handleDocumentClick);
   }, [activeMenuPath, activeFolderMenuPath]);
 
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const sidebarWidthRef = useRef(sidebarWidth);
+
+  useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth;
+  }, [sidebarWidth]);
+
   // Mouse drag listeners for resizer handle
   const handleMouseDown = (mouseDownEvent: React.MouseEvent) => {
     mouseDownEvent.preventDefault();
+
+    // Immediately kill CSS transitions so DOM mutations take effect instantly
+    // (React state update for isResizingSidebar is async and would lag behind)
+    if (sidebarRef.current) {
+      sidebarRef.current.style.transition = 'none';
+    }
     setIsResizingSidebar(true);
-    const startWidth = sidebarWidth;
+
+    const startWidth = sidebarWidthRef.current;
     const startX = mouseDownEvent.clientX;
-    let lastUpdateTime = Date.now();
+    let pendingCollapse: boolean | null = null;
 
     const handleMouseMove = (mouseMoveEvent: MouseEvent) => {
-      const now = Date.now();
-      if (now - lastUpdateTime < 16) return; // Throttle to ~60fps
-      lastUpdateTime = now;
-
       const deltaX = mouseMoveEvent.clientX - startX;
       let newWidth = startWidth + deltaX;
 
       if (newWidth < 140) {
-        setIsSidebarCollapsed(true);
+        pendingCollapse = true;
+        if (sidebarRef.current) {
+          sidebarRef.current.style.width = '0px';
+          sidebarRef.current.style.minWidth = '0px';
+          sidebarRef.current.style.maxWidth = '0px';
+          sidebarRef.current.style.overflow = 'hidden';
+        }
       } else {
-        setIsSidebarCollapsed(false);
+        pendingCollapse = false;
         if (newWidth > 480) newWidth = 480;
-        setSidebarWidth(newWidth);
+        sidebarWidthRef.current = newWidth;
+        if (sidebarRef.current) {
+          const px = `${newWidth}px`;
+          sidebarRef.current.style.width = px;
+          sidebarRef.current.style.minWidth = px;
+          sidebarRef.current.style.maxWidth = px;
+          sidebarRef.current.style.overflow = '';
+        }
       }
     };
 
     const handleMouseUp = () => {
-      setIsResizingSidebar(false);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+
+      if (pendingCollapse === true) {
+        // Restore ref to the pre-drag width so reopening starts from the correct position
+        sidebarWidthRef.current = startWidth;
+        setIsSidebarCollapsed(true);
+      } else if (pendingCollapse === false) {
+        setIsSidebarCollapsed(false);
+        setSidebarWidth(sidebarWidthRef.current);
+      }
+      setIsResizingSidebar(false);
+
+      // Restore transitions and overflow after React has committed the final state
+      requestAnimationFrame(() => {
+        if (sidebarRef.current) {
+          sidebarRef.current.style.transition = '';
+          sidebarRef.current.style.overflow = '';
+        }
+      });
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -666,6 +706,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({
 
       {/* Sidebar Navigation Shell */}
       <aside
+        ref={sidebarRef}
         style={{
           width: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
           minWidth: isMobileSidebarOpen ? undefined : (isSidebarCollapsed ? '0px' : `${sidebarWidth}px`),
@@ -679,9 +720,9 @@ const SidebarComponent: React.FC<SidebarProps> = ({
         )}
       >
         <div className="h-[60px] px-5 flex items-center justify-between border-b border-border select-none">
-          <div className="flex items-center gap-2.5 font-heading font-bold text-lg bg-gradient-to-r from-white to-accent bg-clip-text text-transparent">
-            <Compass className="w-[18px] h-[18px] text-secondary animate-pulse-soft" />
-            <span>Starfish Notes</span>
+          <div className="flex items-center gap-2.5 font-heading font-bold text-lg bg-gradient-to-r from-white to-accent bg-clip-text text-transparent min-w-0 overflow-hidden whitespace-nowrap">
+            <Compass className="w-[18px] h-[18px] text-secondary animate-pulse-soft shrink-0" />
+            <span className="truncate">Starfish Notes</span>
           </div>
 
           <div className="flex items-center gap-1">
