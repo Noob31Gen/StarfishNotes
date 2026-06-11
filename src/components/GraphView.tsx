@@ -142,7 +142,7 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
     graphFiles.forEach(f => {
       const cleanName = f.name.replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
       const cleanPath = f.path.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\.md$/, '').replace(/\.canvas$/, '').replace(/\.txt$/, '').toLowerCase();
-      
+
       pathToSchemaFile.set(cleanPath, f);
       if (!nameToSchemaFile.has(cleanName)) {
         nameToSchemaFile.set(cleanName, f);
@@ -435,10 +435,10 @@ const GraphViewComponent: React.FC<GraphViewProps> = ({
       const links = linksRef.current;
 
       const repulsionStrength = repulsionRef.current;
-      const springStrength = 0.022;
+      const springStrength = 0.050;
       const springLength = springLengthRef.current;
       const gravity = gravityRef.current * 0.08;
-      const friction = 0.7;
+      const friction = 0.5;
       const alpha = alphaRef.current;
 
       // 1. Center of Gravity

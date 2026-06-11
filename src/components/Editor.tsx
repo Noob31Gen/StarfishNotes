@@ -215,6 +215,7 @@ const EditorComponent: React.FC<EditorProps> = ({
   const activeCsvEditRef = useRef<{ row: number; col: number; val: string } | null>(null);
   const csvDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isEditingFromPreviewRef = useRef(false);
+  const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const markdownCacheRef = useRef<Map<string, string>>(new Map());
   useEffect(() => {
@@ -270,6 +271,9 @@ const EditorComponent: React.FC<EditorProps> = ({
     return () => {
       if (csvDebounceTimerRef.current) {
         clearTimeout(csvDebounceTimerRef.current);
+      }
+      if (historyTimerRef.current) {
+        clearTimeout(historyTimerRef.current);
       }
     };
   }, []);
@@ -408,25 +412,42 @@ const EditorComponent: React.FC<EditorProps> = ({
   // Undo / Redo history state stack
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+
+  // Sync state to refs
+  useEffect(() => {
+    historyRef.current = history;
+    historyIndexRef.current = historyIndex;
+  }, [history, historyIndex]);
 
   const pushEditorState = useCallback((val: string) => {
+    const currentIndex = historyIndexRef.current;
+    
     setHistory(prev => {
-      const currentHistory = prev.slice(0, historyIndex + 1);
-      if (currentHistory.length > 0 && currentHistory[currentHistory.length - 1] === val) {
+      const sliced = prev.slice(0, currentIndex + 1);
+      if (sliced.length > 0 && sliced[sliced.length - 1] === val) {
         return prev;
       }
-      const nextHistory = [...currentHistory, val];
+      const nextHistory = [...sliced, val];
       if (nextHistory.length > 50) nextHistory.shift();
-      setHistoryIndex(nextHistory.length - 1);
+      
+      const nextIndex = nextHistory.length - 1;
+      setHistoryIndex(nextIndex);
+      historyIndexRef.current = nextIndex;
+      historyRef.current = nextHistory;
       return nextHistory;
     });
-  }, [historyIndex]);
+  }, []);
 
   const undo = useCallback(() => {
-    if (historyIndex > 0) {
-      const prevIndex = historyIndex - 1;
-      const prevText = history[prevIndex];
+    const currentIndex = historyIndexRef.current;
+    const currentHist = historyRef.current;
+    if (currentIndex > 0) {
+      const prevIndex = currentIndex - 1;
+      const prevText = currentHist[prevIndex];
       setHistoryIndex(prevIndex);
+      historyIndexRef.current = prevIndex;
       if (isWindowingMode) {
         setFullContent(prevText);
         fullContentRef.current = prevText;
@@ -443,13 +464,16 @@ const EditorComponent: React.FC<EditorProps> = ({
         fullContentRef.current = prevText;
       }
     }
-  }, [history, historyIndex, isWindowingMode, windowStartLine]);
+  }, [isWindowingMode, windowStartLine]);
 
   const redo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      const nextIndex = historyIndex + 1;
-      const nextText = history[nextIndex];
+    const currentIndex = historyIndexRef.current;
+    const currentHist = historyRef.current;
+    if (currentIndex < currentHist.length - 1) {
+      const nextIndex = currentIndex + 1;
+      const nextText = currentHist[nextIndex];
       setHistoryIndex(nextIndex);
+      historyIndexRef.current = nextIndex;
       if (isWindowingMode) {
         setFullContent(nextText);
         fullContentRef.current = nextText;
@@ -466,17 +490,25 @@ const EditorComponent: React.FC<EditorProps> = ({
         fullContentRef.current = nextText;
       }
     }
-  }, [history, historyIndex, isWindowingMode, windowStartLine]);
+  }, [isWindowingMode, windowStartLine]);
+
+  const initialContentRef = useRef(initialContent);
+  useEffect(() => {
+    initialContentRef.current = initialContent;
+  }, [initialContent]);
 
   // Seed initial content into history stack when note is loaded
   useEffect(() => {
-    if (initialContent) {
+    const init = initialContentRef.current;
+    if (init) {
       Promise.resolve().then(() => {
-        setHistory([initialContent]);
+        setHistory([init]);
         setHistoryIndex(0);
+        historyRef.current = [init];
+        historyIndexRef.current = 0;
       });
     }
-  }, [filePath, initialContent]);
+  }, [filePath]);
 
   const handleCopyAll = async () => {
     try {
@@ -1370,6 +1402,23 @@ const EditorComponent: React.FC<EditorProps> = ({
     handleContentEdit(value);
 
     const selectionStart = e.target.selectionStart;
+
+    // Debounce pushing history state
+    if (historyTimerRef.current) {
+      clearTimeout(historyTimerRef.current);
+    }
+    const lastChar = value[selectionStart - 1];
+    const shouldPushImmediately = lastChar === ' ' || lastChar === '\n';
+    if (shouldPushImmediately) {
+      const latestFullContent = isWindowingMode ? fullContentRef.current : value;
+      pushEditorState(latestFullContent);
+    } else {
+      historyTimerRef.current = setTimeout(() => {
+        const latestFullContent = isWindowingMode ? fullContentRef.current : value;
+        pushEditorState(latestFullContent);
+      }, 1000);
+    }
+
     const textBeforeCaret = value.substring(0, selectionStart);
 
     // Find last double bracket index
